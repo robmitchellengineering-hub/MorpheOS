@@ -3,6 +3,13 @@
 //!
 //! The watcher runs in its own thread with its own `Strata` handle, the way the
 //! service and the `strata` command share one store in real use.
+//!
+//! **All three tests are `#[ignore]`d on non-Linux, and that is not laziness.** Two
+//! need a working watcher, which inotify only provides on Linux. The third asserts that
+//! `Watcher::new` **fails** when the store sits inside the tree it protects — and off
+//! Linux the non-Linux stand-in fails for every input, so that assertion would hold
+//! without checking its subject. Leaving it to pass would be worse than skipping it:
+//! the test would look green and prove nothing. See `AGENTS.md` H9.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -135,6 +142,7 @@ impl Drop for Running {
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "needs the Linux inotify watcher")]
 fn a_folder_survives_ransomware_and_the_rewind_can_be_undone() {
     let base = scratch("ransom");
     let docs = base.join("docs");
@@ -270,6 +278,7 @@ fn a_folder_survives_ransomware_and_the_rewind_can_be_undone() {
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "needs the Linux inotify watcher")]
 fn ordinary_work_raises_no_alert() {
     let base = scratch("calm");
     let docs = base.join("docs");
@@ -295,6 +304,10 @@ fn ordinary_work_raises_no_alert() {
 }
 
 #[test]
+#[cfg_attr(
+    not(target_os = "linux"),
+    ignore = "vacuous off Linux: the non-Linux stand-in fails for every input, so this would pass unchecked"
+)]
 fn the_store_cannot_live_inside_what_it_protects() {
     let base = scratch("inside");
     let s = Strata::open(base.join("store")).unwrap();

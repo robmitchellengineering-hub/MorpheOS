@@ -51,6 +51,11 @@ for f in manifest/examples/*.toml; do cargo run -q -p morph-manifest -- validate
 
 That is what CI runs. It is not the whole bar:
 
+- **On a non-Linux machine, `cargo test --all` runs everything except the three
+  `strata` watcher tests, which report as `ignored`.** That is expected, not a
+  failure — the watcher is inotify. Linux (CI, and the deployment targets) runs all
+  of them. **If the ignored count ever grows, that is the thing to look at**: a
+  silently skipped test reads exactly like a passing one. See H9.
 - **Anything touching `images/` or `morph-boot` is additionally proven by the
   `images` workflow** — the x86 job builds a disk image and boots it in QEMU
   through **good, unhealthy and crashing** updates. Run it on your branch; a local
@@ -131,6 +136,23 @@ printing into the middle of a line, since both share the console.
 **Rule:** a test reads its verdict from the **record the system itself keeps**
 (here the boot history on the ESP), not from a human-oriented stream. Logs and
 consoles are diagnostics. Compare them to the record, but never decide from them.
+
+**H9 — a Linux-only dependency that took the whole local bar with it.** `crates/strata`
+declared `inotify` unconditionally, and `inotify` is a hard `compile_error!` off Linux,
+not a missing symbol. So the crate did not merely fail to watch on a Mac: **it did not
+compile**, which made `cargo test --all` — the bar this file tells every session to run
+— impossible off Linux the moment Strata merged. It was found by building the branch,
+not by reading it. The fix scopes the dependency to Linux and gives `watch` a non-Linux
+stand-in that refuses with a reason.
+
+**The second half is the trap, and it is why this is a hazard and not a chore:** the
+stand-in fails for *every* input, and one of the three watcher tests asserts that
+`Watcher::new` **fails** when the store sits inside the tree it protects. Off Linux that
+assertion holds without checking its subject — the test would be green and prove
+nothing. So all three tests are `#[ignore]`d off Linux with the reason attached, and the
+skip shows up in the test count (`63 passed; 3 ignored`) instead of hiding inside it.
+**Rule:** when you stub a platform out, audit every assertion that expects the stub's
+failure. A negative test satisfied by "we never implemented this" is not a passing test.
 
 ## Writing code here
 
