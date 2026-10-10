@@ -46,7 +46,10 @@ jobs:
 
   pi5-image:
     name: Raspberry Pi 5 self-test image
-    runs-on: ubuntu-24.04
+    # Native ARM64: the Pi's own architecture, so neither morph-boot nor the image
+    # build runs under emulation. Free for public repositories; GitHub refuses to
+    # start this runner in a private one, so this job needs the repo to be public.
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 150
     env:
       # Pinned for reproducible builds; bump deliberately.
@@ -54,14 +57,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-unknown-linux-gnu
-      - name: Cross-compile morph-boot for aarch64
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
-            cargo build --release -p morph-boot --target aarch64-unknown-linux-gnu
+      - name: Build morph-boot (native aarch64)
+        run: cargo build --release -p morph-boot
       - name: Fetch rpi-image-gen (pinned)
         run: |
           git init "$RUNNER_TEMP/rpi-image-gen"
@@ -69,17 +66,16 @@ jobs:
           git remote add origin https://github.com/raspberrypi/rpi-image-gen.git
           git fetch --depth 1 origin "$RPI_IMAGE_GEN_REF"
           git checkout FETCH_HEAD
-      - name: Install rpi-image-gen dependencies (arm64 via qemu-user)
+      - name: Install rpi-image-gen dependencies (native arm64)
         run: |
-          sudo apt-get install -y qemu-user-static binfmt-support
-          sudo update-binfmts --enable qemu-aarch64
+          sudo apt-get update
           sudo chmod o+x /home/runner
           cd "$RUNNER_TEMP/rpi-image-gen" && sudo ./install_deps.sh
       - name: Build image
         run: |
           set -euo pipefail
           images/pi5/build.sh "$RUNNER_TEMP/rpi-image-gen" \
-            target/aarch64-unknown-linux-gnu/release/morph-boot "$RUNNER_TEMP/pi5" | tee "$RUNNER_TEMP/build.log"
+            target/release/morph-boot "$RUNNER_TEMP/pi5" | tee "$RUNNER_TEMP/build.log"
           IMG=$(tail -1 "$RUNNER_TEMP/build.log")
           test -f "$IMG"
           mkdir -p "$RUNNER_TEMP/out"
