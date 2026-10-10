@@ -90,8 +90,10 @@ automatically to the available space.
 - **Import** without copying: existing volumes can be indexed in place.
 - **Export:** any view can be materialised as a plain directory or archive. No lock-in.
 - Implementation path:
-  - **v0:** a Rust FUSE layer over btrfs or bcachefs, using their CoW and snapshots, plus the
-    metadata and index services. This ships early and proves the UX.
+  - **v0 (built, `crates/strata`):** an inotify watcher records each saved version into
+    the content-addressed store described above, with a SQLite version index,
+    file restore, folder rewind and ransomware detection. It replaced the earlier
+    plan of a FUSE layer over btrfs; see [ADR 0007](adr/0007-strata-v0-watcher.md).
   - **v1:** a native Strata block layer once the model is proven, with FUSE replaced
     by a kernel module or passthrough for performance.
 

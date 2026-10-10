@@ -1,0 +1,24 @@
+[package]
+name = "strata"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "MorpheOS Strata v0: every saved version of every file, rewind, and ransomware detection"
+
+[dependencies]
+blake3 = "1.8.7"
+fastcdc = "5.0.0"
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+zstd = "0.14.1"
+
+# inotify is Linux-only, and it is a hard `compile_error!` elsewhere rather than a
+# missing symbol. Declaring it unconditionally made the crate unbuildable off Linux,
+# which took `cargo test --all` — the bar AGENTS.md tells every session to run — with
+# it. Scoped to Linux, a Mac builds the crate, runs the 26 unit tests and type-checks
+# the integration tests; only the watcher is unavailable, and `watch` says so out loud.
+# See AGENTS.md H9.
+[target.'cfg(target_os = "linux")'.dependencies]
+inotify = "0.11.5"
