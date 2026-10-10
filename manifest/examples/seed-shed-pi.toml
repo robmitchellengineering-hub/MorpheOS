@@ -1,0 +1,23 @@
+# A Pi Zero 2 W in the shed logging temperature (doc 14, "Leo").
+[machine]
+name = "shed-pi"
+profile = "seed"
+arch = "aarch64"
+
+[network]
+wifi = ["home"]
+
+[[users]]
+name = "leo"
+admin = true
+recovery_key = true
+
+[[storage.replicas]]
+name = "desktop"
+kind = "mesh-peer"
+target = "leo-desktop"
+
+[[services]]
+name = "temp-logger"
+exec = "/apps/temp-logger/run"
+class = "background"

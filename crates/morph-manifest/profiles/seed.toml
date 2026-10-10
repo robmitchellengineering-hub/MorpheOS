@@ -1,0 +1,8 @@
+# Seed: Pi Zero 2 W class (512 MB RAM, SD card). Keep writes and history small.
+[storage]
+min_free_percent = 15
+
+[storage.retention]
+all_versions_hours = 6
+hourly_days = 3
+daily_days = 30

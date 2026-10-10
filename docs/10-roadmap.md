@@ -90,8 +90,8 @@ morpheos/
 | Image build | mkosi or custom, UKI, systemd-boot-style loader | Reproducible, atomic |
 
 ## First concrete steps
-1. ADRs: `0001-linux-kernel-first`, `0002-rust-core`, `0003-unbreakable-wedge`, `0004-open-core-apache2`.
-2. Draft the Manifest schema with **invariants**, and 3 example machines (Seed Pi, Desk laptop, Studio).
+1. ✅ ADRs 0001–0005 ([docs/adr](adr/README.md)).
+2. ✅ Manifest v0 with invariants and risk-tiered plans (`crates/morph-manifest`), with example machines in `manifest/examples`.
 3. Image factory spike: build a bootable immutable Pi 5 image on CI with A/B roots and boot counting.
 4. Prototype `strata-fuse`: CoW versions plus `morph strata at <time> <path>`.
 5. Prototype the Heal Engine loop with two playbooks (broken network config, failed boot) and healing rungs H2 and H3.

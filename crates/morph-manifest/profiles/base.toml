@@ -1,0 +1,30 @@
+# Defaults shared by every MorpheOS machine. Profiles and machine files
+# layer on top of this (see src/layer.rs for the merge rules).
+manifest_version = 1
+
+[system]
+channel = "stable"
+update_ring = "broad"
+kernel = "standard"
+recovery_image = true
+
+[system.boot]
+ab_slots = true
+max_boot_attempts = 3
+
+[storage]
+min_free_percent = 10
+accept_single_copy = false
+
+[storage.retention]
+all_versions_hours = 24
+hourly_days = 30
+daily_days = 365
+
+[heal]
+enabled = true
+max_auto_rung = 4
+ask_after_failed_rungs = 2
+
+[network]
+ethernet = false

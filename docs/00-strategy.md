@@ -71,10 +71,10 @@ hosted infrastructure and convenience.
 | Manifest spec, capsule format | Morpheus integration: build capsules, verbs and images from chat |
 | | Commercial support and OEM licensing |
 
-Proposed licences: Apache-2.0 for the userland crates (patent grant, enterprise-friendly).
-The kernel stays GPL-2.0. Paid services are closed source.
-**This needs your confirmation.** Morpheus itself is proprietary and source-available,
-so the two licences must be kept clearly apart.
+Licences (**confirmed 2026-10-10**): Apache-2.0 for the userland crates (patent grant,
+enterprise-friendly). The kernel stays GPL-2.0. Paid services are closed source. The
+free/paid boundary above is confirmed. Morpheus is proprietary, and code may be brought
+across because the same owner holds both ([17](17-morpheus-family.md)).
 
 ## Honest limits (published, not hidden)
 

@@ -52,6 +52,21 @@ There are three primitives: **the Graph** (versioned, typed, everything),
 **Verbs** (capabilities that replace apps), and **the Conductor** (turns intents
 and constraints into execution across devices). See [doc 12](docs/12-radical-concepts.md).
 
+## What's in the repo
+
+| Path | Contents |
+|---|---|
+| `docs/` | The design set (start with [00](docs/00-strategy.md)) and [ADRs](docs/adr/README.md) |
+| `crates/morph-manifest` | The Manifest: typed machine description, unbreakable invariants, risk-tiered change plans |
+| `manifest/` | Example machines and how to validate them ([README](manifest/README.md)) |
+
+```bash
+cargo test
+cargo run -q -p morph-manifest -- validate manifest/examples/studio-pc.toml
+```
+
+Licensed under [Apache-2.0](LICENSE).
+
 ## Status
 
 Design phase. Strategic decisions are recorded in [00](docs/00-strategy.md):

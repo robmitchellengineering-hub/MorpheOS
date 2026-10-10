@@ -14,7 +14,7 @@
 | **Wedge dilution** | Building everything at once, so nothing is great | Phase 1 is *only* "unbreakable". Everything else waits for the Try to Break It suite to pass |
 | **"Everything talks" needs devices we don't control** | iOS, locked Android and work PCs can't run MorpheOS | Built-in interop protocols plus Morph Link ([16](16-interop-and-link.md)) |
 | **Self-healing overpromises** | One unrecovered failure damages the brand | Published honest limits, a measured mean time to recovery, and the public challenge as the acceptance test |
-| **Licence entanglement with Morpheus** | Morpheus is proprietary; the MorpheOS core is open | Integrate through APIs and build targets only, never shared source ([17](17-morpheus-family.md)) |
+| **Licence entanglement with Morpheus** | Code copied from proprietary Morpheus becomes Apache-2.0 here | Copying is allowed (same owner), but decide file by file whether it belongs on the open side ([17](17-morpheus-family.md)) |
 | **Ecosystem / adoption** | Users need apps and a reason to switch | Run *existing* software from day one. The pitch is "everything you have, with less friction" |
 
 ## Open design questions
@@ -22,7 +22,7 @@
 1. **Manifest language:** Nickel, CUE, KCL, Nix-like, or our own typed DSL?
 2. **Strata v1:** a new on-disk format, or extend bcachefs?
 3. **Session model:** how explicit should sessions be? (They're implicit by default; power users get full control.)
-4. **Licence:** open core decided. Apache-2.0 for the userland is proposed and awaiting confirmation ([00](00-strategy.md))
+4. **Licence:** decided. Apache-2.0 for the userland ([00](00-strategy.md))
 5. **Distribution:** a full OS image only, or also a "MorpheOS layer" on existing Linux to get early adopters?
 6. **Business model:** open core decided. The exact free/paid boundary is drafted in [00](00-strategy.md)
 7. **Identity:** local accounts, mesh identity, or optional org SSO, and how do they relate?

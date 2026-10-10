@@ -48,11 +48,19 @@ rather than reinvent.
 
 ## Licensing boundary
 
-- **Morpheus** is proprietary and source-available (its LICENSE grants no reuse).
-- **The MorpheOS core** is open source (planned Apache-2.0, see [00](00-strategy.md)).
-- So **no Morpheus source code may be copied into MorpheOS.** We reuse *patterns
-  and ideas*, and integrate through *APIs and build targets*. The Morpheus-powered
-  features sit on the paid side of the open-core line.
+- **Morpheus** is proprietary and source-available. **The MorpheOS core** is
+  Apache-2.0 (decided, see [00](00-strategy.md) and ADR 0004).
+- Rob owns both, so **logic, ideas and code from Morpheus may be brought into
+  MorpheOS** (confirmed 2026-10-10).
+- **The consequence to keep in mind:** anything copied into this repo is
+  published under Apache-2.0 once the repo is public, and can't be taken back. Before
+  copying a Morpheus file, decide whether it belongs on the open side. Anything that is
+  Morpheus's commercial edge (the builder, marketplace, hosted broker) stays in
+  Morpheus and is reached through APIs.
+- **Practical reuse:** most of Morpheus is JavaScript/Node and the MorpheOS core is Rust,
+  so reuse is mainly *logic and patterns* (the build/diagnose/fix loop, server-enforced
+  scope limits, "no dead ends") plus the **GitHub Actions image-build and network-flash
+  pipelines**, which can be copied and adapted directly.
 - Trademark: "Morpheus" and "MorpheOS" should be registered and checked for conflicts together.
 
 ## Open questions

@@ -1,0 +1,4 @@
+# Fleet: managed machines. IT approves anything beyond a system rollback.
+[heal]
+max_auto_rung = 3
+ask_after_failed_rungs = 1

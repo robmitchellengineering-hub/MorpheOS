@@ -1,0 +1,3 @@
+# Studio: workstations and audio/video production. Real-time kernel for low-latency audio.
+[system]
+kernel = "rt"

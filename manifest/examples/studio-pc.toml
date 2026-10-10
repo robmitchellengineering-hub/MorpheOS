@@ -1,0 +1,40 @@
+# A music production workstation (doc 14, "Ava").
+[machine]
+name = "ava-studio"
+profile = "studio"
+arch = "x86_64"
+
+[network]
+ethernet = true
+
+[[users]]
+name = "ava"
+admin = true
+recovery_key = true
+
+[[storage.replicas]]
+name = "laptop"
+kind = "mesh-peer"
+target = "ava-laptop"
+
+[[storage.replicas]]
+name = "offsite"
+kind = "hosted"
+target = "ap-southeast-2"
+
+[[services]]
+name = "audio-graph"
+exec = "/system/audio/graph"
+class = "realtime"
+
+[[services]]
+name = "plugin-host"
+exec = "/system/audio/plugin-host"
+class = "realtime"
+after = ["audio-graph"]
+
+[[capsules]]
+name = "daw"
+runtime = "wine"
+source = "recipe:daw-latest"
+grants = ["files:projects", "device:audio", "device:midi"]

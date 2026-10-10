@@ -1,0 +1,24 @@
+# An everyday work laptop (doc 14, "Sam").
+[machine]
+name = "sam-laptop"
+profile = "desk"
+arch = "x86_64"
+
+[network]
+wifi = ["office", "home"]
+
+[[users]]
+name = "sam"
+admin = true
+recovery_key = true
+
+[[storage.replicas]]
+name = "usb-backup"
+kind = "disk"
+target = "SAM-BACKUP"
+
+[[capsules]]
+name = "crm"
+runtime = "wine"
+source = "recipe:acme-crm-2012"
+grants = ["files:documents", "net:outbound"]
