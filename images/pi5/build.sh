@@ -29,6 +29,23 @@ cp -a "$REPO/images/common/selftest-overlay/." "$OV/selftest-overlay/"
 mkdir -p "$BUILD"   # rpi-image-gen refuses a build directory that does not exist
 "$RIG/rpi-image-gen" build -S "$HERE" -c morpheos-pi5-selftest.yaml -B "$BUILD"
 
-IMG=$(find "$BUILD" -name 'morpheos-pi5-selftest.img' -type f | head -1)
+# Find the image rpi-image-gen just produced.
+#
+# WHY THIS CANNOT BE A BARE `find`. rpi-image-gen leaves root-owned, mode-700
+# directories inside the build tree (the target user's home, apt's partial dirs).
+# A recursive find as an unprivileged user reports `Permission denied` for those
+# and — this is the part that bit us — **exits 1**, even though the image is
+# sitting right there one directory away. Under `set -e` that killed the script
+# AFTER a successful 3.29 GiB build, on every run, so the Pi image was never
+# published by CI. `head -1` made it worse by closing the pipe early, which
+# SIGPIPEs find and trips `pipefail` for a second reason.
+#
+# So: `-print -quit` stops at the first match instead of walking the whole tree,
+# `2>/dev/null` drops diagnostics about directories we do not need, and `|| true`
+# normalises the exit code — which is the only thing `set -e` was reacting to.
+#
+# The real question — "was an image produced?" — is the line below, and it is
+# NOT relaxed: an empty result still fails the build. Only the noise is dropped.
+IMG=$(find "$BUILD" -name 'morpheos-pi5-selftest.img' -type f -print -quit 2>/dev/null || true)
 [ -n "$IMG" ] || { echo "no image produced under $BUILD" >&2; exit 1; }
 echo "$IMG"
