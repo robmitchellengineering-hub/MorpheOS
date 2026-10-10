@@ -195,11 +195,15 @@ const CHECKS = [
           bad.push(`partition ${n} would not mount AND has no valid EROFS superblock, so it holds no filesystem this check can see`);
           continue;
         }
-        // The superblock must describe a filesystem that spans the partition; a
-        // truncated or misplaced image would fail this even with a good magic.
-        const slack = p.size * 0.05;
-        if (Math.abs(p.erofs.bytes - p.size) > slack) {
-          bad.push(`partition ${n} is ${p.size} bytes but its EROFS superblock describes ${p.erofs.bytes} (blocksize ${p.erofs.blocksize} x ${p.erofs.blocks} blocks)`);
+        // The filesystem must be non-empty and must FIT the partition. It does NOT
+        // have to fill it: genimage sizes the partition generously and writes a
+        // smaller image into it — the real image is a 228 MiB EROFS in a 1 GiB
+        // partition. Asserting "equal to the partition" was my fourth wrong
+        // assumption on this one check, and the measurement is what corrected it.
+        if (p.erofs.bytes <= 0) {
+          bad.push(`partition ${n}'s EROFS superblock describes an empty filesystem (blocks ${p.erofs.blocks})`);
+        } else if (p.erofs.bytes > p.size) {
+          bad.push(`partition ${n} is ${p.size} bytes but its EROFS superblock describes ${p.erofs.bytes}, which cannot fit (blocksize ${p.erofs.blocksize} x ${p.erofs.blocks} blocks)`);
         }
         continue;   // contents unreadable here BY THE RUNNER, not by fault of the image
       }
@@ -316,7 +320,8 @@ if (args.includes("--self-test")) {
     ["slot B's unit not enabled", (f) => { f.parts.get(5).files.delete("etc/systemd/system/multi-user.target.wants/morph-boot-check.service"); }],
     ["the self-test hook missing", (f) => { f.parts.get(4).files.delete("usr/lib/morpheos/test-hook"); }],
     ["a rootfs that would not mount and holds no filesystem", (f) => { const p = f.parts.get(4); p.mounted = false; delete p.erofs; }],
-    ["an erofs superblock that does not cover the partition", (f) => { f.parts.get(4).mounted = false; f.parts.get(4).erofs = { magic: "ok", blocksize: 16384, blocks: 1024, bytes: 16384 * 1024 }; }],
+    ["an erofs filesystem larger than its partition", (f) => { f.parts.get(4).mounted = false; f.parts.get(4).erofs = { magic: "ok", blocksize: 16384, blocks: 200000, bytes: 16384 * 200000 }; }],
+    ["an empty erofs filesystem", (f) => { f.parts.get(4).mounted = false; f.parts.get(4).erofs = { magic: "ok", blocksize: 16384, blocks: 0, bytes: 0 }; }],
     ["a persistent partition with no filesystem", (f) => { f.parts.get(6).fstype = "none"; }],
   ];
 
@@ -341,7 +346,10 @@ if (args.includes("--self-test")) {
     p.mounted = false;
     p.files = new Map();
     p.content = new Map();
-    p.erofs = { magic: "ok", blocksize: 16384, blocks: p.size / 16384, bytes: p.size };
+    // The real image: a 228 MiB EROFS inside a 1 GiB partition. NOT equal to the
+    // partition size — that was the wrong assumption, and this fixture is the
+    // measured value so the check cannot drift back to demanding a full one.
+    p.erofs = { magic: "ok", blocksize: 16384, blocks: 14586, bytes: 238977024 };
   }
   const un = run(unmountable);
   if (un.length) {
