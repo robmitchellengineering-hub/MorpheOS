@@ -15,6 +15,24 @@ step=$(cat "$dir/step" 2>/dev/null || echo 0)
 echo "morph-test: step $step"
 case "$step" in
     0)
+        # An update medium, if one is attached. This step is why the flow is real:
+        # without it the trial below booted whatever was ALREADY in slot B — and every
+        # image we build makes both slots from one image, so it trialled a copy of the
+        # system it was already running. Nothing was ever updated, and the test could
+        # not tell the difference.
+        #
+        # The medium is a second disk the harness attaches read-only; if it is absent
+        # (every other scenario) this block does nothing and those scenarios are
+        # unchanged.
+        medium=${MORPH_TEST_PAYLOAD:-/dev/vdb}
+        if [ -b "$medium" ]; then
+            mkdir -p /mnt/update
+            mount -o ro "$medium" /mnt/update
+            echo "morph-test: installing the payload from $medium into the inactive slot"
+            /mnt/update/morph-update --esp /efi --root /dev/vda3 \
+                --payload /mnt/update/payload install
+            umount /mnt/update
+        fi
         echo 1 > "$dir/step"; sync
         echo "morph-test: arming trial of slot b"
         morph-boot trial b --reboot

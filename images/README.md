@@ -15,11 +15,19 @@ sudo apt-get install mmdebstrap qemu-system-x86 ovmf systemd-boot-efi dosfstools
 sudo images/x86-qemu/test-fallback.sh /tmp/morph-img
 ```
 
-Each scenario builds a disk with slots A and B, boots it in QEMU, and lets the
-image run an update into slot B by itself:
+Each scenario builds a disk with slots A and B, boots it in QEMU, and lets the image
+run the A/B flow by itself:
 
-| Scenario | Slot B "update" | Expected |
+| Scenario | What slot B holds before the run | Expected |
 |---|---|---|
-| `good` | Healthy | Trial, committed, still B after a reboot |
-| `unhealthy` | A required service fails | Trial, health check fails, back on A, A stays default |
-| `crash` | Its init dies, so the kernel panics | Trial, panic and reset, back on A, A stays default |
+| `good` | A healthy system, put there by `build.sh` | Trial, committed, still B after a reboot |
+| `unhealthy` | As `good`, but a required service fails | Trial, health check fails, back on A, A stays default |
+| `crash` | As `good`, but its init dies, so the kernel panics | Trial, panic and reset, back on A, A stays default |
+| `update` | A healthy system — and the run **replaces it first**: the driver installs a sealed payload from a second read-only disk with `morph-update`, then trials what it wrote | Trial, committed, still B; **and slot B's root carries the payload's marker, which it did not before** |
+
+⚠️ **Only `update` performs an update, and until it existed none of them did.** Every
+image built here makes both slots from **one** image — `boot_a`/`boot_b` from one
+`boot.vfat`, `system_a`/`system_b` from one `system.erofs` — so `trial b` booted a
+byte-identical copy of the system already running. The first three scenarios exercise the
+boot policy faithfully and say nothing whatever about updating a machine; `update` is the
+one that writes a slot on a running system, verifies the write, and boots it.
