@@ -77,8 +77,11 @@ jobs:
           cd "$RUNNER_TEMP/rpi-image-gen" && sudo ./install_deps.sh
       - name: Build image
         run: |
-          IMG=$(images/pi5/build.sh "$RUNNER_TEMP/rpi-image-gen" \
-            target/aarch64-unknown-linux-gnu/release/morph-boot "$RUNNER_TEMP/pi5" | tail -1)
+          set -euo pipefail
+          images/pi5/build.sh "$RUNNER_TEMP/rpi-image-gen" \
+            target/aarch64-unknown-linux-gnu/release/morph-boot "$RUNNER_TEMP/pi5" | tee "$RUNNER_TEMP/build.log"
+          IMG=$(tail -1 "$RUNNER_TEMP/build.log")
+          test -f "$IMG"
           mkdir -p "$RUNNER_TEMP/out"
           zstd -T0 -10 "$IMG" -o "$RUNNER_TEMP/out/morpheos-pi5-selftest.img.zst"
           sha256sum "$RUNNER_TEMP/out/morpheos-pi5-selftest.img.zst" | tee "$RUNNER_TEMP/out/SHA256SUMS"

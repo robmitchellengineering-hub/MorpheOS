@@ -26,6 +26,7 @@ cp -a "$HERE/overlay/." "$OV/overlay/"
 install -D -m 0755 "$BIN" "$OV/overlay/usr/bin/morph-boot"
 cp -a "$REPO/images/common/selftest-overlay/." "$OV/selftest-overlay/"
 
+mkdir -p "$BUILD"   # rpi-image-gen refuses a build directory that does not exist
 "$RIG/rpi-image-gen" build -S "$HERE" -c morpheos-pi5-selftest.yaml -B "$BUILD"
 
 IMG=$(find "$BUILD" -name 'morpheos-pi5-selftest.img' -type f | head -1)
