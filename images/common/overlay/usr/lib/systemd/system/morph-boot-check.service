@@ -1,0 +1,12 @@
+[Unit]
+Description=MorpheOS boot health check (commit or fall back)
+Documentation=https://github.com/robmitchellengineering-hub/MorpheOS/blob/main/docs/15-self-healing.md
+
+[Service]
+# Type=simple so this unit does not hold up startup while it waits for it.
+Type=simple
+ExecStart=/usr/lib/morpheos/boot-check
+StandardOutput=journal+console
+
+[Install]
+WantedBy=multi-user.target

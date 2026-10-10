@@ -29,6 +29,8 @@ Goal: a bootable MorpheOS that **cannot be broken**, on a Pi and an x86 laptop.
 - [ ] Resource Governor (sched_ext, intent classes), Device Broker, Studio audio profile
 - [ ] Mesh v1 between MorpheOS devices: sharing, handoff, compute offload, mesh-based Phoenix
 - [ ] Heal recipe learning (opt-in, no user data)
+- [ ] Flow learning v1: Flow Recorder, counting model, R0 prefetch and R1 capsule prewarm ([18](18-flow-learning.md))
+- [ ] Any-hardware v1: D1 driver recipes, D3 userspace device SDK (USB/HID/serial), Device Doctor ([19](19-any-hardware.md))
 - [ ] "MorpheOS capsule" as a Morpheus build target
 
 ## Phase 3: "Everything talks" (months 18–30)
@@ -37,12 +39,14 @@ Goal: a bootable MorpheOS that **cannot be broken**, on a Pi and an x86 laptop.
 - [ ] **Paid:** Fleet console (policy, attestation, rings), hosted relay, hosted encrypted backup, premium AI
 - [ ] Strata v1 native format (if measurements justify it), semantic index, Predictor
 - [ ] Security audit; publish the Manifest, capsule and heal-recipe specs
+- [ ] Flow learning v2 (pre-connect, pre-configure, NPU model) and AI-generated D3 drivers through the Morpheus loop
 
 ## Phase 4: "Everywhere" (ongoing)
 - MorpheOS on unlocked phones, with convergence (the phone docks to become the desktop)
 - Morph kernel research (a capability microkernel with Linux driver capsules)
 - Doc 12 research tracks: precomputed futures, proof-carrying changes, liquid processes
 - Hardware and OEM partners, and a DRM certification path
+- R4 precompute-in-fork (doc 18) and D4/D5 driver VMs and promotion (doc 19)
 
 ## Proposed repository layout
 
@@ -92,6 +96,6 @@ morpheos/
 ## First concrete steps
 1. ✅ ADRs 0001–0005 ([docs/adr](adr/README.md)).
 2. ✅ Manifest v0 with invariants and risk-tiered plans (`crates/morph-manifest`), with example machines in `manifest/examples`.
-3. Image factory spike: build a bootable immutable Pi 5 image on CI with A/B roots and boot counting.
+3. ✅ Image factory spike: `morph-boot` plus an A/B x86 VM image (tested: good, unhealthy and crashing updates) and a Pi 5 A/B image built on CI with rpi-image-gen ([ADR 0006](adr/0006-image-factory.md)).
 4. Prototype `strata-fuse`: CoW versions plus `morph strata at <time> <path>`.
 5. Prototype the Heal Engine loop with two playbooks (broken network config, failed boot) and healing rungs H2 and H3.

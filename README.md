@@ -42,6 +42,8 @@ needs, then gets out of the way.
 15. [Self-Healing](docs/15-self-healing.md): **the flagship**. The healing ladder, Phoenix restore, and the "Try to Break It" demo
 16. [Interop & Morph Link](docs/16-interop-and-link.md): speaking every existing protocol, and the agent for Windows, macOS, Android and iOS
 17. [The Morpheus Family](docs/17-morpheus-family.md): how MorpheOS and Morpheus fit together
+18. [Flow Learning](docs/18-flow-learning.md): learning how you work, so the next step is ready before you ask
+19. [Any Hardware](docs/19-any-hardware.md): adapting existing drivers or building new ones, without risking the machine
 
 ## The big reframe
 
@@ -58,7 +60,10 @@ and constraints into execution across devices). See [doc 12](docs/12-radical-con
 |---|---|
 | `docs/` | The design set (start with [00](docs/00-strategy.md)) and [ADRs](docs/adr/README.md) |
 | `crates/morph-manifest` | The Manifest: typed machine description, unbreakable invariants, risk-tiered change plans |
+| `crates/morph-boot` | A/B boot control: trial-boot an update once, commit on health, fall back automatically |
 | `manifest/` | Example machines and how to validate them ([README](manifest/README.md)) |
+| `images/x86-qemu` | A/B test disk for a UEFI VM and the "Try to Break It" update test ([README](images/README.md)) |
+| `images/pi5` | Raspberry Pi 5 immutable A/B image built with rpi-image-gen ([README](images/pi5/README.md)) |
 
 ```bash
 cargo test

@@ -1,0 +1,25 @@
+# METABEGIN
+# X-Env-Layer-Name: morpheos-core
+# X-Env-Layer-Category: service
+# X-Env-Layer-Desc: MorpheOS core for A/B images: morph-boot and the per-boot
+#  health check that commits a trial slot or falls back to the default one.
+# X-Env-Layer-Version: 0.1.0
+#
+# X-Env-VarPrefix: morpheos
+#
+# X-Env-Var-overlay: ${DIRECTORY}/morpheos.d/overlay
+# X-Env-Var-overlay-Desc: Root filesystem overlay prepared by images/pi5/build.sh:
+#  MorpheOS files plus the aarch64 morph-boot binary.
+# X-Env-Var-overlay-Required: n
+# X-Env-Var-overlay-Valid: string
+# X-Env-Var-overlay-Set: y
+# METAEND
+---
+mmdebstrap:
+  packages:
+    - rsync
+  customize-hooks:
+    - test -x "${IGconf_morpheos_overlay}/usr/bin/morph-boot"
+    - rsync -a "${IGconf_morpheos_overlay}/" "$1/"
+    - mkdir -p "$1/etc/systemd/system/multi-user.target.wants"
+    - ln -sf /usr/lib/systemd/system/morph-boot-check.service "$1/etc/systemd/system/multi-user.target.wants/morph-boot-check.service"

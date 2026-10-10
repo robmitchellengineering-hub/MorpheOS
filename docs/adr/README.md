@@ -10,3 +10,4 @@ after it's accepted. A later ADR supersedes it instead.
 | [0003](0003-unbreakable-wedge.md) | "Never breaks, self-heals" is the first thing we're famous for | Accepted |
 | [0004](0004-open-core-apache2.md) | Open core: Apache-2.0 userland, paid scale and hosted services | Accepted |
 | [0005](0005-manifest-format.md) | Manifest: TOML files, layered profiles, invariants, risk-tiered plans | Accepted |
+| [0006](0006-image-factory.md) | Image factory: one A/B trial-and-commit model; rpi-image-gen for Pi, mmdebstrap + systemd-boot for x86 | Accepted |

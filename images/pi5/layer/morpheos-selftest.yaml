@@ -1,0 +1,22 @@
+# METABEGIN
+# X-Env-Layer-Name: morpheos-selftest
+# X-Env-Layer-Category: service
+# X-Env-Layer-Desc: MorpheOS A/B self-test driver. On first power-on the device
+#  trial-boots slot B, commits it, reboots once more to prove the commit
+#  stuck, then prints a result banner. Test images only.
+# X-Env-Layer-Version: 0.1.0
+# X-Env-Layer-Requires: morpheos-core
+#
+# X-Env-VarPrefix: mstest
+#
+# X-Env-Var-overlay: ${DIRECTORY}/morpheos.d/selftest-overlay
+# X-Env-Var-overlay-Desc: Self-test files prepared by images/pi5/build.sh.
+# X-Env-Var-overlay-Required: n
+# X-Env-Var-overlay-Valid: string
+# X-Env-Var-overlay-Set: y
+# METAEND
+---
+mmdebstrap:
+  customize-hooks:
+    - test -x "${IGconf_mstest_overlay}/usr/lib/morpheos/test-hook"
+    - rsync -a "${IGconf_mstest_overlay}/" "$1/"

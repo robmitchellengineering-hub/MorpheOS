@@ -1,0 +1,38 @@
+#!/bin/sh
+# Once per boot: wait for startup to finish, judge health, then let
+# morph-boot commit a trial slot or fall back to the default one.
+#
+# Phase 1 health rule (deliberately strict): a trial is healthy only if the
+# system reaches "running" with no failed units within the timeout.
+set -u
+
+log() { echo "morph-boot-check: $*"; }
+
+state=$(timeout "${MORPH_HEALTH_TIMEOUT:-300}" systemctl is-system-running --wait 2>/dev/null)
+[ -n "$state" ] || state="timeout"
+log "system state: $state"
+log "status $(morph-boot status)"
+
+if [ "$state" = "running" ]; then
+    health=--healthy
+else
+    health=--unhealthy
+    systemctl --failed --no-legend --plain 2>/dev/null | while read -r unit _; do
+        log "failed unit: $unit"
+    done
+fi
+
+decision=$(morph-boot confirm "$health")
+log "decision $decision"
+case "$decision" in
+    *'"fallback"'*)
+        log "trial failed; rebooting to the default slot"
+        systemctl reboot
+        exit 0
+        ;;
+esac
+
+# Test images only: a scripted scenario driver.
+if [ -x /usr/lib/morpheos/test-hook ]; then
+    exec /usr/lib/morpheos/test-hook
+fi

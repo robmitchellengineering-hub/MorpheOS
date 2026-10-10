@@ -1,0 +1,90 @@
+name: images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "images/**"
+      - "crates/morph-boot/**"
+      - ".github/workflows/images.yml"
+  pull_request:
+    paths:
+      - "images/**"
+      - "crates/morph-boot/**"
+      - ".github/workflows/images.yml"
+  workflow_dispatch:
+
+jobs:
+  x86-ab-fallback:
+    name: "Try to Break It: A/B updates (x86 VM)"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release -p morph-boot
+      - name: Install image and VM tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mmdebstrap qemu-system-x86 ovmf \
+            systemd-boot-efi dosfstools mtools fdisk e2fsprogs
+      - name: Allow KVM if the runner has it
+        run: |
+          if [ -e /dev/kvm ]; then
+            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
+            sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+          fi
+      - name: Good, unhealthy and crashing updates
+        run: sudo images/x86-qemu/test-fallback.sh "$RUNNER_TEMP/img" good unhealthy crash
+      - name: Keep serial logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: x86-serial-logs
+          path: ${{ runner.temp }}/img/serial-*.log
+          retention-days: 7
+
+  pi5-image:
+    name: Raspberry Pi 5 self-test image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      # Pinned for reproducible builds; bump deliberately.
+      RPI_IMAGE_GEN_REF: b7077549890ed8a3854ebb136e9458e5b1658391
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+      - name: Cross-compile morph-boot for aarch64
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
+            cargo build --release -p morph-boot --target aarch64-unknown-linux-gnu
+      - name: Fetch rpi-image-gen (pinned)
+        run: |
+          git init "$RUNNER_TEMP/rpi-image-gen"
+          cd "$RUNNER_TEMP/rpi-image-gen"
+          git remote add origin https://github.com/raspberrypi/rpi-image-gen.git
+          git fetch --depth 1 origin "$RPI_IMAGE_GEN_REF"
+          git checkout FETCH_HEAD
+      - name: Install rpi-image-gen dependencies (arm64 via qemu-user)
+        run: |
+          sudo apt-get install -y qemu-user-static binfmt-support
+          sudo update-binfmts --enable qemu-aarch64
+          sudo chmod o+x /home/runner
+          cd "$RUNNER_TEMP/rpi-image-gen" && sudo ./install_deps.sh
+      - name: Build image
+        run: |
+          IMG=$(images/pi5/build.sh "$RUNNER_TEMP/rpi-image-gen" \
+            target/aarch64-unknown-linux-gnu/release/morph-boot "$RUNNER_TEMP/pi5" | tail -1)
+          mkdir -p "$RUNNER_TEMP/out"
+          zstd -T0 -10 "$IMG" -o "$RUNNER_TEMP/out/morpheos-pi5-selftest.img.zst"
+          sha256sum "$RUNNER_TEMP/out/morpheos-pi5-selftest.img.zst" | tee "$RUNNER_TEMP/out/SHA256SUMS"
+          ls -la "$RUNNER_TEMP/out"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: morpheos-pi5-selftest
+          path: ${{ runner.temp }}/out/
+          retention-days: 7

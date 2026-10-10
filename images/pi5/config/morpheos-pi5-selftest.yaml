@@ -1,0 +1,17 @@
+# MorpheOS on Raspberry Pi 5: immutable A/B system with the self-test driver.
+# Build: images/pi5/build.sh (see images/pi5/README.md)
+device:
+  layer: rpi5
+  hostname: morpheos
+
+image:
+  layer: image-rota
+  boot_part_size: 128M
+  system_part_size: 1G
+  data_part_size: 1G
+  name: morpheos-pi5-selftest
+
+layer:
+  base: trixie-minbase
+  morpheos: morpheos-core
+  selftest: morpheos-selftest

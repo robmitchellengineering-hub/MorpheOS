@@ -1,0 +1,40 @@
+#!/bin/sh
+# Self-test driver (test images only). Run by boot-check after each boot's
+# health decision. Walks the update path by itself:
+#   step 0: on the default slot, arm a trial of slot b and reboot into it
+#   step 1: plain reboot, to prove whatever was decided has stuck
+#   step 2: report the result, then finish
+#
+# MORPH_TEST_DIR     where the step counter lives (shared by both slots)
+# MORPH_TEST_EXPECT  slot that should be the default at the end (optional)
+# MORPH_TEST_FINISH  poweroff (VM tests) or stay (real hardware)
+set -eu
+dir=${MORPH_TEST_DIR:-/efi/morph-test}
+mkdir -p "$dir"
+step=$(cat "$dir/step" 2>/dev/null || echo 0)
+echo "morph-test: step $step"
+case "$step" in
+    0)
+        echo 1 > "$dir/step"; sync
+        echo "morph-test: arming trial of slot b"
+        morph-boot trial b --reboot
+        ;;
+    1)
+        echo 2 > "$dir/step"; sync
+        echo "morph-test: plain reboot"
+        systemctl reboot
+        ;;
+    *)
+        status=$(morph-boot status)
+        echo "morph-test: done $status"
+        if [ -n "${MORPH_TEST_EXPECT:-}" ]; then
+            case "$status" in
+                *"\"default\":\"$MORPH_TEST_EXPECT\""*)
+                    echo "morph-test: MORPHEOS SELF-TEST PASS (default slot is $MORPH_TEST_EXPECT)" ;;
+                *)
+                    echo "morph-test: MORPHEOS SELF-TEST FAIL (expected default slot $MORPH_TEST_EXPECT; see: journalctl -u morph-boot-check)" ;;
+            esac
+        fi
+        [ "${MORPH_TEST_FINISH:-poweroff}" = poweroff ] && systemctl poweroff
+        ;;
+esac
