@@ -63,7 +63,7 @@ and constraints into execution across devices). See [doc 12](docs/12-radical-con
 | `crates/morph-boot` | A/B boot control: trial-boot an update once, commit on health, fall back automatically |
 | `crates/strata` | Strata v0: a version of every saved file, restore, folder rewind, ransomware detection ([ADR 0007](docs/adr/0007-strata-v0-watcher.md)) |
 | `manifest/` | Example machines and how to validate them ([README](manifest/README.md)) |
-| `images/x86-qemu` | A/B test disk for a UEFI VM and the "Try to Break It" update test ([README](images/README.md)) |
+| `images/x86-qemu` | A/B test disk for a UEFI VM, with Strata watching `/home`, and the "Try to Break It" update and ransomware tests ([README](images/README.md)) |
 | `images/pi5` | Raspberry Pi 5 immutable A/B image built with rpi-image-gen ([README](images/pi5/README.md)) |
 
 ```bash

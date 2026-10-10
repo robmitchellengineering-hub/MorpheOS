@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+use crate::detect::Alert;
 use crate::index::{Index, Kind, State, Version};
 use crate::retention::{Retention, prunable};
 use crate::store::{GcReport, ObjectStore};
@@ -103,6 +104,49 @@ impl Strata {
 
     pub fn store(&self) -> &ObjectStore {
         &self.store
+    }
+
+    /// Keep an alert in the store, one JSON line per alert in `alerts.jsonl`.
+    ///
+    /// WHY IN THE STORE. An alert printed to a log is gone once the log rotates, and
+    /// it can be read only by scraping text. The heal engine, the shell and the VM test
+    /// all need the rewind point later, from the record the system itself keeps
+    /// (AGENTS.md H8). The store is private to the service, so software that can
+    /// write your files cannot erase the alert about it.
+    pub fn record_alert(&self, alert: &Alert) -> Result<()> {
+        let path = self.root.join("alerts.jsonl");
+        let mut line = serde_json::to_string(alert).expect("alert serializes");
+        line.push('\n');
+        let mut f = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .map_err(io(format!("opening {}", path.display())))?;
+        f.write_all(line.as_bytes())
+            .and_then(|()| f.sync_all())
+            .map_err(io(format!("writing {}", path.display())))
+    }
+
+    /// Every alert recorded so far, oldest first.
+    pub fn alerts(&self) -> Result<Vec<Alert>> {
+        let path = self.root.join("alerts.jsonl");
+        let text = match fs::read_to_string(&path) {
+            Ok(t) => t,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) => {
+                return Err(Error::Io {
+                    what: format!("reading {}", path.display()),
+                    source: e,
+                });
+            }
+        };
+        text.lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|l| {
+                serde_json::from_str(l)
+                    .map_err(|e| Error::Corrupt(format!("{}: {e}: {l}", path.display())))
+            })
+            .collect()
     }
 
     /// Refuse to version a folder that contains the store itself.

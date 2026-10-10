@@ -1,0 +1,114 @@
+#!/bin/sh
+# Self-test driver for the ransomware scenario (test images only). Installed as
+# the test hook in place of the update driver, and run by boot-check after each
+# boot's health decision. Two boots:
+#
+#   step 0: write documents, wait until Strata has recorded them, then attack them
+#           the way ransomware does (some encrypted in place, some replaced by a
+#           .locked copy, plus a ransom note), wait for Strata's alert, and reboot.
+#   step 1: after the reboot (so the history and the alert must have survived it),
+#           rewind each folder the alert names to the point it gives, and finish.
+#
+# This script only drives. The verdict is taken from the disk after the VM stops
+# (images/x86-qemu/test-ransomware.sh): the files themselves, Strata's alert
+# record, and the checksums written here before the attack.
+#
+# MORPH_TEST_DIR     shared state and results (the ESP in the VM test)
+# MORPH_TEST_DOCS    the folder to attack
+# MORPH_TEST_FINISH  poweroff (VM tests) or stay (real hardware)
+set -eu
+dir=${MORPH_TEST_DIR:-/efi/morph-test}
+docs=${MORPH_TEST_DOCS:-/home/morph/Documents}
+mkdir -p "$dir"
+step=$(cat "$dir/step" 2>/dev/null || echo 0)
+say() { echo "morph-test: $*"; }
+say "ransomware step $step"
+
+# Write a marker and wait until Strata has a version of it. The watcher handles
+# events in order, so everything written before the marker is recorded too.
+sync_strata() {
+    marker="$docs/.sync-$1"
+    echo "sync $1" > "$marker"
+    i=0
+    until strata history "$marker" >/dev/null 2>&1; do
+        i=$((i + 1))
+        [ "$i" -le 240 ] || { say "strata never recorded $marker"; return 1; }
+        sleep 0.5
+    done
+}
+
+finish() {
+    echo 2 > "$dir/step"
+    sync
+    [ "${MORPH_TEST_FINISH:-poweroff}" = poweroff ] && systemctl poweroff
+    exit 0
+}
+
+case "$step" in
+    0)
+        mkdir -p "$docs/clients"
+        sync_strata 0
+        n=1
+        while [ "$n" -le 24 ]; do
+            sub=""
+            [ $((n % 3)) -eq 0 ] && sub=clients/
+            # Ordinary text: well under the detector's 6 bits per byte, and over its
+            # 1 KiB minimum size.
+            awk -v n="$n" 'BEGIN { for (l = 1; l <= 60; l++)
+                printf "Invoice %04d line %02d: three hours of mixing at the studio, rate as agreed.\n", n, l }' \
+                > "$docs/${sub}invoice-$n.txt"
+            n=$((n + 1))
+        done
+        sync_strata 1
+        (cd "$docs" && find . -type f -name 'invoice-*' | sort | xargs sha256sum) > "$dir/before.sha256"
+        date +%s%N > "$dir/good-at-ns"
+        sync
+        say "$(wc -l < "$dir/before.sha256") documents recorded; attacking in 2s"
+        sleep 2
+
+        n=0
+        for f in $(cd "$docs" && find . -type f -name 'invoice-*' | sort); do
+            n=$((n + 1))
+            size=$(stat -c %s "$docs/$f")
+            if [ $((n % 2)) -eq 0 ]; then
+                head -c "$size" /dev/urandom > "$docs/$f"                       # in place
+            else
+                head -c "$size" /dev/urandom > "$docs/$f.locked" && rm "$docs/$f" # replace
+            fi
+        done
+        awk 'BEGIN { for (i = 0; i < 40; i++) print "Your files are encrypted. Send 1 BTC to recover them." }' \
+            > "$docs/READ_ME_TO_RECOVER.txt"
+        sync_strata 2
+
+        i=0
+        until [ -n "$(strata alerts --json)" ]; do
+            i=$((i + 1))
+            [ "$i" -le 120 ] || { say "no alert after the attack"; break; }
+            sleep 0.5
+        done
+        strata alerts || true
+        echo 1 > "$dir/step"
+        sync
+        say "rebooting before the rewind, so the history has to survive it"
+        systemctl reboot
+        ;;
+    1)
+        alert=$(strata alerts --json | head -1)
+        if [ -z "$alert" ]; then
+            say "no alert in the store after the reboot"
+            finish
+        fi
+        at=$(printf '%s\n' "$alert" | sed -nE 's/.*"rewind_at":"([^"]+)".*/\1/p')
+        printf '%s\n' "$alert" | sed -nE 's/.*"folders":\[([^]]*)\].*/\1/p' | tr ',' '\n' | tr -d '"' |
+            while read -r folder; do
+                say "strata rewind $folder --at $at"
+                strata rewind "$folder" --at "$at" > "$dir/rewind-$(echo "$folder" | tr / _).json" ||
+                    say "rewind of $folder reported failures"
+            done
+        sync
+        finish
+        ;;
+    *)
+        finish
+        ;;
+esac

@@ -1,0 +1,17 @@
+[Unit]
+Description=Strata: keep a version of every file saved in /home
+Documentation=https://github.com/robmitchellengineering-hub/MorpheOS/blob/main/docs/adr/0007-strata-v0-watcher.md
+# Both live on the data partition, shared by the two system slots, so the history
+# survives reboots and updates. /var/lib/strata is the store's default path, so the
+# plain `strata` command finds it with no options.
+RequiresMountsFor=/home /var/lib/strata
+
+[Service]
+ExecStart=/usr/bin/strata watch /home
+Restart=on-failure
+RestartSec=2s
+# One line per saved file: the journal, not the console.
+StandardOutput=journal
+
+[Install]
+WantedBy=multi-user.target

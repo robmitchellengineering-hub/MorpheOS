@@ -222,8 +222,12 @@ fn a_folder_survives_ransomware_and_the_rewind_can_be_undone() {
     );
     assert!(alert.files >= 8);
 
-    // Preview first: a dry run changes nothing.
+    // The alert is in the store, not only in the event stream: the heal engine and
+    // the shell read it later, possibly after a reboot, from a fresh handle.
     let s = Strata::open(&store).unwrap();
+    assert_eq!(s.alerts().unwrap(), vec![alert.clone()], "alert not kept");
+
+    // Preview first: a dry run changes nothing.
     let attacked = snapshot_tree(&docs);
     let preview = s.rewind(&docs, alert.rewind_to, true).unwrap();
     assert!(preview.steps.len() >= victims, "{preview:#?}");
@@ -300,6 +304,10 @@ fn ordinary_work_raises_no_alert() {
     assert!(
         watch.alerts.try_recv().is_err(),
         "false alarm on ordinary work"
+    );
+    assert!(
+        Strata::open(&store).unwrap().alerts().unwrap().is_empty(),
+        "false alarm kept in the store"
     );
 }
 

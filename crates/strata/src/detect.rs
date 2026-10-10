@@ -22,7 +22,7 @@
 use std::collections::{BTreeSet, VecDeque};
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::index::{Kind, Version};
 use crate::time::SECOND;
@@ -36,7 +36,7 @@ pub const MIN_SIZE: u64 = 1024;
 /// Hits further apart than this belong to different bursts.
 pub const MAX_GAP: i64 = 10 * SECOND;
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Alert {
     pub first_ts: i64,
     pub files: usize,

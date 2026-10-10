@@ -6,23 +6,25 @@ on:
     paths:
       - "images/**"
       - "crates/morph-boot/**"
+      - "crates/strata/**"
       - ".github/workflows/images.yml"
   pull_request:
     paths:
       - "images/**"
       - "crates/morph-boot/**"
+      - "crates/strata/**"
       - ".github/workflows/images.yml"
   workflow_dispatch:
 
 jobs:
   x86-ab-fallback:
-    name: "Try to Break It: A/B updates (x86 VM)"
+    name: "Try to Break It: A/B updates and ransomware (x86 VM)"
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build --release -p morph-boot
+      - run: cargo build --release -p morph-boot -p strata
       - name: Install image and VM tools
         run: |
           sudo apt-get update
@@ -36,6 +38,8 @@ jobs:
           fi
       - name: Good, unhealthy and crashing updates
         run: sudo images/x86-qemu/test-fallback.sh "$RUNNER_TEMP/img" good unhealthy crash
+      - name: Ransomware against Strata
+        run: sudo images/x86-qemu/test-ransomware.sh "$RUNNER_TEMP/img"
       - name: Keep serial logs
         if: always()
         uses: actions/upload-artifact@v4

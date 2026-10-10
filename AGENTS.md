@@ -56,9 +56,10 @@ That is what CI runs. It is not the whole bar:
   failure — the watcher is inotify. Linux (CI, and the deployment targets) runs all
   of them. **If the ignored count ever grows, that is the thing to look at**: a
   silently skipped test reads exactly like a passing one. See H9.
-- **Anything touching `images/` or `morph-boot` is additionally proven by the
+- **Anything touching `images/`, `morph-boot` or `strata` is additionally proven by the
   `images` workflow** — the x86 job builds a disk image and boots it in QEMU
-  through **good, unhealthy and crashing** updates. Run it on your branch; a local
+  through **good, unhealthy and crashing** updates and a **ransomware** attack that
+  Strata must undo (so `crates/strata` triggers it too). Run it on your branch; a local
   compile says nothing about whether a firmware path works.
 - **A build is not a boot.** The Pi image building successfully proves that
   `rpi-image-gen` produced a file — nothing more. **No Pi image has ever been

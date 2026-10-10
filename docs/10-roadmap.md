@@ -16,7 +16,8 @@ Goal: a bootable MorpheOS that **cannot be broken**, on a Pi and an x86 laptop.
 - [ ] `morphd`: PID 1, the transaction engine, Manifest generations, invariant checks, parallel boot
 - [ ] Immutable, verified system image, A/B boot with boot counting, an immutable recovery image
 - [x] Strata v0: versions on every save, file restore, folder rewind (undoable), ransomware burst detection ([ADR 0007](adr/0007-strata-v0-watcher.md))
-- [ ] Strata: run the watcher as a service in the images, metadata, full-text search
+- [x] Strata in the x86 image: `strata.service` watches `/home` on a data partition shared by both slots, and the VM test rewinds a ransomware attack ([images](../images/README.md))
+- [ ] Strata in the Pi image (on rpi-image-gen's persistent partition), metadata, full-text search
 - [ ] Heal Engine v0: health probes, deterministic playbooks (boot, network, display, audio, disk), healing ladder H0–H4
 - [ ] Phoenix v0: encrypted replication to a second MorpheOS device or a USB disk, and bare-metal restore
 - [ ] Hardware health monitoring: NVMe/SMART, battery, thermals, SD wear

@@ -109,6 +109,11 @@ impl<'a> Watcher<'a> {
             Ok((prev, Some(new))) => {
                 if let Some(alert) = self.detector.observe(prev.as_ref(), &new) {
                     emit(Event::Recorded(new));
+                    // Kept before it is announced: whoever hears the alert can rely on
+                    // finding it in the store.
+                    if let Err(e) = self.strata.record_alert(&alert) {
+                        emit(Event::Error(format!("keeping the alert: {e}")));
+                    }
                     emit(Event::Alert(alert));
                 } else {
                     emit(Event::Recorded(new));
