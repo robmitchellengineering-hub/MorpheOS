@@ -7,11 +7,25 @@ on:
       - "images/**"
       - "crates/morph-boot/**"
       - ".github/workflows/images.yml"
+  # ⚠️ NO `paths:` FILTER ON pull_request, AND THAT IS THE POINT.
+  #
+  # These two jobs are REQUIRED checks on `main`. A required check that a path filter
+  # can skip **never runs**, so the pull request waits for it forever and can never be
+  # merged — the check becomes a wall rather than a gate. So either the filter goes or
+  # the requirement does; the filter went.
+  #
+  # Why this was needed at all: `main` sat RED on this workflow for hours, through
+  # three merges, because the jobs were filtered AND optional. Nothing required them,
+  # so nothing noticed. Found on 2026-10-11 only by comparing every workflow's latest
+  # run against its triggers — not by any failing gate, because there was no gate.
+  #
+  # The cost, stated plainly: every pull request now runs a ~17-minute Raspberry Pi
+  # image build, including documentation-only ones. It costs no money — this
+  # repository is public, so standard runners are free — and Rob chose correctness
+  # over PR latency on 2026-10-11. If the latency becomes the problem, the alternative
+  # is a nightly run against `main` instead, which trades it back for up to a day of
+  # unnoticed breakage.
   pull_request:
-    paths:
-      - "images/**"
-      - "crates/morph-boot/**"
-      - ".github/workflows/images.yml"
   workflow_dispatch:
 
 jobs:

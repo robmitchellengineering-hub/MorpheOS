@@ -154,6 +154,23 @@ skip shows up in the test count (`63 passed; 3 ignored`) instead of hiding insid
 **Rule:** when you stub a platform out, audit every assertion that expects the stub's
 failure. A negative test satisfied by "we never implemented this" is not a passing test.
 
+**H10 — a required check that a path filter can skip, and a workflow nobody required.**
+`main` sat **red** on the `images` workflow for hours, through three merged pull requests,
+and every one of those merges was green. Both halves were needed for that to happen: the
+two image jobs were **path-filtered** (so a PR touching only `crates/` or docs never ran
+them) **and** they were **not required checks** (only `rust` was), so a red `main` blocked
+nothing and warned nobody. It was found by comparing each workflow's latest run on `main`
+against its trigger conditions — not by any failing gate, because there was no gate. The
+fix for the red itself was sitting in a branch nobody had opened a pull request for.
+**Rule:** a check that matters to `main` must be **required**, and a required check must be
+one that **every** pull request actually runs. Those two constraints pull against each
+other — requiring a path-filtered job makes it a wall that blocks every unrelated PR
+forever, because it will never report — so the filter goes, not the requirement.
+**If you rename a required job, update the branch protection in the same change**, or every
+pull request waits on a check whose name no longer exists. And **"merged green" is not "the
+repository is green":** check every workflow's latest run on `main`, not only the one your
+pull request touched.
+
 ## Writing code here
 
 - Match the existing style: doc comments that explain **why**, module headers that
