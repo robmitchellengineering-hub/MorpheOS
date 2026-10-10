@@ -48,4 +48,26 @@ mkdir -p "$BUILD"   # rpi-image-gen refuses a build directory that does not exis
 # NOT relaxed: an empty result still fails the build. Only the noise is dropped.
 IMG=$(find "$BUILD" -name 'morpheos-pi5-selftest.img' -type f -print -quit 2>/dev/null || true)
 [ -n "$IMG" ] || { echo "no image produced under $BUILD" >&2; exit 1; }
+
+# HOW MANY images match, and how big they are.
+#
+# `-print -quit` stops at the first match — which is right when there is exactly
+# one, and arbitrary when there is not. rpi-image-gen writes an android-sparse
+# variant alongside the plain image and keeps a working tree, so "first match" is
+# only safe if it is also the only match. This prints every candidate to stderr so
+# the build log answers the question instead of leaving it to a 17-minute guess.
+# It does not change which image is used; if there is ever more than one, that is
+# a finding to act on rather than a number to guess at silently.
+# ⚠️ AND THE SAME TRAP, IMMEDIATELY RE-ENTERED. The first version of this
+# diagnostic was `COUNT=$(find … | wc -l)`, which has no `|| true` — so `find`'s
+# exit 1 on those same root-owned directories failed the assignment, and under
+# `set -euo pipefail` it killed the script **before the image was reported**. The
+# build went red for exactly the reason the comment above describes, three lines
+# above where the new code was written. Lesson: the normalisation is needed on
+# EVERY find in this file, not only the one that was being fixed at the time.
+COUNT=$( { find "$BUILD" -name 'morpheos-pi5-selftest.img' -type f 2>/dev/null || true; } | wc -l )
+echo "images named morpheos-pi5-selftest.img: $COUNT" >&2
+find "$BUILD" -name 'morpheos-pi5-selftest.img*' -type f -printf '  %10s  %p\n' 2>/dev/null | sort -k1 -n >&2 || true
+[ "$COUNT" -le 1 ] || echo "WARNING: $COUNT candidates; the one above is whichever find reached first" >&2
+
 echo "$IMG"
