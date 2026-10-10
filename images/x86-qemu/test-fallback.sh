@@ -62,12 +62,16 @@ console() {
 # mounted by the kernel — not from a log line the image could have printed for any
 # reason. The boot history shows the FLOW; only this shows the CONTENT changed.
 marker_present() {
-    local loop
+    local loop out
     loop=$(losetup -Pf --show "$1")
-    local found=1
-    debugfs -R "stat /etc/morph-update-marker" "${loop}p3" >/dev/null 2>&1 && found=0
+    # ⚠️ DEBUGFS EXITS 0 WHETHER OR NOT THE FILE EXISTS. The first version of this
+    # treated the exit code as the answer and reported the marker present on every disk,
+    # so the control check failed on a slot that had never been written — a check
+    # satisfied by something other than its subject, which is the failure mode this repo
+    # keeps meeting. Parse what it printed instead.
+    out=$(debugfs -R "stat /etc/morph-update-marker" "${loop}p3" 2>&1)
     losetup -d "$loop"
-    return $found
+    case "$out" in *"Inode:"*) return 0 ;; *) return 1 ;; esac
 }
 
 fail=0

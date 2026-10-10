@@ -37,6 +37,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo build --release -p morph-boot
+      # The update scenario needs the updater. Built here, as a sibling of the line
+      # above and for the same reason: the harness scripts run under `sudo`, whose PATH
+      # has no cargo, so a binary built inside them cannot find its own toolchain.
+      - run: cargo build --release -p morph-update
       - name: Install image and VM tools
         run: |
           sudo apt-get update

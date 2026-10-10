@@ -32,15 +32,11 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
 MORPH_UPDATE=${MORPH_UPDATE:-$REPO/target/release/morph-update}
 
-# Build the updater here rather than making the workflow build it: the workflow's
-# `cargo build` line is shared ground, and a test that needs one more binary is not a
-# reason to edit a line another change is also editing.
-if [ ! -x "$MORPH_UPDATE" ]; then
-    echo "building morph-update (release)" >&2
-    (cd "$REPO" && cargo build --release -p morph-update >&2)
-fi
+# Built by the workflow, like morph-boot, and for the same reason: this script runs
+# under sudo, whose PATH does not contain the invoking user's cargo. A clear error beats
+# a build that cannot find its own toolchain.
 [ -x "$MORPH_UPDATE" ] || {
-    echo "$MORPH_UPDATE is still missing after building" >&2
+    echo "$MORPH_UPDATE is not built; run: cargo build --release -p morph-update" >&2
     exit 1
 }
 
