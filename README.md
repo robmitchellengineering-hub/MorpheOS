@@ -35,6 +35,18 @@ needs, then gets out of the way.
 9. [Security & Privacy](docs/09-security-privacy.md)
 10. [Roadmap](docs/10-roadmap.md): phased plan, MVP, proposed repo layout and tech stack
 11. [Risks & Open Questions](docs/11-risks-open-questions.md)
+12. [Radical Concepts](docs/12-radical-concepts.md): multiverse execution, precomputed futures, apps that dissolve into verbs, liquid processes, proof-carrying changes and more
+13. [Physics, Maths & the Real Speed Limits](docs/13-physics-and-math.md): where the actual limits are and where the wins come from
+14. [A Day in the Life](docs/14-day-in-the-life.md): scenarios that become demos
+
+## The big reframe
+
+> A traditional OS manages **programs**. MorpheOS manages **intent**, over a
+> versioned **graph** of everything, using whatever **hardware** is around.
+
+There are three primitives: **the Graph** (versioned, typed, everything),
+**Verbs** (capabilities that replace apps), and **the Conductor** (turns intents
+and constraints into execution across devices). See [doc 12](docs/12-radical-concepts.md).
 
 ## Status
 
