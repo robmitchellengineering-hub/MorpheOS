@@ -31,6 +31,7 @@ Goal: a bootable MorpheOS that **cannot be broken**, on a Pi and an x86 laptop.
 - [ ] Heal recipe learning (opt-in, no user data)
 - [ ] Flow learning v1: Flow Recorder, counting model, R0 prefetch and R1 capsule prewarm ([18](18-flow-learning.md))
 - [ ] Any-hardware v1: D1 driver recipes, D3 userspace device SDK (USB/HID/serial), Device Doctor ([19](19-any-hardware.md))
+- [ ] Managed GPU stack (AMD, Intel, NVIDIA) with kernel and driver updated as one A/B trial, per-capsule driver pinning, Proton gaming capsules, shared shader caches ([19 §4](19-any-hardware.md))
 - [ ] "MorpheOS capsule" as a Morpheus build target
 
 ## Phase 3: "Everything talks" (months 18–30)
@@ -40,6 +41,7 @@ Goal: a bootable MorpheOS that **cannot be broken**, on a Pi and an x86 laptop.
 - [ ] Strata v1 native format (if measurements justify it), semantic index, Predictor
 - [ ] Security audit; publish the Manifest, capsule and heal-recipe specs
 - [ ] Flow learning v2 (pre-connect, pre-configure, NPU model) and AI-generated D3 drivers through the Morpheus loop
+- [ ] Windows pro apps (SolidWorks, Premiere, AutoCAD) in VMs with GPU passthrough, SR-IOV or single-GPU handover
 
 ## Phase 4: "Everywhere" (ongoing)
 - MorpheOS on unlocked phones, with convergence (the phone docks to become the desktop)

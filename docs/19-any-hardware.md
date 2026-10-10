@@ -68,14 +68,76 @@ identify ──► research ──► plan ──► generate/patch ──► bu
 | A malicious driver from the community DB | Signed recipes, reproducible builds from source, and the same tests run locally before use |
 | Damaging the hardware (writing firmware, over-volting) | Firmware flashing and any write to non-volatile device memory is **risk tier 4**: always explicit, and never automatic |
 
-## 4. Honest limits
+## 4. Graphics cards: CAD, video editing and gaming
+
+GPUs get their own section because the stakes are highest: they're the
+difference between a workstation and a paperweight for CAD, video and games,
+and GPU driver updates are the most common way desktops get broken today.
+
+### What MorpheOS uses
+
+| Vendor | Stack | Notes |
+|---|---|---|
+| AMD | `amdgpu` kernel driver + Mesa (RADV Vulkan, radeonsi OpenGL) + ROCm for compute | Fully open, in mainline. The best-integrated option |
+| Intel | `i915` / `xe` kernel drivers + Mesa (ANV, iris) + oneAPI/Level Zero | Fully open, in mainline. Newer iGPUs also support SR-IOV (see below) |
+| NVIDIA | NVIDIA's open kernel modules + proprietary userspace (Vulkan, OpenGL, CUDA, NVENC); `nouveau`/NVK as the open fallback | Full performance and CUDA need NVIDIA's userspace, which MorpheOS installs and manages for you |
+
+No "go find a driver" step: the Device Broker identifies the GPU and installs
+the right stack as a Manifest change.
+
+### Adapting GPU drivers: where the AI earns its keep
+
+Almost all real-world GPU pain is **mismatch, not missing drivers**. These are
+all D1/D2 fixes:
+
+| Problem today | MorpheOS fix |
+|---|---|
+| A new card revision isn't recognised yet | D2: add its device ID to the driver for the same architecture, then build, test in a fork, and sign |
+| NVIDIA module won't build after a kernel update (black screen on reboot) | The kernel and GPU driver are updated **together** as one trial (doc 15). If either fails, the old pair boots |
+| A driver update breaks one app or game | Per-capsule driver versions: a game or CAD capsule can pin the Mesa or NVIDIA userspace version that works for it, while the rest of the system moves on |
+| Wrong settings (Wayland/X11 quirks, power modes, multi-monitor, HDR, VRR) | D1 recipes from the shared database, applied as a reversible Manifest change |
+| Shader stutter on first launch of a game | Shared, precompiled shader caches per GPU and driver version (mesh and community), prewarmed by flow learning (doc 18) |
+
+Every GPU driver change is a trial: if the display doesn't come up, or the
+health check fails, the next boot is the previous working driver. **A driver
+update can never leave you at a black screen.**
+
+### Workload by workload (honest status)
+
+| Workload | Runs natively | Windows-only apps | Known blockers |
+|---|---|---|---|
+| **Gaming** | Native Linux games; Steam Proton (DXVK, VKD3D-Proton) runs a large share of the Windows library at close to native speed | Proton capsule, chosen automatically (rung 3, doc 05) | Games with kernel-level anti-cheat that block non-Windows systems |
+| **Video editing** | DaVinci Resolve (native Linux build), Blender, Kdenlive; hardware encode and decode through NVENC, VA-API and Vulkan Video | Premiere Pro and After Effects don't run well under Wine, so they get a Windows VM with GPU passthrough | Some codec licensing limits in free editions; a Windows VM needs a Windows licence |
+| **CAD / 3D** | Blender, FreeCAD, BricsCAD (Linux build), Onshape (browser) | SolidWorks, Inventor and AutoCAD are Windows-only, so they get a Windows VM with GPU passthrough | ISV-certified driver requirements; some vendors only support certified Windows setups |
+| **AI / compute** | CUDA, ROCm and oneAPI natively, with PyTorch and others in capsules | (rarely needed) | Vendor support matrices per card generation |
+
+### Running Windows-only pro apps at full GPU speed
+
+For the apps Wine can't handle, the capsule ladder's rung 6 (doc 05) gets a real GPU:
+
+1. **Second GPU passthrough (best).** Machines with an iGPU plus a dGPU, or two
+   dGPUs, hand one GPU completely to a Windows VM through VFIO. That gives near-native
+   performance for SolidWorks or Premiere, while the host keeps the other GPU.
+2. **SR-IOV / vGPU (split one GPU).** Newer Intel iGPUs and NVIDIA/AMD datacentre
+   and pro cards can be split into virtual GPUs, so host and VM share one card.
+3. **Single-GPU handover.** The host steps aside, the VM gets the only GPU while
+   it runs, and gives it back when it closes. It works on most desktops, at the cost
+   of the host desktop being paused.
+4. **Paravirtual GPU (virtio-gpu Venus / native context).** For lighter work
+   it's no passthrough needed, and it improves every year.
+
+The capsule planner picks the best option the hardware allows, and remembers it
+per app.
+
+## 5. Honest limits
 
 - **Signed firmware and locked devices.** Some hardware only accepts vendor-signed
   firmware (many phone modems, some Wi-Fi chips, Apple silicon secure parts). We can
   load the vendor's firmware where its licence allows, but we can't write our own.
-- **Big GPUs.** Generating a full modern GPU driver is a multi-year project, not a
-  fork test. GPUs depend on mainline and vendor drivers. Capsules can use GPU
-  passthrough for Windows-only cases.
+- **Writing a new GPU driver from scratch.** Adapting, configuring and managing
+  modern GPU drivers is core MorpheOS work (section 4). Writing a full driver for an
+  undocumented GPU *from nothing* is a multi-year project, not a fork test. It's
+  rarely needed, because AMD, Intel and NVIDIA cover nearly every card people buy.
 - **Undocumented hardware with no observable vendor software.** If there's no
   datasheet, no existing driver and no vendor tool to observe, there may be nothing
   to learn from. The Device Doctor says so plainly instead of guessing.
@@ -83,13 +145,16 @@ identify ──► research ──► plan ──► generate/patch ──► bu
   but not all. Observation (step 3) is opt-in, and the community database only
   accepts clean-room recipes.
 
-## 5. Roadmap placement
+## 6. Roadmap placement
 
 - **Phase 1:** D0 plus D1 for known quirks (a recipe file format and a small built-in set).
+  GPU drivers are updated together with the kernel as one A/B trial.
 - **Phase 2:** the D3 device SDK (USB, HID, serial), the Device Doctor UI, recipe
-  sharing, and test-in-a-fork for userspace drivers.
+  sharing, and test-in-a-fork for userspace drivers. The managed GPU stack (AMD, Intel,
+  NVIDIA), per-capsule driver pinning, Proton capsules, and shared shader caches.
 - **Phase 3:** AI-generated D3 drivers through the Morpheus loop, D2 patching of
-  nearby kernel drivers, and the USB-capture observation workflow.
+  nearby kernel drivers (including GPU device-ID and build fixes), the USB-capture
+  observation workflow, and Windows pro-app VMs with GPU passthrough and SR-IOV.
 - **Phase 4:** D4 driver VMs (VFIO), and the D5 promotion pipeline.
 
 ## Open questions
