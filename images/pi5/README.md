@@ -28,6 +28,23 @@ power-on it tests the update path on real hardware, by itself:
 Attach a screen to see progress. The whole run takes a few minutes, with
 two automatic reboots.
 
+## What is verified, and what is not
+
+The `images` workflow builds this image and then **reads it back**: the six
+`image-rota` partitions, the FAT boot selector, `autoboot.txt` and that its trial
+partition differs from its default, each slot's own `cmdline.txt`, and that **both**
+system partitions carry `morph-boot`, the health check and the **enabled** unit. The
+partition numbers `crates/morph-boot/src/pi.rs` hard-codes are compared against the
+image that was actually built, so a layout change cannot leave the code addressing a
+partition that is no longer a slot.
+
+⚠️ **A build is not a boot, and this check does not change that.** Nothing above proves
+the firmware boots the image, that the kernel starts, that systemd runs the health
+check, or that `tryboot` falls back. The Pi 5 has no QEMU model, so the Pi path still
+has **no end-to-end execution evidence** — that is what the self-test image on real
+hardware is for. This closes the gap between "a file was produced" and "the file is the
+one the code assumes", and nothing more.
+
 ## Building it yourself
 
 ```bash
