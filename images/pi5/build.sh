@@ -58,7 +58,14 @@ IMG=$(find "$BUILD" -name 'morpheos-pi5-selftest.img' -type f -print -quit 2>/de
 # the build log answers the question instead of leaving it to a 17-minute guess.
 # It does not change which image is used; if there is ever more than one, that is
 # a finding to act on rather than a number to guess at silently.
-COUNT=$(find "$BUILD" -name 'morpheos-pi5-selftest.img' -type f 2>/dev/null | wc -l)
+# ⚠️ AND THE SAME TRAP, IMMEDIATELY RE-ENTERED. The first version of this
+# diagnostic was `COUNT=$(find … | wc -l)`, which has no `|| true` — so `find`'s
+# exit 1 on those same root-owned directories failed the assignment, and under
+# `set -euo pipefail` it killed the script **before the image was reported**. The
+# build went red for exactly the reason the comment above describes, three lines
+# above where the new code was written. Lesson: the normalisation is needed on
+# EVERY find in this file, not only the one that was being fixed at the time.
+COUNT=$( { find "$BUILD" -name 'morpheos-pi5-selftest.img' -type f 2>/dev/null || true; } | wc -l )
 echo "images named morpheos-pi5-selftest.img: $COUNT" >&2
 find "$BUILD" -name 'morpheos-pi5-selftest.img*' -type f -printf '  %10s  %p\n' 2>/dev/null | sort -k1 -n >&2 || true
 [ "$COUNT" -le 1 ] || echo "WARNING: $COUNT candidates; the one above is whichever find reached first" >&2
