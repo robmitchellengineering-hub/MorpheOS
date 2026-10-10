@@ -109,9 +109,11 @@ path should be asserted through `json_schema()`. An unmatched input is a bug, no
 a fallback.
 
 **H5 — a field nothing reads.** `system.channel`, `system.update_ring`,
-`boot.max_boot_attempts`, `heal.max_auto_rung` and `storage.retention` are parsed
-and validated, and **no code consumes them**. The Manifest therefore describes
-behaviour the system does not have — and a reader trusts it.
+`heal.max_auto_rung` and `storage.retention` are parsed and validated, and **no
+code consumes them** (`unenforced_settings()` in `validate.rs` is the full list).
+The Manifest therefore describes behaviour the system does not have — and a reader
+trusts it. Another, `boot.max_boot_attempts`, promised a 3-boot retry the firmware
+cannot do; ADR [0008](docs/adr/0008-one-try-trial.md) removed it.
 **Rule:** a configuration field is not implemented until something obeys it. If
 nothing does yet, mark it in the schema or leave it out.
 

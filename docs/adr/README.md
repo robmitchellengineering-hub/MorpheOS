@@ -12,3 +12,4 @@ after it's accepted. A later ADR supersedes it instead.
 | [0005](0005-manifest-format.md) | Manifest: TOML files, layered profiles, invariants, risk-tiered plans | Accepted |
 | [0006](0006-image-factory.md) | Image factory: one A/B trial-and-commit model; rpi-image-gen for Pi, mmdebstrap + systemd-boot for x86 | Accepted |
 | [0007](0007-strata-v0-watcher.md) | Strata v0: inotify watcher plus content-addressed store, not FUSE; rewind never destroys | Accepted |
+| [0008](0008-one-try-trial.md) | A trial boot gets exactly one try; no boot counter | Accepted |
