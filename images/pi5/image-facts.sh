@@ -54,7 +54,17 @@ dumpable() {
     esac
 }
 
-say "image $(stat -c %s "$IMG")"
+# GNU stat on Linux; the BSD form is a fallback so that running this on a Mac
+# degrades into honest output instead of a blank number.
+size_of() { stat -c %s "$1" 2>/dev/null || stat -f %z "$1" 2>/dev/null || echo 0; }
+
+say "image $(size_of "$IMG")"
+# Whether this kernel can read EROFS at all decides how to read a failed mount:
+# "the image is empty" and "this kernel has no erofs driver" look identical from
+# `mount` alone. The first run could not tell them apart, and reported the second
+# as if it were the first.
+say "kernel erofs=$(grep -qw erofs /proc/filesystems 2>/dev/null && echo yes || echo no)"
+command -v fsck.erofs >/dev/null && say "note fsck.erofs available" || say "note fsck.erofs NOT available"
 command -v sfdisk >/dev/null && say "table $(sfdisk -d "$IMG" 2>/dev/null | sed -n 's/^label: //p' | head -1)"
 
 LOOP=$(losetup -Pf --show "$IMG" 2>/dev/null) || LOOP=""
@@ -72,19 +82,34 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Try the filesystems this image is actually made of. A plain `mount` is not
-# enough: erofs is not autodetected by every kernel, and an ext4 whose journal is
-# unclean refuses a read-only mount unless told not to replay it (`noload`).
+# Try the filesystems this image is actually made of, and report EVERY attempt's
+# reason rather than only the last one. Reporting just the last was a real mistake:
+# the failures are tried in order and the final message came from the `vfat`
+# attempt, which made a kernel that cannot mount EROFS look like a corrupt
+# superblock.
+#
+# EROFS is not guaranteed to be in a CI kernel at all, so `fsck.erofs --extract`
+# is the fallback that does not need kernel support — it is the difference between
+# "this image is empty" and "this kernel cannot read it", which are very different
+# findings.
 mount_part() {
-    local dev=$1 dir=$2 spec t opts err
+    local dev=$1 dir=$2 spec t opts tried=""
     if mount -o ro "$dev" "$dir" 2>/tmp/.mnt.err; then echo "ok auto"; return 0; fi
+    tried="auto: $(tr -d '\n' < /tmp/.mnt.err | tail -c 90)"
     for spec in "erofs:-t erofs -o ro" "ext4:-t ext4 -o ro,noload" "vfat:-t vfat -o ro"; do
         t=${spec%%:*}; opts=${spec#*:}
         # shellcheck disable=SC2086
         if mount $opts "$dev" "$dir" 2>/tmp/.mnt.err; then echo "ok $t"; return 0; fi
+        tried="$tried | $t: $(tr -d '\n' < /tmp/.mnt.err | tail -c 90)"
     done
-    err=$(tr -d '\n' < /tmp/.mnt.err | tail -c 160)
-    echo "failed - $err"
+    # No kernel filesystem driver worked. erofs-utils reads the image in userspace.
+    if command -v fsck.erofs >/dev/null; then
+        if fsck.erofs --extract="$dir" "$dev" >/dev/null 2>/tmp/.erofs.err; then
+            echo "ok fsck.erofs"; return 0
+        fi
+        tried="$tried | fsck.erofs: $(tr -d '\n' < /tmp/.erofs.err | tail -c 90)"
+    fi
+    echo "failed $tried"
     return 1
 }
 
@@ -107,8 +132,8 @@ for dev in $(ls -1 "${LOOP}"p* 2>/dev/null | sort -V); do
                    usr/lib/systemd/system/morph-boot-check.service.d/10-pi.conf \
                    etc/systemd/system/multi-user.target.wants/morph-boot-check.service; do
             if [ -e "$dir/$rel" ]; then
-                say "file $n $rel $(stat -c %s "$dir/$rel" 2>/dev/null || echo 0)"
-                if dumpable "$rel" && [ "$(stat -c %s "$dir/$rel")" -lt 4096 ]; then
+                say "file $n $rel $(size_of "$dir/$rel")"
+                if dumpable "$rel" && [ "$(size_of "$dir/$rel")" -lt 4096 ]; then
                     # Escape newlines so one fact stays on one line.
                     say "content $n $rel $(sed -e ':a' -e 'N' -e '$!ba' -e 's/\t/\\t/g' -e 's/\n/\\n/g' "$dir/$rel")"
                 fi
@@ -134,9 +159,12 @@ for dev in $(ls -1 "${LOOP}"p* 2>/dev/null | sort -V); do
             done < "$dir/autoboot.txt"
         fi
     else
-        # Why not: what the kernel thinks is there, and the first bytes of it.
+        # Why not: what the kernel thinks is there, and the first bytes of the
+        # superblock. BOTH erofs and ext4 put their superblock at offset 1024 — an
+        # earlier version of this read offset 0, which is zeros for both and told
+        # us nothing.
         say "probe $n $(blkid -p -o value -s TYPE "$dev" 2>/dev/null || echo unknown)"
-        say "magic $n $(head -c 16 "$dev" 2>/dev/null | od -An -tx1 | tr -d '\n' | tr -s ' ')"
+        say "magic $n $(dd if="$dev" bs=1 skip=1024 count=8 2>/dev/null | od -An -tx1 | tr -d '\n' | tr -s ' ')"
     fi
 done
 

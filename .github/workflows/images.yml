@@ -87,8 +87,11 @@ jobs:
           set -euo pipefail
           IMG=$(tail -1 "$RUNNER_TEMP/build.log")
           test -f "$IMG"
-          # The tools the x86 test already uses to read a disk image.
-          sudo apt-get install -y --no-install-recommends dosfstools mtools fdisk e2fsprogs
+          # The tools the x86 test already uses to read a disk image, plus
+          # erofs-utils: the slot rootfs is EROFS, and a CI kernel is not guaranteed
+          # to have the erofs driver — reading it in userspace is what distinguishes
+          # "the image is empty" from "this kernel cannot read it".
+          sudo apt-get install -y --no-install-recommends dosfstools mtools fdisk e2fsprogs erofs-utils
           # Facts first, always printed and always uploaded: if a check fails, the
           # log still has to show what the image ACTUALLY contains, or the next
           # attempt is another 17-minute guess.
