@@ -21,3 +21,9 @@ jobs:
           for f in manifest/examples/*.toml; do
             cargo run -q -p morph-manifest -- validate "$f"
           done
+      # The docs ARE the deliverable so far, and nothing was checking that they still
+      # point at things that exist: a renamed doc, an unlisted ADR, a crate the README
+      # does not name. None of those break a build, which is exactly why they rot.
+      # Dependency-free, so it needs no install step.
+      - name: Verify the documentation against the repository
+        run: node scripts/verify-docs.mjs
