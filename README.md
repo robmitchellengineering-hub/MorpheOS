@@ -20,7 +20,7 @@ needs, then gets out of the way.
 | **Strata storage** | Files are found by meaning and history, not by folder path. Every change can be undone. | [Strata Filesystem](docs/04-strata-filesystem.md) |
 | **Capsules** | Any program from any platform runs in an instant, isolated environment built for it. | [Compatibility](docs/05-compatibility-capsules.md) |
 | **Known-good states** | The AI configures the system, but only into states that are validated, atomic and reversible. | [AI Layer](docs/06-ai-layer.md) |
-| **One OS, every scale** | The same image and the same concepts from a Pi Zero to a server fleet. | [Scaling Profiles](docs/07-scaling-profiles.md) |
+| **One OS, every scale** | One **codebase**, one set of concepts and one Manifest schema from a Pi Zero to a server fleet — **not one image**, which is impossible across architectures and profiles. | [Scaling Profiles](docs/07-scaling-profiles.md) |
 
 ## Documents
 
@@ -82,4 +82,5 @@ Design phase. Strategic decisions are recorded in [00](docs/00-strategy.md):
 - **Open core**
 - **Part of the Morpheus family**
 
-Every doc ends with open questions for that area.
+Open questions live at the end of the docs that have them, and
+[doc 11](docs/11-risks-open-questions.md) collects the cross-cutting ones.
