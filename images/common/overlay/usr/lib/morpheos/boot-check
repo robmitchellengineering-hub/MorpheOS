@@ -8,10 +8,23 @@ set -u
 
 log() { echo "morph-boot-check: $*"; }
 
+# Boot history: one JSON line per boot that reached this check, on storage that
+# survives reboots. It is the record of what was decided (the heal engine's input
+# in phase 2), and what the update tests read: the console is shared with the
+# kernel, which can print into the middle of a line, so it is diagnostics only.
+HISTORY=${MORPH_BOOT_HISTORY:-/var/lib/morph-boot/history.jsonl}
+record() {
+    mkdir -p "$(dirname "$HISTORY")" &&
+        printf '{"state":"%s","status":%s,"decision":%s}\n' "$state" "$status" "$1" >> "$HISTORY" &&
+        sync "$HISTORY" ||
+        log "warning: could not write boot history to $HISTORY"
+}
+
 state=$(timeout "${MORPH_HEALTH_TIMEOUT:-300}" systemctl is-system-running --wait 2>/dev/null)
 [ -n "$state" ] || state="timeout"
 log "system state: $state"
-log "status $(morph-boot status)"
+status=$(morph-boot status)
+log "status $status"
 
 if [ "$state" = "running" ]; then
     health=--healthy
@@ -24,6 +37,7 @@ fi
 
 decision=$(morph-boot confirm "$health")
 log "decision $decision"
+record "$decision"
 case "$decision" in
     *'"fallback"'*)
         log "trial failed; rebooting to the default slot"
