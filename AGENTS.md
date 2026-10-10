@@ -121,6 +121,17 @@ type or the API enforces.
 **Rule:** an invariant that matters belongs where it cannot be bypassed. Until
 then, say it is a policy property rather than a guarantee.
 
+**H8 — a verdict scraped from a shared console.** The x86 update test read each
+boot's decision from the serial console. On a KVM runner (run 38052762124) the
+**good** scenario failed with B correctly committed (`loader.conf` said
+`default morpheos-b.conf`): the decision happened, but the test found no
+readable line for that boot. The same job had passed an hour earlier. The serial
+log could not be retrieved to confirm the cause; the likely one is the kernel
+printing into the middle of a line, since both share the console.
+**Rule:** a test reads its verdict from the **record the system itself keeps**
+(here the boot history on the ESP), not from a human-oriented stream. Logs and
+consoles are diagnostics. Compare them to the record, but never decide from them.
+
 ## Writing code here
 
 - Match the existing style: doc comments that explain **why**, module headers that
