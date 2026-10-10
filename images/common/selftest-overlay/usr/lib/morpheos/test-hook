@@ -27,11 +27,30 @@ case "$step" in
         medium=${MORPH_TEST_PAYLOAD:-/dev/vdb}
         if [ -b "$medium" ]; then
             mkdir -p /mnt/update
-            mount -o ro "$medium" /mnt/update
-            echo "morph-test: installing the payload from $medium into the inactive slot"
-            /mnt/update/morph-update --esp /efi --root /dev/vda3 \
-                --payload /mnt/update/payload install
-            umount /mnt/update
+            # ⚠️ EVERY FAILURE HERE IS REPORTED AND STEPPED OVER, NOT RAISED. This
+            # script runs under `set -e`, and under `set -e` a failed mount ended the
+            # script — so the driver never reached the poweroff at the end, the VM sat
+            # until the harness timeout, and the run said nothing except "the VM did not
+            # power off". The first version of this took 20+ minutes to tell us nothing.
+            # A test that cannot fail fast cannot fail informatively: say what went
+            # wrong, carry on, and let the assertion at the end be the verdict.
+            if mount -o ro "$medium" /mnt/update; then
+                echo "morph-test: installing the payload from $medium into the inactive slot"
+                # Bounded, so a slow or stuck install cannot stall the machine until the
+                # harness gives up — the test must always reach its own verdict.
+                if timeout 600 /mnt/update/morph-update --esp /efi --root /dev/vda3 \
+                    --payload /mnt/update/payload install
+                then
+                    echo "morph-test: morph-update reported success"
+                else
+                    echo "morph-test: MORPH-UPDATE FAILED (exit $?) — slot b is unchanged"
+                fi
+                umount /mnt/update
+            else
+                echo "morph-test: COULD NOT MOUNT the update medium $medium (exit $?)"
+            fi
+        else
+            echo "morph-test: no update medium at $medium; trialling whatever slot b holds"
         fi
         echo 1 > "$dir/step"; sync
         echo "morph-test: arming trial of slot b"
