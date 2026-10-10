@@ -24,6 +24,7 @@ needs, then gets out of the way.
 
 ## Documents
 
+0. [Strategy & Decisions](docs/00-strategy.md): **start here**. The wedge, product family, open core and honest limits
 1. [Vision & Principles](docs/01-vision-and-principles.md): what we're building and the rules we won't break
 2. [Use-Case Analysis](docs/02-use-case-analysis.md): working backwards from real workflows and the friction in them
 3. [System Architecture](docs/03-architecture.md): kernel, core services, layers
@@ -38,6 +39,9 @@ needs, then gets out of the way.
 12. [Radical Concepts](docs/12-radical-concepts.md): multiverse execution, precomputed futures, apps that dissolve into verbs, liquid processes, proof-carrying changes and more
 13. [Physics, Maths & the Real Speed Limits](docs/13-physics-and-math.md): where the actual limits are and where the wins come from
 14. [A Day in the Life](docs/14-day-in-the-life.md): scenarios that become demos
+15. [Self-Healing](docs/15-self-healing.md): **the flagship**. The healing ladder, Phoenix restore, and the "Try to Break It" demo
+16. [Interop & Morph Link](docs/16-interop-and-link.md): speaking every existing protocol, and the agent for Windows, macOS, Android and iOS
+17. [The Morpheus Family](docs/17-morpheus-family.md): how MorpheOS and Morpheus fit together
 
 ## The big reframe
 
@@ -50,5 +54,11 @@ and constraints into execution across devices). See [doc 12](docs/12-radical-con
 
 ## Status
 
-Design phase. Nothing in here is final. Every doc ends with open questions
-for that area.
+Design phase. Strategic decisions are recorded in [00](docs/00-strategy.md):
+
+- **The OS first**, with Morph Link for existing devices after it
+- **First famous for:** never breaking, and healing itself
+- **Open core**
+- **Part of the Morpheus family**
+
+Every doc ends with open questions for that area.

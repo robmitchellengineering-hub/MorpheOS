@@ -6,41 +6,43 @@ measurements show it's needed.
 
 ## Phase 0: Foundations (months 0–3)
 - [ ] Freeze v0 of this design, and write ADRs (architecture decision records) for the key choices
-- [ ] Draft the Manifest schema: system, services, capsules, sessions
-- [ ] Reference hardware: **Pi Zero 2 W**, **Pi 5**, one **x86 laptop** (Intel or AMD with an NPU) and one **ARM laptop**
-- [ ] Benchmark harness: automate the "Top 20 tasks" from [02](02-use-case-analysis.md) and measure them on Windows 11, macOS, Ubuntu and Fedora for baselines
-- [ ] Build system: reproducible images (mkosi or a custom tool), UKI, A/B roots
+- [ ] Draft the Manifest schema: system, services, capsules, sessions, **invariants**
+- [ ] Reference hardware: **Pi Zero 2 W**, **Pi 5**, one **x86 laptop**, and later one **ARM laptop**
+- [ ] Image factory: reproducible images (mkosi or custom), UKI, A/B roots, built on CI. Reuse Morpheus's image and flash pipeline patterns ([17](17-morpheus-family.md))
+- [ ] Benchmark harness: the "Top 20 tasks" ([02](02-use-case-analysis.md)) plus the **"Try to Break It" suite** ([15](15-self-healing.md)), with baselines on Windows 11, macOS and Ubuntu
 
-## Phase 1: "Morph userland" MVP (months 3–9)
-Goal: boot into MorpheOS on the reference hardware and show the core ideas.
-- [ ] `morphd`: PID 1 with the transaction engine, Manifest apply and rollback, and parallel boot
-- [ ] Strata v0: a Rust FUSE layer over btrfs or bcachefs, with versions, time travel, a metadata graph and full-text search
-- [ ] Capsules v0: rung 1 (Linux containers) and rung 3 (Wine), with prewarmed snapshots
-- [ ] Flow shell v0: a Smithay compositor with the Intent Bar and Sessions
-- [ ] Intent Engine v0: deterministic matchers plus a local small model through llama.cpp
-- [ ] `morph` CLI
-- **Demo:** double-click a Windows installer on an ARM laptop and it runs. Ask "Find the PDF Sam sent last week" and it's found. Break the Wi-Fi config and one click recovers it.
+## Phase 1: "Unbreakable" (months 3–9): the wedge
+Goal: a bootable MorpheOS that **cannot be broken**, on a Pi and an x86 laptop.
+- [ ] `morphd`: PID 1, the transaction engine, Manifest generations, invariant checks, parallel boot
+- [ ] Immutable, verified system image, A/B boot with boot counting, an immutable recovery image
+- [ ] Strata v0: a Rust layer over btrfs or bcachefs with continuous versions, file and folder rewind, metadata, and full-text search
+- [ ] Heal Engine v0: health probes, deterministic playbooks (boot, network, display, audio, disk), healing ladder H0–H4
+- [ ] Phoenix v0: encrypted replication to a second MorpheOS device or a USB disk, and bare-metal restore
+- [ ] Hardware health monitoring: NVMe/SMART, battery, thermals, SD wear
+- [ ] Minimal shell: the `morph` CLI, plus a simple compositor with a resilience status and a timeline/undo UI
+- **Exit criterion:** passes the full "Try to Break It" suite on both reference devices, publicly.
 
-## Phase 2: Daily-driver alpha (months 9–18)
-- [ ] Resource Governor with a sched_ext scheduler and intent classes
-- [ ] Device Broker: session-scoped devices and PipeWire integration, including the Studio audio profile
-- [ ] Capsules: Android, the FEX/box64 translation rung, and microVMs (Cloud Hypervisor)
-- [ ] The compatibility DB service
-- [ ] Configurator: first-boot AI setup, migration from Windows and macOS, diagnostic playbooks
-- [ ] Constellation mesh v0: device pairing, file sharing, compute offload
-- [ ] Seed profile: headless Pi Zero 2 W image under 64 MB RAM
+## Phase 2: "Daily driver" (months 9–18)
+- [ ] Capsules: Linux containers, Wine/Proton with prewarmed snapshots, Android, FEX/box64 translation, microVMs
+- [ ] Flow shell v1: Intent Bar, Sessions
+- [ ] Intent Engine plus Configurator: AI first-boot setup, AI diagnosis added to the Heal Engine playbooks, Windows and macOS migration import
+- [ ] Resource Governor (sched_ext, intent classes), Device Broker, Studio audio profile
+- [ ] Mesh v1 between MorpheOS devices: sharing, handoff, compute offload, mesh-based Phoenix
+- [ ] Heal recipe learning (opt-in, no user data)
+- [ ] "MorpheOS capsule" as a Morpheus build target
 
-## Phase 3: Beta + Fleet (months 18–30)
-- [ ] Strata v1 native on-disk format (if the v0 measurements justify it)
-- [ ] Semantic index and the Predictor (NPU acceleration)
-- [ ] Fleet Manifests, attestation, update rings, a web console
-- [ ] GPU-accelerated microVMs for rung 6
-- [ ] Security audit, and a public spec for the Manifest and capsule formats
+## Phase 3: "Everything talks" (months 18–30)
+- [ ] Interop protocols built into the OS ([16](16-interop-and-link.md)): SMB, Quick Share, casting, IPP, Matter, cloud drives, enterprise directory join
+- [ ] **Morph Link** on Windows, macOS, Android and iOS: mesh, sync, Phoenix key, and Windows healing
+- [ ] **Paid:** Fleet console (policy, attestation, rings), hosted relay, hosted encrypted backup, premium AI
+- [ ] Strata v1 native format (if measurements justify it), semantic index, Predictor
+- [ ] Security audit; publish the Manifest, capsule and heal-recipe specs
 
-## Phase 4: Research tracks (ongoing)
-- Morph kernel (a capability microkernel with Linux driver capsules)
-- Learned I/O prefetch and an energy-aware scheduler with power modelling
-- Cross-capsule content-addressed memory sharing
+## Phase 4: "Everywhere" (ongoing)
+- MorpheOS on unlocked phones, with convergence (the phone docks to become the desktop)
+- Morph kernel research (a capability microkernel with Linux driver capsules)
+- Doc 12 research tracks: precomputed futures, proof-carrying changes, liquid processes
+- Hardware and OEM partners, and a DRM certification path
 
 ## Proposed repository layout
 
@@ -51,6 +53,7 @@ morpheos/
 │   └── adr/
 ├── manifest/                 # Manifest schema + examples
 ├── crates/
+│   ├── heal/                 # heal engine, playbooks, phoenix
 │   ├── morphd/               # PID 1, transactions, service graph
 │   ├── morph-hal/            # kernel abstraction
 │   ├── strata/               # object store, graph, index, FUSE view
@@ -86,9 +89,9 @@ morpheos/
 | Mesh | WireGuard + Noise | Simple, secure |
 | Image build | mkosi or custom, UKI, systemd-boot-style loader | Reproducible, atomic |
 
-## First concrete steps (this week)
-1. Create the `morpheos` repo and copy this folder in as the root.
-2. Add `docs/adr/0001-linux-kernel-first.md` and `0002-rust-core.md`.
-3. Write the first draft of the Manifest schema with 3 example machines (Seed Pi, Desk laptop, Studio).
+## First concrete steps
+1. ADRs: `0001-linux-kernel-first`, `0002-rust-core`, `0003-unbreakable-wedge`, `0004-open-core-apache2`.
+2. Draft the Manifest schema with **invariants**, and 3 example machines (Seed Pi, Desk laptop, Studio).
+3. Image factory spike: build a bootable immutable Pi 5 image on CI with A/B roots and boot counting.
 4. Prototype `strata-fuse`: CoW versions plus `morph strata at <time> <path>`.
-5. Prototype the capsule planner on Wine: a prewarmed base with CoW clones, and measure cold vs warm launch.
+5. Prototype the Heal Engine loop with two playbooks (broken network config, failed boot) and healing rungs H2 and H3.
