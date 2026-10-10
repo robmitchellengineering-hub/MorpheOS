@@ -31,12 +31,21 @@ two automatic reboots.
 ## What is verified, and what is not
 
 The `images` workflow builds this image and then **reads it back**: the six
-`image-rota` partitions, the FAT boot selector, `autoboot.txt` and that its trial
-partition differs from its default, each slot's own `cmdline.txt`, and that **both**
-system partitions carry `morph-boot`, the health check and the **enabled** unit. The
-partition numbers `crates/morph-boot/src/pi.rs` hard-codes are compared against the
-image that was actually built, so a layout change cannot leave the code addressing a
-partition that is no longer a slot.
+`image-rota` partitions, the FAT boot selector, `autoboot.txt` with a **default** slot and
+a **different** trial slot in their own `[all]` and `[tryboot]` sections, both slots'
+boot partitions, and **both** system partitions carrying `morph-boot`, the health check,
+the Pi drop-in and the **enabled** unit. The partition numbers
+`crates/morph-boot/src/pi.rs` hard-codes are compared against the image that was actually
+built, so a layout change cannot leave the code addressing a partition that is no longer
+a slot.
+
+It also asserts the thing that actually decides which slot boots, which the first version
+of this check got wrong: **the per-slot root lives in `/etc/kernel/cmdline` inside each
+slot's rootfs**, not in a `cmdline.txt` on the boot partition. rpi-image-gen assembles it
+from the layers' `cmdline.d` fragments
+(`image/gpt/ab_userdata/image.d/for/linux-base/cmdline.d/50-slot` sets
+`root=/dev/disk/by-slot/active/system`), so both rootfs images must carry that line. Each
+slot's `cmdline.txt` was never in this layout.
 
 ⚠️ **A build is not a boot, and this check does not change that.** Nothing above proves
 the firmware boots the image, that the kernel starts, that systemd runs the health

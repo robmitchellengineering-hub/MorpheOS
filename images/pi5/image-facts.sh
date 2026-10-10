@@ -2,49 +2,60 @@
 # Gather the facts about a built Raspberry Pi image, for scripts/verify-pi-image.mjs
 # to assert on.
 #
-#   sudo images/pi5/image-facts.sh <image> > facts.txt
+#   sudo images/pi5/image-facts.sh <image> [path/to/pi.rs] > facts.txt
 #
 # WHY THIS IS A SEPARATE SCRIPT FROM THE ASSERTIONS, and why it is not a verifier
 # itself. Reading a 3.29 GiB disk image needs root, `losetup` and `mount`, none of
 # which exist on a development Mac — and building that image takes ~17 minutes in
 # CI. A single script that both read the image and judged it would therefore be
 # testable **nowhere except a CI run**, so every mistake in the judgement would
-# cost a build to discover.
+# cost a build to discover. This script only OBSERVES; the assertions live in the
+# .mjs, which takes a facts file and can therefore be run — and broken — anywhere.
 #
-# This script only OBSERVES. It asserts nothing and always exits 0 unless it
-# cannot open the image at all. The assertions live in the .mjs, which takes a
-# facts file, so it runs against captured or synthetic facts in a second, on any
-# machine — and can be shown to fail.
+# WHAT THE IMAGE ACTUALLY IS, learned from the first run rather than assumed:
+#   * GPT, six partitions, from rpi-image-gen's `image/gpt/ab_userdata` layer;
+#   * p1 vfat, label BOOTCONFIG — rw boot metadata, where `autoboot.txt` lives;
+#   * p2/p3 vfat, label BOOT — slot A's and slot B's boot files;
+#   * p4/p5 EROFS — the read-only system root of each slot
+#     (`IGconf_image_rootfs_type=erofs`, which is why blkid gives them no type and
+#     why a plain `mount` refuses them);
+#   * p6 ext4, label PERSISTENT — shared writable state.
 #
 # The output is line-oriented so the verifier's parser stays trivial:
 #
 #   image <bytes>
 #   table <label>
 #   partition <n> <size-bytes> <fstype> <label>
-#   mount <n> ok|failed
+#   mount <n> ok|failed [how] [why]
+#   probe <n> <blkid -p type or unknown>
+#   magic <n> <first 16 bytes, hex>
 #   file <n> <path> <bytes>|missing
-#   autoboot <key>=<value>
+#   content <n> <path> <text with \n and \t escaped>
+#   autoboot <section>.<key>=<value>
 #   const <NAME> <value>
 #   note <anything>
 #
 # A partition that will not mount is a FACT TO REPORT, not a reason to stop: the
-# verifier says which one and why, and the log keeps the rest.
+# verifier says which one, the reason is captured, and the log keeps the rest.
 set -uo pipefail
 
-IMG=${1:?usage: image-facts.sh <image>}
+IMG=${1:?usage: image-facts.sh <image> [path/to/pi.rs]}
 [ -f "$IMG" ] || { echo "no such image: $IMG" >&2; exit 1; }
-
-# Where the constants the image has to agree with are declared. Read from source
-# rather than repeated here, so the number lives in exactly one place.
 PI_RS=${2:-}
 
 say() { printf '%s\n' "$*"; }
 
-say "image $(stat -c %s "$IMG")"
+# Files small enough to print whole and text enough to be worth printing. This is
+# what turns "config.txt is 15 bytes" into a fact you can act on.
+dumpable() {
+    case "$1" in
+        autoboot.txt|config.txt|cmdline.txt|cmdline|issue|kernel/cmdline) return 0 ;;
+        *) return 1 ;;
+    esac
+}
 
-if command -v sfdisk >/dev/null; then
-    say "table $(sfdisk -d "$IMG" 2>/dev/null | sed -n 's/^label: //p' | head -1)"
-fi
+say "image $(stat -c %s "$IMG")"
+command -v sfdisk >/dev/null && say "table $(sfdisk -d "$IMG" 2>/dev/null | sed -n 's/^label: //p' | head -1)"
 
 LOOP=$(losetup -Pf --show "$IMG" 2>/dev/null) || LOOP=""
 if [ -z "$LOOP" ]; then
@@ -61,54 +72,77 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Enumerate the partitions the kernel actually produced for this loop device,
-# in numeric order, however the table names them.
-PARTS=$(ls -1 "${LOOP}"p* 2>/dev/null | sort -V)
-for dev in $PARTS; do
+# Try the filesystems this image is actually made of. A plain `mount` is not
+# enough: erofs is not autodetected by every kernel, and an ext4 whose journal is
+# unclean refuses a read-only mount unless told not to replay it (`noload`).
+mount_part() {
+    local dev=$1 dir=$2 spec t opts err
+    if mount -o ro "$dev" "$dir" 2>/tmp/.mnt.err; then echo "ok auto"; return 0; fi
+    for spec in "erofs:-t erofs -o ro" "ext4:-t ext4 -o ro,noload" "vfat:-t vfat -o ro"; do
+        t=${spec%%:*}; opts=${spec#*:}
+        # shellcheck disable=SC2086
+        if mount $opts "$dev" "$dir" 2>/tmp/.mnt.err; then echo "ok $t"; return 0; fi
+    done
+    err=$(tr -d '\n' < /tmp/.mnt.err | tail -c 160)
+    echo "failed - $err"
+    return 1
+}
+
+for dev in $(ls -1 "${LOOP}"p* 2>/dev/null | sort -V); do
     n=${dev##*p}
     size=$(blockdev --getsize64 "$dev" 2>/dev/null || echo 0)
-    fstype=$(blkid -o value -s TYPE "$dev" 2>/dev/null || echo none)
+    fstype=$(blkid -o value -s TYPE "$dev" 2>/dev/null || echo "")
     label=$(blkid -o value -s LABEL "$dev" 2>/dev/null || echo "")
     say "partition $n $size ${fstype:-none} ${label}"
 
     dir="$MNT/$n"
     mkdir -p "$dir"
-    if mount -o ro "$dev" "$dir" 2>/dev/null; then
-        say "mount $n ok"
-        # The paths that matter, each reported whether or not it is there: a
-        # verifier that only hears about successes cannot report a missing file.
-        for rel in autoboot.txt cmdline.txt config.txt usr/bin/morph-boot \
+    result=$(mount_part "$dev" "$dir")
+    say "mount $n $result"
+
+    if [ "${result%% *}" = "ok" ]; then
+        for rel in autoboot.txt cmdline.txt config.txt etc/kernel/cmdline usr/bin/morph-boot \
                    usr/lib/morpheos/boot-check usr/lib/morpheos/test-hook \
                    usr/lib/systemd/system/morph-boot-check.service \
                    usr/lib/systemd/system/morph-boot-check.service.d/10-pi.conf \
                    etc/systemd/system/multi-user.target.wants/morph-boot-check.service; do
             if [ -e "$dir/$rel" ]; then
                 say "file $n $rel $(stat -c %s "$dir/$rel" 2>/dev/null || echo 0)"
+                if dumpable "$rel" && [ "$(stat -c %s "$dir/$rel")" -lt 4096 ]; then
+                    # Escape newlines so one fact stays on one line.
+                    say "content $n $rel $(sed -e ':a' -e 'N' -e '$!ba' -e 's/\t/\\t/g' -e 's/\n/\\n/g' "$dir/$rel")"
+                fi
             else
                 say "file $n $rel missing"
             fi
         done
+        # autoboot.txt is SECTIONED, and the sections are the whole point: the
+        # default slot is `[all] boot_partition` and the trial is `[tryboot]
+        # boot_partition`. Flattening it — which the first version of this script
+        # did — turns two different settings into one key and invents a failure.
         if [ -f "$dir/autoboot.txt" ]; then
+            section=all
             while IFS= read -r line; do
-                # Only the entries the firmware format defines; anything else is
-                # passed through so the verifier can refuse an unknown key rather
-                # than silently ignore it.
+                line=$(printf '%s' "$line" | tr -d '[:space:]')
+                [ -n "$line" ] || continue
+                case "$line" in
+                    \[*\]) section=$(printf '%s' "$line" | tr -d '[]'); continue ;;
+                esac
                 key=${line%%=*}
-                val=${line#*=}
-                [ "$line" = "$key" ] && continue
-                key=$(printf '%s' "$key" | tr -d '[:space:]')
-                [ -n "$key" ] || continue
-                say "autoboot $key=$(printf '%s' "$val" | tr -d '[:space:]')"
+                [ "$key" != "$line" ] || continue
+                say "autoboot $section.$key=${line#*=}"
             done < "$dir/autoboot.txt"
         fi
     else
-        say "mount $n failed"
+        # Why not: what the kernel thinks is there, and the first bytes of it.
+        say "probe $n $(blkid -p -o value -s TYPE "$dev" 2>/dev/null || echo unknown)"
+        say "magic $n $(head -c 16 "$dev" 2>/dev/null | od -An -tx1 | tr -d '\n' | tr -s ' ')"
     fi
 done
 
-# The constants morph-boot's Pi backend hard-codes. The whole point of checking
-# the image is that these two facts — "partition 1 selects, 2 and 3 are the
-# slots" — must still be true of the image the firmware will actually boot.
+# The constants morph-boot's Pi backend hard-codes. The whole point of checking the
+# image is that these two facts — "partition 1 selects, 2 and 3 are the slots" —
+# must still be true of the image the firmware will actually boot.
 if [ -n "$PI_RS" ] && [ -f "$PI_RS" ]; then
     while IFS= read -r name value; do
         say "const $name $value"
