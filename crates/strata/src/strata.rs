@@ -127,8 +127,22 @@ impl Strata {
             .map_err(io(format!("writing {}", path.display())))
     }
 
-    /// Every alert recorded so far, oldest first.
+    /// One alert per burst, oldest burst first, each in its latest version: a burst
+    /// is re-recorded as it reaches new folders (see [`Alert`]), and acting on an
+    /// earlier version would leave those folders encrypted.
     pub fn alerts(&self) -> Result<Vec<Alert>> {
+        let mut out: Vec<Alert> = Vec::new();
+        for a in self.alert_records()? {
+            match out.iter_mut().find(|o| o.first_ts == a.first_ts) {
+                Some(o) => *o = a,
+                None => out.push(a),
+            }
+        }
+        Ok(out)
+    }
+
+    /// Every line of `alerts.jsonl`, as written.
+    fn alert_records(&self) -> Result<Vec<Alert>> {
         let path = self.root.join("alerts.jsonl");
         let text = match fs::read_to_string(&path) {
             Ok(t) => t,

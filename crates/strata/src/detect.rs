@@ -36,10 +36,16 @@ pub const MIN_SIZE: u64 = 1024;
 /// Hits further apart than this belong to different bursts.
 pub const MAX_GAP: i64 = 10 * SECOND;
 
+/// One burst. While the burst goes on, the detector re-issues it each time the
+/// attack reaches a folder it had not touched yet; `first_ts` identifies the burst,
+/// and the latest version of it is the one to act on.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Alert {
     pub first_ts: i64,
+    /// Files hit so far, when this version of the alert was issued.
     pub files: usize,
+    /// Every folder the burst has hit so far. The rewind advice is one rewind per
+    /// folder, so a folder missing here is a folder left encrypted.
     #[serde(serialize_with = "lossy_set")]
     pub folders: BTreeSet<PathBuf>,
     /// Rewind to this moment to get the files back.
@@ -59,7 +65,8 @@ pub struct Detector {
     deleted_plain: VecDeque<(i64, PathBuf)>,
     /// High-entropy files created recently, not yet matched: (time, path).
     new_cipher: VecDeque<(i64, PathBuf)>,
-    alerted: bool,
+    /// The burst already alerted on, kept up to date while it continues.
+    current: Option<Alert>,
 }
 
 impl Default for Detector {
@@ -121,7 +128,7 @@ impl Detector {
             hits: VecDeque::new(),
             deleted_plain: VecDeque::new(),
             new_cipher: VecDeque::new(),
-            alerted: false,
+            current: None,
         }
     }
 
@@ -138,7 +145,7 @@ impl Detector {
             }
         }
         if self.hits.is_empty() {
-            self.alerted = false; // quiet for a whole window: the next burst alerts again
+            self.current = None; // quiet for a whole window: the next burst alerts again
         }
 
         let dir = folder(&new.path);
@@ -169,9 +176,15 @@ impl Detector {
         if !suspicious {
             return None;
         }
-        self.hits.push_back((now, dir));
-        if self.alerted {
-            return None;
+        self.hits.push_back((now, dir.clone()));
+        if let Some(alert) = &mut self.current {
+            // The attack goes on after the alert, and ransomware walks folders one
+            // after another: the first alert can easily have seen only the first
+            // folder. Re-issue it when a new folder is hit, so the rewind advice
+            // covers everything. Found by the VM test: the first 8 hits were all in
+            // `Documents/clients`, and the 16 files in `Documents` stayed encrypted.
+            alert.files += 1;
+            return alert.folders.insert(dir).then(|| alert.clone());
         }
         // Only the dense run of hits ending now counts. An attack is fast; a
         // stray coincidence (someone deleted a document and saved a photo in the
@@ -185,9 +198,8 @@ impl Detector {
         if burst < self.threshold {
             return None;
         }
-        self.alerted = true;
         let first_ts = self.hits[start].0;
-        Some(Alert {
+        let alert = Alert {
             first_ts,
             files: burst,
             folders: self
@@ -197,7 +209,9 @@ impl Detector {
                 .map(|(_, d)| d.clone())
                 .collect(),
             rewind_to: first_ts - SECOND,
-        })
+        };
+        self.current = Some(alert.clone());
+        Some(alert)
     }
 }
 
@@ -232,6 +246,37 @@ mod tests {
         assert_eq!(alerts[0].first_ts, 100 * SECOND);
         assert_eq!(alerts[0].rewind_to, 99 * SECOND);
         assert_eq!(alerts[0].files, 5);
+    }
+
+    #[test]
+    fn an_attack_that_moves_on_to_another_folder_updates_the_alert() {
+        // The VM test's shape: the first folder alone is enough to trigger the
+        // alert, and the attack reaches the next folder only afterwards.
+        let mut d = Detector::new(60 * SECOND, 4);
+        let mut alerts = Vec::new();
+        let mut t = 100;
+        for dir in ["/docs/clients", "/docs", "/docs/clients"] {
+            for i in 0..6 {
+                let p = format!("{dir}/f{i}-{t}.txt");
+                alerts.extend(d.observe(
+                    Some(&v(&p, 0, Kind::File, 4.0)),
+                    &v(&p, t * SECOND, Kind::File, 7.99),
+                ));
+                t += 1;
+            }
+        }
+        // One alert, then one update when /docs was reached; going back to a
+        // folder already named adds nothing.
+        assert_eq!(alerts.len(), 2, "{alerts:#?}");
+        assert_eq!(alerts[0].folders.len(), 1);
+        let last = &alerts[1];
+        assert_eq!(last.first_ts, alerts[0].first_ts, "same burst");
+        assert_eq!(last.rewind_to, alerts[0].rewind_to);
+        assert_eq!(
+            last.folders,
+            ["/docs", "/docs/clients"].map(PathBuf::from).into()
+        );
+        assert_eq!(last.files, 7, "4 to alert, 2 more in clients, 1 in /docs");
     }
 
     #[test]

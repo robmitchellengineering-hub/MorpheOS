@@ -215,12 +215,20 @@ fn a_folder_survives_ransomware_and_the_rewind_can_be_undone() {
     assert!(victims >= 10, "attack touched only {victims} files");
 
     // The detector noticed, and its rewind point is after the good state and before the attack.
-    let alert = watch.alerts.try_recv().expect("ransomware alert");
+    // The burst is re-issued as it reaches new folders; the last version is the one to act on.
+    let alert = watch.alerts.try_iter().last().expect("ransomware alert");
     assert!(
         alert.rewind_to > good_at,
         "rewind point is before the good state"
     );
     assert!(alert.files >= 8);
+    // Both folders the attack touched, or the rewind advice leaves one encrypted.
+    let canon = docs.canonicalize().unwrap();
+    assert!(
+        alert.folders.contains(&canon) && alert.folders.contains(&canon.join("2026/clients")),
+        "alert names {:?}",
+        alert.folders
+    );
 
     // The alert is in the store, not only in the event stream: the heal engine and
     // the shell read it later, possibly after a reboot, from a fresh handle.
