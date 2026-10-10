@@ -159,12 +159,30 @@ for dev in $(ls -1 "${LOOP}"p* 2>/dev/null | sort -V); do
             done < "$dir/autoboot.txt"
         fi
     else
-        # Why not: what the kernel thinks is there, and the first bytes of the
-        # superblock. BOTH erofs and ext4 put their superblock at offset 1024 — an
-        # earlier version of this read offset 0, which is zeros for both and told
-        # us nothing.
+        # Why not: what the kernel thinks is there, and the superblock itself.
+        # BOTH erofs and ext4 put their superblock at offset 1024 — an earlier version
+        # of this read offset 0, which is zeros for both and told us nothing.
         say "probe $n $(blkid -p -o value -s TYPE "$dev" 2>/dev/null || echo unknown)"
-        say "magic $n $(dd if="$dev" bs=1 skip=1024 count=8 2>/dev/null | od -An -tx1 | tr -d '\n' | tr -s ' ')"
+        sb=$(dd if="$dev" bs=1 skip=1024 count=64 2>/dev/null | od -An -tx1 | tr -d ' \n')
+        say "magic $n ${sb:0:8} ${sb:8:8}"
+        # An EROFS superblock, decoded enough to judge the filesystem without a
+        # reader for it. THIS IS WHY IT MATTERS HERE: the slot rootfs is EROFS with a
+        # **16 KiB block size** (the Pi 5's page size, from
+        # `IGconf_fs_erofs_mkfs_args=-b ${IGconf_linux_page_size}`), and NO tool on a
+        # GitHub runner can read it — the kernel has no erofs driver at all
+        # (`kernel erofs=no`) and userspace `fsck.erofs` refuses 16 KiB blocks
+        # ("blksize 16384 isn't supported on this platform"). So "the rootfs would
+        # not mount" is a fact about the RUNNER, not about the image.
+        #
+        # struct erofs_super_block: magic u32 @0, blkszbits u8 @12, blocks u32 @36.
+        if [ "${sb:0:8}" = "e2e1f5e0" ]; then
+            bits=$(dd if="$dev" bs=1 skip=$((1024 + 12)) count=1 2>/dev/null | od -An -tu1 | tr -d ' ')
+            blocks=$(dd if="$dev" bs=1 skip=$((1024 + 36)) count=4 2>/dev/null | od -An -tu4 | tr -d ' ')
+            size=$(( (1 << ${bits:-0}) * ${blocks:-0} ))
+            say "erofs $n magic=ok blocksize=$((1 << ${bits:-0})) blocks=${blocks:-0} bytes=$size"
+        else
+            say "erofs $n magic=bad"
+        fi
     fi
 done
 

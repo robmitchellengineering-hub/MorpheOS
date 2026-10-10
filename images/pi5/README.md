@@ -33,11 +33,11 @@ two automatic reboots.
 The `images` workflow builds this image and then **reads it back**: the six
 `image-rota` partitions, the FAT boot selector, `autoboot.txt` with a **default** slot and
 a **different** trial slot in their own `[all]` and `[tryboot]` sections, both slots'
-boot partitions, and **both** system partitions carrying `morph-boot`, the health check,
-the Pi drop-in and the **enabled** unit. The partition numbers
-`crates/morph-boot/src/pi.rs` hard-codes are compared against the image that was actually
-built, so a layout change cannot leave the code addressing a partition that is no longer
-a slot.
+boot partitions, and — where the rootfs can be read — **both** system partitions carrying
+`morph-boot`, the health check, the Pi drop-in and the **enabled** unit. The partition
+numbers `crates/morph-boot/src/pi.rs` hard-codes are compared against the image that was
+actually built, so a layout change cannot leave the code addressing a partition that is no
+longer a slot.
 
 It also asserts the thing that actually decides which slot boots, which the first version
 of this check got wrong: **the per-slot root lives in `/etc/kernel/cmdline` inside each
@@ -46,6 +46,16 @@ from the layers' `cmdline.d` fragments
 (`image/gpt/ab_userdata/image.d/for/linux-base/cmdline.d/50-slot` sets
 `root=/dev/disk/by-slot/active/system`), so both rootfs images must carry that line. Each
 slot's `cmdline.txt` was never in this layout.
+
+⚠️ **The slot rootfs cannot be read on a CI runner, and that is a fact about the runner.**
+It is EROFS with a **16 KiB block size** — the Pi 5's page size, from
+`IGconf_fs_erofs_mkfs_args=-b ${IGconf_linux_page_size}` — and a GitHub runner can read it
+neither way: the kernel has no erofs driver (`kernel erofs=no`) and userspace `fsck.erofs`
+refuses 16 KiB blocks (*"blksize 16384 isn't supported on this platform"*). So when the
+rootfs will not mount, the check holds the image to what **is** verifiable: a valid EROFS
+superblock at offset 1024 whose declared size covers the partition. **The contents of the
+two rootfs images are therefore not verified in CI.** It took three runs to establish
+that, because the first version reported this runner limitation as a broken image.
 
 ⚠️ **A build is not a boot, and this check does not change that.** Nothing above proves
 the firmware boots the image, that the kernel starts, that systemd runs the health

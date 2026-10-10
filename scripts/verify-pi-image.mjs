@@ -72,6 +72,14 @@ function parseFacts(text) {
       const text_ = rest.slice(2).join(" ").replace(/\\n/g, "\n").replace(/\\t/g, "\t");
       const p = f.parts.get(n);
       if (p) p.content.set(path, text_);
+    } else if (kind === "erofs") {
+      // A decoded EROFS superblock. Present when the partition could not be mounted:
+      // the slot rootfs uses a 16 KiB block size that nothing on a CI runner can
+      // read, so the superblock is the evidence available.
+      const n = Number(rest[0]);
+      const kv = Object.fromEntries(rest.slice(1).map((s) => s.split("=")));
+      const p = f.parts.get(n);
+      if (p) p.erofs = { magic: kv.magic, blocksize: Number(kv.blocksize) || 0, blocks: Number(kv.blocks) || 0, bytes: Number(kv.bytes) || 0 };
     } else if (kind === "autoboot") {
       const [kv] = rest;
       const i = kv.indexOf("=");
@@ -163,16 +171,39 @@ const CHECKS = [
     return bad;
   }],
 
-  ["both system partitions are readable and carry morph-boot and the health check", (f) => {
+  ["both system partitions hold a filesystem that covers them, and morph-boot where readable", (f) => {
     // A slot that boots but cannot check itself can never commit or fall back, so
-    // each of the two needs the whole set. A missing one in slot B is exactly the
-    // failure a self-test image is supposed to catch. The rootfs is EROFS, so the
-    // fstype is NOT asserted — whether it mounted is the fact that matters.
+    // each of the two needs the whole set — but ONLY the mountable case can be held
+    // to that, and the distinction is the whole point of this check.
+    //
+    // The slot rootfs is EROFS with a **16 KiB block size** (the Pi 5's page size).
+    // A GitHub runner can read neither way: the kernel has no erofs driver
+    // (`kernel erofs=no`) and userspace `fsck.erofs` rejects 16 KiB blocks
+    // ("blksize 16384 isn't supported on this platform"). So "it would not mount" is
+    // a fact about the RUNNER, and treating it as a failure reported a perfectly good
+    // image as broken for three runs. When it cannot be mounted, the check holds the
+    // image to what IS verifiable: a valid EROFS superblock at offset 1024 whose
+    // declared size covers the partition. That is strictly more than "a file
+    // appeared", and it is honest about what it could not read.
     const bad = [];
     for (const n of [4, 5]) {
       const p = f.parts.get(n);
       if (!p) { bad.push(`partition ${n} is missing`); continue; }
-      if (!p.mounted) { bad.push(`partition ${n} (a slot rootfs) would not mount, so its contents were not read`); continue; }
+
+      if (!p.mounted) {
+        if (!p.erofs || p.erofs.magic !== "ok") {
+          bad.push(`partition ${n} would not mount AND has no valid EROFS superblock, so it holds no filesystem this check can see`);
+          continue;
+        }
+        // The superblock must describe a filesystem that spans the partition; a
+        // truncated or misplaced image would fail this even with a good magic.
+        const slack = p.size * 0.05;
+        if (Math.abs(p.erofs.bytes - p.size) > slack) {
+          bad.push(`partition ${n} is ${p.size} bytes but its EROFS superblock describes ${p.erofs.bytes} (blocksize ${p.erofs.blocksize} x ${p.erofs.blocks} blocks)`);
+        }
+        continue;   // contents unreadable here BY THE RUNNER, not by fault of the image
+      }
+
       if (!present(p, "usr/bin/morph-boot")) bad.push(`partition ${n} has no /usr/bin/morph-boot`);
       if (!present(p, "usr/lib/morpheos/boot-check")) bad.push(`partition ${n} has no /usr/lib/morpheos/boot-check`);
       if (!present(p, "usr/lib/systemd/system/morph-boot-check.service")) bad.push(`partition ${n} has no morph-boot-check.service`);
@@ -284,7 +315,8 @@ if (args.includes("--self-test")) {
     ["slot B missing the health check unit", (f) => { f.parts.get(5).files.delete("usr/lib/systemd/system/morph-boot-check.service"); }],
     ["slot B's unit not enabled", (f) => { f.parts.get(5).files.delete("etc/systemd/system/multi-user.target.wants/morph-boot-check.service"); }],
     ["the self-test hook missing", (f) => { f.parts.get(4).files.delete("usr/lib/morpheos/test-hook"); }],
-    ["a rootfs that would not mount", (f) => { f.parts.get(4).mounted = false; }],
+    ["a rootfs that would not mount and holds no filesystem", (f) => { const p = f.parts.get(4); p.mounted = false; delete p.erofs; }],
+    ["an erofs superblock that does not cover the partition", (f) => { f.parts.get(4).mounted = false; f.parts.get(4).erofs = { magic: "ok", blocksize: 16384, blocks: 1024, bytes: 16384 * 1024 }; }],
     ["a persistent partition with no filesystem", (f) => { f.parts.get(6).fstype = "none"; }],
   ];
 
@@ -297,6 +329,29 @@ if (args.includes("--self-test")) {
   } else {
     console.log("  ok    the good fixture passes");
   }
+
+  // A SECOND good fixture, and it is the one CI actually produces: the rootfs cannot
+  // be mounted on a runner (16 KiB EROFS, no reader), so it must PASS on the strength
+  // of a valid superblock. Without this case the acceptance path is untested and the
+  // check could silently start demanding a mount again — which is exactly the bug
+  // that reported a good image as broken for three runs.
+  const unmountable = clone(good);
+  for (const n of [4, 5]) {
+    const p = unmountable.parts.get(n);
+    p.mounted = false;
+    p.files = new Map();
+    p.content = new Map();
+    p.erofs = { magic: "ok", blocksize: 16384, blocks: p.size / 16384, bytes: p.size };
+  }
+  const un = run(unmountable);
+  if (un.length) {
+    bad++;
+    console.log("FAIL  an unmountable-but-valid EROFS rootfs is rejected — CI produces exactly this:");
+    for (const { name, complaints } of un) console.log(`        ${name}: ${complaints.join("; ")}`);
+  } else {
+    console.log("  ok    a valid EROFS rootfs passes without being mountable (the CI case)");
+  }
+
   for (const [what, sabotage] of sabotages) {
     const f = clone(good);
     sabotage(f);
@@ -304,7 +359,9 @@ if (args.includes("--self-test")) {
     console.log(`  ${caught ? "ok   " : "FAIL "} ${caught ? "caught" : "MISSED"}: ${what}`);
     if (!caught) bad++;
   }
-  console.log(`\nself-test: ${sabotages.length + 1 - bad}/${sabotages.length + 1} (every sabotage must be caught)`);
+  // Two good fixtures (mounted and unmountable-but-valid) plus every sabotage.
+  const total = sabotages.length + 2;
+  console.log(`\nself-test: ${total - bad}/${total} (both good fixtures must pass, every sabotage must be caught)`);
   process.exit(bad ? 1 : 0);
 }
 
