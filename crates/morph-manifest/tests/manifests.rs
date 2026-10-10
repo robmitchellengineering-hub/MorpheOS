@@ -55,8 +55,11 @@ fn profiles_apply_their_defaults() {
         studio.system.kernel,
         morph_manifest::model::KernelVariant::Rt
     );
+    // `is_ok()`, not "no findings at all": a valid Manifest now carries exactly one
+    // W-UNENFORCED advisory naming the settings nothing reads yet. That is a warning by
+    // design, not a defect in the profile — the profile is what sets several of them.
     assert!(
-        validate(&studio).findings.is_empty(),
+        validate(&studio).is_ok(),
         "{:#?}",
         validate(&studio).findings
     );
@@ -165,5 +168,83 @@ fn schema_names_every_section() {
         "machine", "system", "storage", "heal", "network", "users", "services", "capsules",
     ] {
         assert!(props.contains_key(key), "schema is missing {key}");
+    }
+}
+
+#[test]
+fn every_unenforced_setting_still_exists_in_the_schema() {
+    // The list of unenforced settings is the one place a field's absence of an
+    // implementation is recorded, so the PATHS in it are the thing that rots: rename
+    // `max_boot_attempts` and the warning keeps printing a path that is not there.
+    // Walking the generated schema is what makes that a build failure instead.
+    let schema = morph_manifest::json_schema();
+
+    // schemars emits `{"$ref": "#/$defs/Boot"}` for a nested struct rather than inlining
+    // it, so a walk that only reads `properties` stops one level above every leaf. The
+    // first version of this test did exactly that and failed on its own paths.
+    fn resolve<'a>(
+        schema: &'a serde_json::Value,
+        node: &'a serde_json::Value,
+    ) -> &'a serde_json::Value {
+        match node.get("$ref").and_then(serde_json::Value::as_str) {
+            Some(r) => {
+                let name = r.rsplit('/').next().unwrap_or_default();
+                schema
+                    .get("$defs")
+                    .and_then(|d| d.get(name))
+                    .unwrap_or(node)
+            }
+            None => node,
+        }
+    }
+
+    let mut missing = Vec::new();
+    for (path, _) in morph_manifest::unenforced_settings() {
+        let mut node = resolve(&schema, &schema);
+        for segment in path.trim_start_matches('/').split('/') {
+            let next = resolve(&schema, node)
+                .get("properties")
+                .and_then(|p| p.get(segment));
+            match next {
+                Some(next) => node = next,
+                None => {
+                    missing.push(*path);
+                    break;
+                }
+            }
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "these paths are no longer in the Manifest schema, so their warning can never fire: {missing:?}"
+    );
+}
+
+#[test]
+fn a_manifest_names_the_settings_nothing_enforces() {
+    let m = resolve(&with(""), "t").unwrap();
+    let warnings: Vec<_> = validate(&m)
+        .findings
+        .into_iter()
+        .filter(|f| f.code == "W-UNENFORCED")
+        .collect();
+
+    // ONE grouped warning, not one per field: six warnings on every validate would
+    // teach people to ignore warnings, and an ignored warning is not a check.
+    assert_eq!(
+        warnings.len(),
+        1,
+        "expected one grouped warning: {warnings:#?}"
+    );
+    assert!(
+        !validate(&m).is_ok() || warnings[0].code == "W-UNENFORCED",
+        "the advisory must not be an error"
+    );
+    for (path, _) in morph_manifest::unenforced_settings() {
+        assert!(
+            warnings[0].message.contains(path),
+            "the warning must name {path}: {}",
+            warnings[0].message
+        );
     }
 }

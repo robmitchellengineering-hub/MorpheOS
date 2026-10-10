@@ -277,6 +277,47 @@ fn invariants(m: &Manifest, r: &mut Report) {
     }
 }
 
+/// Manifest settings that are parsed and validated and **read by no component**.
+///
+/// WHY THIS IS A LIST AND NOT A SILENCE. A configuration field that nothing obeys is
+/// worse than a missing one: this Manifest is the contract between the operator, the AI
+/// and the system, so a field that looks implemented and does nothing is a promise the
+/// system does not keep. Six had accumulated here before anything noticed (2026-10-10)
+/// — among them `boot.max_boot_attempts`, which `docs/15-self-healing.md` leans on for
+/// *"boot counting: 3 failed boots trigger an automatic fallback"* while the A/B design
+/// in `morph-boot` actually falls back after **one**, because the firmware's trial is
+/// one-shot by construction. That is a real design question, not a missing loop, and it
+/// is now visible in the tool instead of in a conversation.
+///
+/// ONE GROUPED WARNING, not one per field: six warnings on every validate would train
+/// people to ignore warnings, which is its own failure mode.
+///
+/// **Deleting a line here is part of implementing the field.** `tests/manifests.rs`
+/// fails if a path stops matching the schema, so a rename cannot silently retire a
+/// warning — the check is on the path, and the path is the thing that rots.
+pub fn unenforced_settings() -> &'static [(&'static str, &'static str)] {
+    &[
+        ("/system/channel", "no component reads a release channel"),
+        (
+            "/system/update_ring",
+            "update rings are Fleet-tier and not built",
+        ),
+        (
+            "/system/boot/max_boot_attempts",
+            "the trial is one-shot, so a failed boot already falls back after one; nothing counts attempts",
+        ),
+        (
+            "/storage/retention",
+            "the retention policy is advisory; nothing evicts on it yet",
+        ),
+        ("/heal/max_auto_rung", "there is no heal engine yet"),
+        (
+            "/heal/ask_after_failed_rungs",
+            "there is no heal engine yet",
+        ),
+    ]
+}
+
 fn advisories(m: &Manifest, r: &mut Report) {
     let networked = m.network.ethernet || !m.network.wifi.is_empty();
     for x in &m.storage.replicas {
@@ -291,6 +332,19 @@ fn advisories(m: &Manifest, r: &mut Report) {
             );
         }
     }
+
+    // What this Manifest says that nothing acts on. One line, and it is true.
+    let unenforced = unenforced_settings();
+    let names: Vec<&str> = unenforced.iter().map(|(p, _)| *p).collect();
+    r.warn(
+        "W-UNENFORCED",
+        "/",
+        format!(
+            "{} setting(s) in this Manifest are accepted and enforced by nothing yet: {} — they describe behaviour the system does not have. Setting them is harmless; nothing reads them today.",
+            unenforced.len(),
+            names.join(", ")
+        ),
+    );
 
     let rt = m.system.kernel == KernelVariant::Rt;
     if rt && m.machine.profile != Profile::Studio {
