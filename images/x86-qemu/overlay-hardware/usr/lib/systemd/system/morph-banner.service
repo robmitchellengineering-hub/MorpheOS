@@ -1,0 +1,15 @@
+[Unit]
+Description=MorpheOS: say which slot is in force, on the screen
+After=morph-boot-check.service
+Wants=morph-boot-check.service
+# The screen is the only console on a laptop whose serial port nobody is watching.
+RequiresMountsFor=/efi
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# `morph-boot status` needs the ESP mounted, which the mount above guarantees.
+ExecStart=/bin/sh -c 'status=$(/usr/bin/morph-boot status 2>&1); for t in /dev/tty1 /dev/console; do [ -w "$t" ] && printf "\nMorpheOS: %s\n\n" "$status" > "$t"; done; echo "morph-banner: $status"'
+
+[Install]
+WantedBy=multi-user.target

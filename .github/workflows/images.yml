@@ -57,6 +57,38 @@ jobs:
             echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
             sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
           fi
+      # ⚠️ FIRST, AND BEFORE THE SCENARIOS. This is the image a PERSON boots — the one that
+      # goes on real hardware — and it is built and published before any test that might fail,
+      # so a red scenario cannot cost us the artefact somebody is waiting for. `if: always()`
+      # on the upload keeps that true even if a later step goes red.
+      - name: Build the image a person can use
+        run: |
+          sudo images/x86-qemu/build.sh "$RUNNER_TEMP/img" plain
+          # `build.sh` runs as root, so the work directory is root-owned and the next step —
+          # which runs as the runner user — cannot create the compressed copy beside it.
+          # (`xz: ...: Permission denied`, which cost a run.)
+          sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/img"
+      - name: Boot the image a person can use
+        run: sudo images/x86-qemu/test-boot.sh "$RUNNER_TEMP/img" 150
+      # The raw disk is ~4.5 GiB of mostly empty ext4; `xz` makes it a download rather than a
+      # transfer. Level 3 with threads: this is a convenience, not an archive.
+      #
+      # `if: always()` — the first version ran this after the boot check without it, so a FAILED
+      # check published nothing: a red test cost exactly the artifact the test exists to protect.
+      # The raw disk is then dropped, because the scenarios that follow need the room.
+      - name: Compress the hardware image, and drop the raw one
+        if: always()
+        run: |
+          xz -T0 -3 -k -f "$RUNNER_TEMP/img/disk-plain.img"
+          rm -f "$RUNNER_TEMP/img/disk-plain.img" "$RUNNER_TEMP/img/disk-plain.vars.fd"
+      - name: Keep the hardware image
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: morpheos-x86-usb
+          path: ${{ runner.temp }}/img/disk-plain.img.xz
+          if-no-files-found: ignore
+          retention-days: 30
       # Both sides of this step existed and both are real: this branch adds the Strata
       # ransomware test, and `main` grew the `heal` scenario. Kept both — a merge that
       # drops one of them is the quiet way to lose a test.

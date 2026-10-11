@@ -1,0 +1,40 @@
+MorpheOS x86 test image
+=======================
+
+This image exists so the A/B update path can be used by hand on real hardware.
+It is not a product and it is not hardened: root has no password and logs in
+automatically on the local console and on the serial port. There is no network
+configured, deliberately — everything below works offline, from a second USB
+stick.
+
+What it is
+----------
+Two system slots (root-a, root-b) on this disk, chosen by systemd-boot, with the
+boot history on the FAT partition this file is on. Only one slot is ever
+"committed" at a time; the other can be updated and trialled, and a trial that
+does not pass its health check is abandoned on the next boot.
+
+The wedge, by hand
+------------------
+  morph-boot status                 which slot is booted, which is committed
+  morph-boot trial b                boot slot b once; commit it if it is healthy
+
+To try an update you need a second USB stick built by
+`images/x86-qemu/build-payload.sh` (it carries `morph-update` and a sealed
+payload). Plug it in and the tool finds it by its label:
+
+  morph-update --esp /efi --root <the inactive slot's device> \
+      --payload /mnt/payload install
+
+The inactive slot's device is whichever of /dev/disk/by-partlabel/root-a or
+root-b is NOT the booted slot — `morph-boot status` says which.
+
+Reading the result afterwards
+-----------------------------
+Put this disk back in your computer and open the FAT partition:
+
+  /morph-boot/history.jsonl         one line per boot: slot/phase/action
+  /MORPH-TEST-RESULT.TXT            written by the self-test image, not by this one
+
+A boot that fell back reads `.../fallback`; a trial that was accepted reads
+`.../committed`.
