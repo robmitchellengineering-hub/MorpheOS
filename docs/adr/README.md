@@ -14,3 +14,4 @@ after it's accepted. A later ADR supersedes it instead.
 | [0007](0007-strata-v0-watcher.md) | Strata v0: inotify watcher plus content-addressed store, not FUSE; rewind never destroys | Accepted |
 | [0008](0008-one-try-trial.md) | A trial boot gets exactly one try; no boot counter | Accepted |
 | [0009](0009-heal-ladder.md) | The heal ladder: six rungs H0–H5 with Phoenix as H5, consent only where data can be lost, and which rungs exist today | Accepted |
+| [0010](0010-flow-shell-first.md) | The Flow shell is built first: a Smithay compositor, and no stock desktop stands in for it | Accepted |
