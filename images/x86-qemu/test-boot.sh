@@ -38,27 +38,32 @@ if [ "$code" != 124 ]; then
     fail=1
 fi
 
-# A console a person can reach. `agetty` prints `/etc/issue` on the console it owns, which is
-# the banner in this image — and with the autologin drop-in it then starts a shell without
-# asking for a password. Either marker will do: a login prompt means the password path was
-# reached, the banner means a getty is live on this console either way.
-if grep -aqE 'never breaks, and heals itself|login:' "$LOG"; then
-    echo "    console reached: $(grep -aoE 'never breaks, and heals itself|[a-z0-9-]* login:' "$LOG" | tail -1)"
+# ⚠️ A GETTY PRINTING A BANNER IS NOT A PERSON BEING ABLE TO USE THE MACHINE. The first version
+# of this check accepted `morpheos-a login:` — which is exactly what it looks like when a login
+# prompt is waiting for a password that this image never sets. The marker below is printed by
+# /root/.profile, so it appears only if a login actually COMPLETED and started a shell.
+if grep -aq 'MORPHEOS CONSOLE READY' "$LOG"; then
+    echo "    console: a login completed with nothing typed — $(grep -ao 'MORPHEOS CONSOLE READY.*' "$LOG" | tail -1)"
 else
-    echo "    FAIL: no getty output on the console — the machine booted but nobody can use it"
+    echo "    FAIL: no completed login on the console. A prompt nobody can answer is not a usable image:"
+    grep -aoE '[a-z0-9-]* login:|MORPHEOS CONSOLE READY' "$LOG" | tail -3 | sed 's/^/      /'
     tail -5 "$LOG" | sed 's/^/      /'
     fail=1
 fi
 
 # And the boot decision, from the disk rather than the console: slot A is committed, and the
 # history has exactly one line, which is what "no trial, no fallback" looks like.
-history=$(mtype -i "$DISK@@1M" ::/morph-boot/history.jsonl 2>/dev/null || true)
+# The same parse the other scenarios use — the file holds one JSON record per boot, not the
+# `<slot>/<phase>/<action>` summary this prints. Reading it as if it were already summarised was
+# the second bug this check found in itself.
+history=$(mtype -i "$DISK@@1M" ::/morph-boot/history.jsonl 2>/dev/null |
+    sed -nE 's/.*"booted":"([ab])".*"phase":"([a-z]+)".*"action":"([a-z-]+)".*/\1\/\2\/\3/p')
 echo "    boots:   $(echo "$history" | tr '\n' ' ')"
 if [ -z "$history" ]; then
     echo "    FAIL: the image recorded no boot history at all"
     fail=1
-elif ! echo "$history" | grep -q '^a/committed/none$'; then
-    echo "    FAIL: expected slot A committed with nothing to fall back from"
+elif [ "$(echo "$history" | tr '\n' ' ' | tr -s ' ')" != "a/committed/none " ]; then
+    echo "    FAIL: expected exactly one boot, slot A committed with nothing to fall back from"
     fail=1
 fi
 

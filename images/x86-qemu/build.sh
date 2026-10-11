@@ -98,6 +98,11 @@ EOF
     if [ "$HARDWARE" = 1 ]; then
         ln -sf /usr/lib/systemd/system/morph-banner.service \
             "$dir/etc/systemd/system/multi-user.target.wants/morph-banner.service"
+        # The overlay is what makes the console reachable at all. Assert it landed, because a
+        # copy that silently did nothing would leave an image that looks right and cannot be
+        # logged into — and the CI check would be looking for its own marker.
+        [ -f "$dir/root/.profile" ] \
+            || { echo "the hardware overlay did not land in $dir" >&2; exit 1; }
         # ⚠️ A VM IS NOT A LAPTOP, AND THE KERNEL IS WHERE THAT BITES.
         #
         # This image is meant to boot from a USB stick on real hardware, and the drivers it
