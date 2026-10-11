@@ -41,3 +41,10 @@ jobs:
       # the failure that matters and it is invisible to an exit code alone.
       - name: Prove `apply` refuses what it must, and writes nothing when it does
         run: bash scripts/verify-apply-cli.sh
+      # The transaction's contract is wider than an exit code: a check that fails or never
+      # finishes must leave the machine on the generation it was on before, and committed is
+      # the only state that keeps a trial. `cargo test` calls the library directly, so the
+      # ordering a caller imposes — recover, arm, apply, check, commit or roll back — is
+      # covered only here.
+      - name: Prove a transaction takes itself back
+        run: bash scripts/verify-transaction-cli.sh
