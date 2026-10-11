@@ -27,3 +27,10 @@ jobs:
       # Dependency-free, so it needs no install step.
       - name: Verify the documentation against the repository
         run: node scripts/verify-docs.mjs
+      # The Pi image verifier's own negative test. Reading a real image needs root
+      # and losetup and a 17-minute build, but its ASSERTIONS are plain logic over a
+      # facts file — so they run here in a second, against a good fixture and twelve
+      # sabotages. Without this, a verifier that stopped biting would only be
+      # discovered by the one job that is too slow to run on every pull request.
+      - name: Prove the Pi image verifier can fail
+        run: node scripts/verify-pi-image.mjs --self-test

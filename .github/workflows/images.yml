@@ -8,23 +8,43 @@ on:
       - "crates/morph-boot/**"
       - "crates/strata/**"
       - ".github/workflows/images.yml"
+  # ⚠️ NO `paths:` FILTER ON pull_request, AND THAT IS THE POINT.
+  #
+  # These two jobs are REQUIRED checks on `main`. A required check that a path filter
+  # can skip **never runs**, so the pull request waits for it forever and can never be
+  # merged — the check becomes a wall rather than a gate. So either the filter goes or
+  # the requirement does; the filter went.
+  #
+  # Why this was needed at all: `main` sat RED on this workflow for hours, through
+  # three merges, because the jobs were filtered AND optional. Nothing required them,
+  # so nothing noticed. Found on 2026-10-11 only by comparing every workflow's latest
+  # run against its triggers — not by any failing gate, because there was no gate.
+  #
+  # The cost, stated plainly: every pull request now runs a ~17-minute Raspberry Pi
+  # image build, including documentation-only ones. It costs no money — this
+  # repository is public, so standard runners are free — and Rob chose correctness
+  # over PR latency on 2026-10-11. If the latency becomes the problem, the alternative
+  # is a nightly run against `main` instead, which trades it back for up to a day of
+  # unnoticed breakage.
   pull_request:
-    paths:
-      - "images/**"
-      - "crates/morph-boot/**"
-      - "crates/strata/**"
-      - ".github/workflows/images.yml"
   workflow_dispatch:
 
 jobs:
   x86-ab-fallback:
-    name: "Try to Break It: A/B updates and ransomware (x86 VM)"
+    # The name is a required check (AGENTS.md H10): renaming it needs the branch
+    # protection changed in the same step, so it stays as it was although the job now
+    # also runs the ransomware scenario.
+    name: "Try to Break It: A/B updates (x86 VM)"
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo build --release -p morph-boot -p strata
+      # The update scenario needs the updater. Built here, as a sibling of the line
+      # above and for the same reason: the harness scripts run under `sudo`, whose PATH
+      # has no cargo, so a binary built inside them cannot find its own toolchain.
+      - run: cargo build --release -p morph-update
       - name: Install image and VM tools
         run: |
           sudo apt-get update
@@ -36,8 +56,8 @@ jobs:
             echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
             sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
           fi
-      - name: Good, unhealthy and crashing updates
-        run: sudo images/x86-qemu/test-fallback.sh "$RUNNER_TEMP/img" good unhealthy crash
+      - name: Good, unhealthy, crashing and updating
+        run: sudo images/x86-qemu/test-fallback.sh "$RUNNER_TEMP/img" good unhealthy crash update
       - name: Ransomware against Strata
         run: sudo images/x86-qemu/test-ransomware.sh "$RUNNER_TEMP/img"
       - name: Keep serial logs
@@ -86,7 +106,29 @@ jobs:
           zstd -T0 -10 "$IMG" -o "$RUNNER_TEMP/out/morpheos-pi5-selftest.img.zst"
           sha256sum "$RUNNER_TEMP/out/morpheos-pi5-selftest.img.zst" | tee "$RUNNER_TEMP/out/SHA256SUMS"
           ls -la "$RUNNER_TEMP/out"
+      - name: Verify the built image against the A/B contract
+        run: |
+          set -euo pipefail
+          IMG=$(tail -1 "$RUNNER_TEMP/build.log")
+          test -f "$IMG"
+          # The tools the x86 test already uses to read a disk image, plus
+          # erofs-utils: the slot rootfs is EROFS, and a CI kernel is not guaranteed
+          # to have the erofs driver — reading it in userspace is what distinguishes
+          # "the image is empty" from "this kernel cannot read it".
+          sudo apt-get install -y --no-install-recommends dosfstools mtools fdisk e2fsprogs erofs-utils
+          # Facts first, always printed and always uploaded: if a check fails, the
+          # log still has to show what the image ACTUALLY contains, or the next
+          # attempt is another 17-minute guess.
+          sudo images/pi5/image-facts.sh "$IMG" crates/morph-boot/src/pi.rs \
+            | tee "$RUNNER_TEMP/out/image-facts.txt"
+          echo "──────────────────────────────────────────────────────────────"
+          node scripts/verify-pi-image.mjs "$RUNNER_TEMP/out/image-facts.txt"
+          # And the verifier's own negative test, because a check nobody has seen
+          # fail is a check that might not work. It costs nothing here.
+          echo "──────────────────────────────────────────────────────────────"
+          node scripts/verify-pi-image.mjs --self-test
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: morpheos-pi5-selftest
           path: ${{ runner.temp }}/out/

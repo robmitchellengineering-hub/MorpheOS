@@ -20,6 +20,7 @@ pub mod sdboot;
 pub mod sim;
 
 use std::fmt;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
@@ -145,6 +146,59 @@ pub fn update_target(bc: &dyn BootControl) -> Result<Slot> {
         )));
     }
     Ok(s.booted.other())
+}
+
+/// Where this machine's boot control lives, as the command line describes it.
+///
+/// This exists so that every tool that needs the boot policy — `morph-boot` itself
+/// and `morph-update` — reaches it through **one** construction path. Two copies of
+/// "which slot is safe to write" would be two chances to disagree, and the one that
+/// disagreed would be the one writing to the running system.
+#[derive(Debug, Clone)]
+pub struct BackendOptions {
+    /// `pi`, `sdboot`, or `None` to detect.
+    pub backend: Option<String>,
+    /// pi: `autoboot.txt`.
+    pub autoboot: PathBuf,
+    /// pi: the bootloader device-tree node.
+    pub dt: PathBuf,
+    /// sdboot: the EFI system partition.
+    pub esp: PathBuf,
+    /// sdboot: the kernel command line to read the running slot from.
+    pub cmdline: PathBuf,
+}
+
+impl Default for BackendOptions {
+    fn default() -> Self {
+        BackendOptions {
+            backend: None,
+            autoboot: "/bootfs/autoboot.txt".into(),
+            dt: "/proc/device-tree/chosen/bootloader".into(),
+            esp: "/efi".into(),
+            cmdline: "/proc/cmdline".into(),
+        }
+    }
+}
+
+/// Build the boot control for this machine.
+///
+/// Detection is by the device-tree node the Pi firmware publishes; anything else is
+/// treated as systemd-boot.
+pub fn backend(o: &BackendOptions) -> Box<dyn BootControl> {
+    let kind = o.backend.clone().unwrap_or_else(|| {
+        if Path::new(&o.dt).join("partition").exists() {
+            "pi".into()
+        } else {
+            "sdboot".into()
+        }
+    });
+    if kind == "pi" {
+        Box::new(pi::Pi::new(&o.autoboot, &o.dt))
+    } else {
+        let mut s = sdboot::SdBoot::new(&o.esp);
+        s.cmdline = o.cmdline.clone();
+        Box::new(s)
+    }
 }
 
 /// Arm a one-shot trial of a freshly written slot. Returns the reboot command.

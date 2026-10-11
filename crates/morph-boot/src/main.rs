@@ -2,7 +2,7 @@
 
 use std::process::{Command, ExitCode};
 
-use morph_boot::{BootControl, Decision, Slot, pi::Pi, sdboot::SdBoot};
+use morph_boot::{BackendOptions, BootControl, Decision, Slot};
 
 const USAGE: &str = "\
 usage: morph-boot [backend options] <command>
@@ -53,21 +53,16 @@ fn parse(args: Vec<String>) -> Option<Opts> {
     Some(o)
 }
 
+/// Build the backend the way every other MorpheOS tool does — see
+/// [`morph_boot::backend`], which exists so this decision has one implementation.
 fn backend(o: &Opts) -> Box<dyn BootControl> {
-    let kind = o.backend.clone().unwrap_or_else(|| {
-        if std::path::Path::new(&o.dt).join("partition").exists() {
-            "pi".into()
-        } else {
-            "sdboot".into()
-        }
-    });
-    if kind == "pi" {
-        Box::new(Pi::new(&o.autoboot, &o.dt))
-    } else {
-        let mut s = SdBoot::new(&o.esp);
-        s.cmdline = o.cmdline.clone().into();
-        Box::new(s)
-    }
+    morph_boot::backend(&BackendOptions {
+        backend: o.backend.clone(),
+        autoboot: o.autoboot.clone().into(),
+        dt: o.dt.clone().into(),
+        esp: o.esp.clone().into(),
+        cmdline: o.cmdline.clone().into(),
+    })
 }
 
 fn run(cmd: &[String]) -> Result<(), String> {
