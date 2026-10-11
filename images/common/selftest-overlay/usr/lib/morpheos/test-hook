@@ -80,7 +80,7 @@ case "$step" in
                 then
                     say "morph-update reported success"
                 else
-                    say "MORPH-UPDATE FAILED — slot b is unchanged"
+                    say "MORPH-UPDATE FAILED - slot b is unchanged"
                 fi
             fi
             umount "$mnt" || say "could not unmount $mnt"
@@ -103,7 +103,7 @@ case "$step" in
             then
                 say "morph-heal reported success"
             else
-                say "MORPH-HEAL FAILED — the spare is still broken"
+                say "MORPH-HEAL FAILED - the spare is still broken"
             fi
             umount "$mnt" || say "could not unmount $mnt"
             echo 11 > "$dir/step"; sync
