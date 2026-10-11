@@ -21,6 +21,26 @@ jobs:
           for f in manifest/examples/*.toml; do
             cargo run -q -p morph-manifest -- validate "$f"
           done
+      # THE FRAME CHECK (ADR 0010: "CI proves a frame, not a unit"). The shell's frame is
+      # the first thing in this repository meant to be LOOKED AT rather than read, and it is
+      # not evidence because a test says it has colours. So the binary
+      # renders a real frame and FAILS THE BUILD when that frame has no content, and the
+      # frame is uploaded so it can be opened. Without this step the pass would only run
+      # when somebody remembered to run it, which is the failure mode this repository is
+      # written against.
+      #
+      # The binary writes the PNG itself rather than the workflow shelling out to an image
+      # tool: `convert` is NOT installed on ubuntu-latest (`command not found`, run
+      # 38147143859), and a PPM cannot be opened in a browser. One less assumption about
+      # the runner, and the frame is viewable on any machine that can run the binary.
+      - name: Render the shell's frame, and prove it is not blank
+        run: cargo run -q -p flow-shell -- --out frame.png --sessions 3
+      - name: Keep the frame, so it can actually be looked at
+        uses: actions/upload-artifact@v4
+        with:
+          name: flow-shell-frame
+          path: frame.png
+          if-no-files-found: error
       # The docs ARE the deliverable so far, and nothing was checking that they still
       # point at things that exist: a renamed doc, an unlisted ADR, a crate the README
       # does not name. None of those break a build, which is exactly why they rot.
