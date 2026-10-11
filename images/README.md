@@ -40,6 +40,25 @@ byte-identical copy of the system already running. The first three scenarios exe
 boot policy faithfully and say nothing whatever about updating a machine; `update` is the
 one that writes a slot on a running system, verifies the write, and boots it.
 
+### How big the update payload is, and why it matters
+
+`build-payload.sh` shrinks the payload to the filesystem's **used** size (`resize2fs -M`)
+before sealing it. The size is the time: `morph-update` reads the payload to hash it,
+writes it, and reads the device back to verify it, so the cost is three times the image.
+
+| | payload | `update` install |
+|---|---|---|
+| before the shrink (run `38117817003`) | 1,258,291,200 B (1200 MiB) | 3.836 s → 11.155 s = **7.32 s** |
+| after (run `38118394719`) | 295,141,376 B (295 MB) | 2.478 s → 4.628 s = **2.15 s** |
+
+**3.4× faster**, measured the same way both times — the guest's own kernel timestamps in
+`serial-*.log`, not the job's wall clock. The read-back verification is untouched: it still
+re-reads and hashes every byte that was written. Shrinking the image is the lever; sampling
+the re-read would have been the wrong one.
+
+`heal` is unchanged by this and reports the same `root_bytes: 1258291200`, because it
+rebuilds the spare from the **running partition**, which is still the whole slot.
+
 ### Ransomware
 
 `test-ransomware.sh` boots slot A only, with no update. The self-test writes 24
