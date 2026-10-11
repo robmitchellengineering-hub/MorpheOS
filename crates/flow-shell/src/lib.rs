@@ -3,8 +3,10 @@
 //! **What this is:** the first slice of the Flow shell ([ADR 0010]) reduced to the one
 //! thing that can be checked without a GPU, a display server or a client. A session is
 //! laid out, a frame is painted, and **the frame is only evidence if something was
-//! actually drawn on it** — that assertion is the Rob pass ([ADR 0011]), and it is the
-//! replacement for "a systemd unit says `active`".
+//! actually drawn on it** — that assertion replaces "a systemd unit says `active`". It is
+//! a build check and nothing more, and it is deliberately NOT named after anybody: the
+//! name of the person a machine belongs to belongs **in the machine**, which is what the
+//! `.rob` mark is (`morph-manifest`), not in CI.
 //!
 //! **Why no graphics library rasterises this.** The shell's own chrome is the bar, the
 //! session surfaces and one focus indicator — rectangle fills and nothing more. The
@@ -228,7 +230,7 @@ impl Frame {
 
     /// How many different colours the frame actually contains.
     ///
-    /// This is the measurement the Rob pass is built on, and it reads the whole frame on
+    /// This is the measurement the frame check is built on, and it reads the whole frame on
     /// purpose: a sample would let a mostly-blank screen pass.
     #[must_use]
     pub fn distinct_colours(&self) -> usize {
@@ -405,16 +407,16 @@ impl Shell {
     }
 }
 
-/// The result of the Rob pass: a count, and whether it is enough to be evidence.
+/// Whether a frame is evidence: how many colours it holds, and whether that is enough.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RobPass {
+pub struct FrameEvidence {
     /// How many distinct colours the frame contains.
     pub distinct_colours: usize,
     /// How many pixels were looked at.
     pub pixels: usize,
 }
 
-impl RobPass {
+impl FrameEvidence {
     /// Whether the frame is evidence that something was drawn.
     #[must_use]
     pub const fn passed(&self) -> bool {
@@ -438,17 +440,15 @@ impl RobPass {
     }
 }
 
-/// **The Rob pass** ([ADR 0011]): a frame is only proof if something was drawn on it.
+/// Whether a frame is evidence that something was drawn on it.
 ///
 /// One colour is a blank screen with extra steps, and "the unit is active" / "the file
-/// exists" / "exit code 0" are all the same mistake in different clothes. The first
-/// version asserts the weakest useful thing — *more than one colour* — because a check
-/// nobody can pass teaches everyone to ignore the colour (hazard H2 in the sibling repo).
-///
-/// [ADR 0011]: ../../docs/adr/0011-the-humans-mark.md
+/// exists" / "exit code 0" are the same mistake in different clothes (ADR 0010 asks for a
+/// frame, not a status). The first version asserts the weakest useful thing — *more than
+/// one colour* — because a check nobody can pass teaches everyone to ignore the colour.
 #[must_use]
-pub fn rob_pass(frame: &Frame) -> RobPass {
-    RobPass {
+pub fn frame_evidence(frame: &Frame) -> FrameEvidence {
+    FrameEvidence {
         distinct_colours: frame.distinct_colours(),
         pixels: frame.pixels().len(),
     }

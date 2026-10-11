@@ -21,9 +21,9 @@ jobs:
           for f in manifest/examples/*.toml; do
             cargo run -q -p morph-manifest -- validate "$f"
           done
-      # THE ROB PASS (ADR 0011). The shell's frame is the first thing in this repository
-      # that is meant to be LOOKED AT rather than read, and a frame is not evidence because
-      # a test says it has colours - it is evidence when a person can see it. So the binary
+      # THE FRAME CHECK (ADR 0010: "CI proves a frame, not a unit"). The shell's frame is
+      # the first thing in this repository meant to be LOOKED AT rather than read, and it is
+      # not evidence because a test says it has colours. So the binary
       # renders a real frame and FAILS THE BUILD when that frame has no content, and the
       # frame is uploaded so it can be opened. Without this step the pass would only run
       # when somebody remembered to run it, which is the failure mode this repository is

@@ -4,4 +4,4 @@ version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "MorpheOS: the Flow shell's own frame - a session laid out and rasterised, with the Rob pass asserting that something was actually drawn"
+description = "MorpheOS: the Flow shell's own frame - a session laid out and painted, with a check that something was actually drawn"

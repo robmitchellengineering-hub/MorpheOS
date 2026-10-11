@@ -2,17 +2,16 @@
 //! evidence.
 //!
 //! This is the *capturable* half of the Flow shell's first slice ([ADR 0010]): it produces
-//! a real frame on disk and reports the Rob pass ([ADR 0011]) over it. On a machine with
+//! a real frame on disk and reports whether it has content. On a machine with
 //! no GPU and no display server — the Legion VM, a CI runner — this is how the shell's
 //! output can be looked at, and it exits non-zero when the frame is blank so it can be
 //! used as a check rather than only as a tool.
 //!
 //! [ADR 0010]: ../../docs/adr/0010-flow-shell-first.md
-//! [ADR 0011]: ../../docs/adr/0011-the-humans-mark.md
 
 use std::process::ExitCode;
 
-use flow_shell::{DEFAULT_HEIGHT, DEFAULT_WIDTH, Shell, rob_pass};
+use flow_shell::{DEFAULT_HEIGHT, DEFAULT_WIDTH, Shell, frame_evidence};
 
 const USAGE: &str = "\
 flow-shell - paint the shell's frame and write it as a PPM
@@ -24,7 +23,7 @@ usage: flow-shell [--out FILE.ppm] [--width N] [--height N] [--sessions N]
   --height    frame height in pixels          (default 800)
   --sessions  how many sessions to lay out    (default 1)
 
-Exits 0 when the Rob pass says the frame has content, 1 when it does not.";
+Exits 0 when the frame has content, 1 when it does not.";
 
 fn main() -> ExitCode {
     let mut width: u32 = DEFAULT_WIDTH;
@@ -80,7 +79,7 @@ fn main() -> ExitCode {
         shell.add_session(&format!("session {n}"));
     }
     let frame = shell.paint();
-    let pass = rob_pass(&frame);
+    let evidence = frame_evidence(&frame);
 
     // The extension picks the encoding. PNG is the default because the whole point is that
     // a person looks at the frame, and a PPM cannot be opened by a browser or a phone.
@@ -100,9 +99,9 @@ fn main() -> ExitCode {
 
     println!("wrote {out} ({}x{}, {kind})", frame.width(), frame.height());
     println!("sessions laid out: {}", shell.sessions().len());
-    println!("{}", pass.verdict());
+    println!("{}", evidence.verdict());
 
-    if pass.passed() {
+    if evidence.passed() {
         ExitCode::SUCCESS
     } else {
         ExitCode::FAILURE

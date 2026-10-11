@@ -1,44 +1,46 @@
-//! The Rob pass ([ADR 0011]), and the negative control that proves it can fail.
-//!
-//! [ADR 0011]: ../../docs/adr/0011-the-humans-mark.md
+//! Whether a frame is evidence, and the negative control that proves the check can fail.
 
-use flow_shell::{Colour, Frame, Rect, Shell, palette, rob_pass};
+use flow_shell::{Colour, Frame, Rect, Shell, frame_evidence, palette};
 
 #[test]
 fn a_painted_shell_is_evidence() {
     let mut shell = Shell::new(320, 200);
     shell.add_session("a terminal");
     let frame = shell.paint();
-    let pass = rob_pass(&frame);
-    assert!(pass.passed(), "{}", pass.verdict());
+    let evidence = frame_evidence(&frame);
+    assert!(evidence.passed(), "{}", evidence.verdict());
     assert!(
-        pass.distinct_colours >= 3,
+        evidence.distinct_colours >= 3,
         "a background, a bar and a surface at least: {}",
-        pass.distinct_colours
+        evidence.distinct_colours
     );
 }
 
 #[test]
 fn a_single_colour_frame_is_not_evidence() {
     // THE NEGATIVE CONTROL, and the reason it is here rather than in a comment: without
-    // it, `rob_pass` could return `passed: true` unconditionally and every other test
+    // it, `frame_evidence` could return `passed: true` unconditionally and every other test
     // would stay green. That is hazard H17 - a check that cannot fail reads exactly like
     // a check that passed - and it is how this repository has been burned before.
     let mut frame = Frame::new(64, 64);
     frame.clear(Colour::rgb(0, 0, 0));
-    let pass = rob_pass(&frame);
-    assert_eq!(pass.distinct_colours, 1);
+    let evidence = frame_evidence(&frame);
+    assert_eq!(evidence.distinct_colours, 1);
     assert!(
-        !pass.passed(),
+        !evidence.passed(),
         "a blank frame must fail: {}",
-        pass.verdict()
+        evidence.verdict()
     );
-    assert!(pass.verdict().contains("FAIL"), "{}", pass.verdict());
+    assert!(
+        evidence.verdict().contains("FAIL"),
+        "{}",
+        evidence.verdict()
+    );
 }
 
 #[test]
 fn focus_moves_the_bright_thing() {
-    // Behaviour, not shape. A frame that ignored focus would still pass the Rob pass and
+    // Behaviour, not shape. A frame that ignored focus would still evidence the Rob evidence and
     // fail here, which is the point of asking a second question.
     let mut shell = Shell::new(400, 300);
     let first = shell.add_session("first");
@@ -141,8 +143,8 @@ fn an_empty_shell_still_draws_something() {
     // A shell with no sessions is not blank - it has a bar and a background - so this is
     // the weakest frame the shell can produce, and it is still evidence.
     let shell = Shell::new(64, 48);
-    let pass = rob_pass(&shell.paint());
-    assert!(pass.passed(), "{}", pass.verdict());
+    let evidence = frame_evidence(&shell.paint());
+    assert!(evidence.passed(), "{}", evidence.verdict());
 }
 
 #[test]
