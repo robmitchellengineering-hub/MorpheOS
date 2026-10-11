@@ -221,14 +221,6 @@ for sc in "${SCENARIOS[@]}"; do
             echo "    slot b no longer carries the broken service: the spare was rebuilt from the running slot AND booted"
         fi
     fi
-    if [ $ok = 1 ]; then
-        echo "    PASS"
-        # Reclaimed while the verdicts are already in hand: the work directory also holds the
-        # hardware image, and four disks of ~3 GiB is the difference between fitting on a
-        # runner and not. A FAILED disk is kept for the next look.
-        rm -f "$disk" "$payload"
-    else
-        fail=1
-    fi
+    if [ $ok = 1 ]; then echo "    PASS"; else fail=1; fi
 done
 exit $fail

@@ -68,16 +68,19 @@ jobs:
           # which runs as the runner user — cannot create the compressed copy beside it.
           # (`xz: ...: Permission denied`, which cost a run.)
           sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/img"
+      - name: Boot the image a person can use
+        run: sudo images/x86-qemu/test-boot.sh "$RUNNER_TEMP/img" 150
       # The raw disk is ~4.5 GiB of mostly empty ext4; `xz` makes it a download rather than a
       # transfer. Level 3 with threads: this is a convenience, not an archive.
       #
-      # Compressed BEFORE the boot check, deliberately: the first run of this step failed the
-      # check and the artifact upload then found nothing to publish, so a red test cost exactly
-      # the artifact the test exists to protect. The check now runs against a finished image.
-      - name: Compress the hardware image
-        run: xz -T0 -3 -k -f "$RUNNER_TEMP/img/disk-plain.img"
-      - name: Boot the image a person can use
-        run: sudo images/x86-qemu/test-boot.sh "$RUNNER_TEMP/img" 150
+      # `if: always()` — the first version ran this after the boot check without it, so a FAILED
+      # check published nothing: a red test cost exactly the artifact the test exists to protect.
+      # The raw disk is then dropped, because the scenarios that follow need the room.
+      - name: Compress the hardware image, and drop the raw one
+        if: always()
+        run: |
+          xz -T0 -3 -k -f "$RUNNER_TEMP/img/disk-plain.img"
+          rm -f "$RUNNER_TEMP/img/disk-plain.img" "$RUNNER_TEMP/img/disk-plain.vars.fd"
       - name: Keep the hardware image
         if: always()
         uses: actions/upload-artifact@v4
