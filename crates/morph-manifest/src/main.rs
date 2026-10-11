@@ -2,14 +2,22 @@
 
 use std::process::ExitCode;
 
-use morph_manifest::{Error, Severity, plan_values, resolve_value, validate};
+use morph_manifest::{Error, Severity, apply, plan_values, resolve_value, validate};
 
 const USAGE: &str = "\
 usage:
   morph-manifest validate <machine.toml>       check structure and invariants
   morph-manifest render   <machine.toml>       print the merged manifest as JSON
   morph-manifest plan     <old.toml> <new.toml> show changes, risk, and whether it may auto-apply
-  morph-manifest schema                        print the JSON Schema";
+  morph-manifest apply    <old.toml> <new.toml> --to <file> [--approved-by <who>]
+                                                apply it, or refuse and say why
+  morph-manifest schema                        print the JSON Schema
+
+exit codes:
+  0  applied, or the command succeeded
+  1  REFUSED — a decision, not a defect: the new generation is invalid, or it is above the tier
+     an unattended caller may apply. The reason is on stderr and nothing was written.
+  2  a defect or a usage error (unparseable file, missing argument)";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -22,6 +30,7 @@ fn main() -> ExitCode {
         ["validate", file] => cmd_validate(file),
         ["render", file] => cmd_render(file),
         ["plan", old, new] => cmd_plan(old, new),
+        ["apply", rest @ ..] => cmd_apply(rest),
         ["schema"] => {
             println!("{:#}", morph_manifest::json_schema());
             Ok(true)
@@ -83,4 +92,63 @@ fn cmd_plan(old: &str, new: &str) -> Result<bool, Error> {
         serde_json::to_string_pretty(&plan).expect("plan serializes")
     );
     Ok(plan.report.is_ok())
+}
+
+/// `apply <old> <new> --to <file> [--approved-by <who>]`
+///
+/// A refusal is a **decision**, not a defect: the reason goes to stderr and the exit code is 1,
+/// so a caller can tell "this must not happen" from "this could not be attempted". A usage error
+/// stays exit 2 — and in particular `--to` is required rather than defaulted, because a default
+/// target is a way to write a generation somewhere nobody chose.
+fn cmd_apply(args: &[&str]) -> Result<bool, Error> {
+    let mut positional: Vec<&str> = Vec::new();
+    let mut to: Option<&str> = None;
+    let mut approved_by: Option<&str> = None;
+    let mut rest = args.iter().copied();
+    while let Some(arg) = rest.next() {
+        match arg {
+            "--to" => {
+                to = Some(rest.next().ok_or_else(|| usage("--to needs a file"))?);
+            }
+            "--approved-by" => {
+                approved_by = Some(
+                    rest.next()
+                        .ok_or_else(|| usage("--approved-by needs a name"))?,
+                );
+            }
+            _ if arg.starts_with("--") => {
+                return Err(usage(&format!("unknown option {arg}")));
+            }
+            _ => positional.push(arg),
+        }
+    }
+    let [old, new] = positional.as_slice() else {
+        return Err(usage("apply needs exactly <old> and <new>"));
+    };
+    let to = to.ok_or_else(|| usage("apply needs --to <file>"))?;
+
+    match apply(
+        &load(old)?,
+        &load(new)?,
+        std::path::Path::new(to),
+        approved_by,
+    ) {
+        Ok(applied) => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&applied).expect("applied serializes")
+            );
+            Ok(true)
+        }
+        Err(Error::Refused(reason)) => {
+            eprintln!("REFUSED: {reason}");
+            Ok(false)
+        }
+        Err(other) => Err(other),
+    }
+}
+
+/// A usage error is a defect in the invocation (exit 2), not a refusal (exit 1).
+fn usage(message: &str) -> Error {
+    Error::Usage(format!("{message}\n\n{USAGE}"))
 }

@@ -14,7 +14,7 @@ pub mod validate;
 
 pub use layer::{resolve, resolve_value};
 pub use model::Manifest;
-pub use plan::{Plan, Risk, plan_values};
+pub use plan::{Applied, Plan, Risk, apply, plan_values};
 pub use validate::{Finding, Report, Severity, unenforced_settings, validate};
 
 use std::fmt;
@@ -25,6 +25,16 @@ pub enum Error {
     Parse { origin: String, message: String },
     /// The merged document does not fit the Manifest model.
     Invalid(String),
+    /// The change was understood and **refused**: it is invalid, or above the tier the caller
+    /// is allowed to apply. Distinct from the two above because it is a *decision*, not a
+    /// defect — the manifest parsed, the model accepted it, and something said no.
+    Refused(String),
+    /// The command line itself was wrong. A fourth kind because it is the only one that is
+    /// *no statement about a manifest at all*: `invalid manifest: --to needs a file` names a
+    /// problem that does not exist, and a message that misdescribes the situation is worse than
+    /// a blunt one. Distinct from [`Error::Invalid`], which is a defect *in a manifest or in
+    /// writing one*.
+    Usage(String),
 }
 
 impl fmt::Display for Error {
@@ -32,6 +42,8 @@ impl fmt::Display for Error {
         match self {
             Error::Parse { origin, message } => write!(f, "{origin}: {message}"),
             Error::Invalid(message) => write!(f, "invalid manifest: {message}"),
+            Error::Refused(message) => write!(f, "refused: {message}"),
+            Error::Usage(message) => write!(f, "{message}"),
         }
     }
 }

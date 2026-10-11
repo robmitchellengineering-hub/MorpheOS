@@ -71,6 +71,16 @@ and constraints into execution across devices). See [doc 12](docs/12-radical-con
 ```bash
 cargo test
 cargo run -q -p morph-manifest -- validate manifest/examples/studio-pc.toml
+cargo run -q -p morph-manifest -- plan manifest/examples/desk-laptop.toml manifest/examples/desk-laptop-proposed.toml
+```
+
+`apply` is the write path, and a risk tier does something there: a change above tier 1 is
+refused — writing nothing — unless a person is named, and an invalid generation is refused for
+every caller. Run it against the examples with `--to` a scratch file to see both answers.
+
+```bash
+cargo run -q -p morph-manifest -- apply manifest/examples/desk-laptop.toml \
+  manifest/examples/desk-laptop-proposed.toml --to /tmp/out.json
 ```
 
 Licensed under [Apache-2.0](LICENSE).

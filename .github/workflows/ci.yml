@@ -34,3 +34,10 @@ jobs:
       # discovered by the one job that is too slow to run on every pull request.
       - name: Prove the Pi image verifier can fail
         run: node scripts/verify-pi-image.mjs --self-test
+      # `apply` is the one command whose exit code IS the contract (0 applied, 1 REFUSED,
+      # 2 a defect), and `cargo test` calls `apply()` directly — so nothing above covers the
+      # argument handling, or the mapping from a refusal to exit 1. Each case here asserts
+      # the code AND the effect on the file, because "exit 1 with the target rewritten" is
+      # the failure that matters and it is invisible to an exit code alone.
+      - name: Prove `apply` refuses what it must, and writes nothing when it does
+        run: bash scripts/verify-apply-cli.sh

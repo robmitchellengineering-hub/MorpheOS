@@ -3,6 +3,11 @@
 //! This is the Verifier's first job (doc 06): whoever proposed the change
 //! (a person, the AI, an update), the plan classifies every changed path into a
 //! risk tier, and only a valid plan at tier 1 or below may auto-apply.
+//!
+//! [`apply`] is the second job, and the reason the first one matters: a plan nobody acts on
+//! is a report. Applying is where a tier first **refuses** something.
+
+use std::path::Path;
 
 use serde::Serialize;
 use serde_json::Value;
@@ -149,6 +154,109 @@ fn change(path: String, kind: ChangeKind, before: Option<&Value>, after: Option<
 /// [`crate::schema_leaf_paths`] and fails if any leaf the schema can produce lands here.
 /// **Reaching this constant with a real Manifest path is a bug, not a policy.**
 pub const UNCLASSIFIED: Risk = Risk::SecurityCritical;
+
+/// What happened when a plan was applied.
+#[derive(Debug, Clone, Serialize)]
+pub struct Applied {
+    /// Where the new generation was written.
+    pub target: String,
+    /// The highest tier among the applied changes.
+    pub risk: Risk,
+    /// How many paths changed.
+    pub changes: usize,
+    /// Named only when a change above tier 1 was applied, by a person who said so.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approved_by: Option<String>,
+}
+
+/// Apply `new` over `old`, writing the new generation to `target`.
+///
+/// **This is where a risk tier first does anything.** `auto_apply` was computed and printed by
+/// `plan` and read by nothing that applied a change, so a tier that was wrong — or, until
+/// 2026-10-11, one that had never been chosen at all — had no consequence. There are three
+/// refusals here, in the order that matters:
+///
+/// 1. **An invalid generation is refused before anything is written.** The invariants are the
+///    Manifest's whole purpose; a change that breaks one cannot be applied by *any* caller,
+///    approver or not.
+/// 2. **A change above [`Risk::ReversibleLocal`] is refused unless a person is named.** An AI,
+///    or any unattended caller, therefore cannot apply a persistent-config, data-affecting or
+///    security-critical change however it produced the plan. This is what keeps doc 06's
+///    promise that *"the AI can't trigger it alone"* — by construction, not by good behaviour.
+/// 3. **The write is atomic** — temp file, flush, rename — so an interrupted apply leaves the
+///    previous generation intact rather than a half-written file that parses and is wrong.
+///
+/// What is written is the **resolved** manifest, as JSON: the thing that was actually
+/// validated. Re-serialising the authored TOML instead would mean applying something that was
+/// never checked.
+///
+/// **Not here, deliberately:** a generation *store*. This writes the generation it is given and
+/// reports what it did. Keeping previous generations, and rolling back to one, is the next piece
+/// — the `morphd` applier in the briefing's ranked list.
+pub fn apply(
+    old: &Value,
+    new: &Value,
+    target: &Path,
+    approved_by: Option<&str>,
+) -> Result<Applied, Error> {
+    let plan = plan_values(old, new)?;
+
+    // 1. An invalid generation is never applied.
+    if !plan.report.is_ok() {
+        let errors: Vec<String> = plan
+            .report
+            .findings
+            .iter()
+            .filter(|f| f.severity == crate::Severity::Error)
+            .map(|f| format!("{} {}: {}", f.path, f.code, f.message))
+            .collect();
+        return Err(Error::Refused(format!(
+            "the new generation breaks {} invariant(s), so it cannot be applied by anyone:\n  {}",
+            errors.len(),
+            errors.join("\n  ")
+        )));
+    }
+
+    // 2. What is above the unattended ceiling, and is anyone taking responsibility for it?
+    let above: Vec<&Change> = plan
+        .changes
+        .iter()
+        .filter(|c| c.risk > Risk::ReversibleLocal)
+        .collect();
+    if !above.is_empty() && approved_by.is_none() {
+        let named: Vec<String> = above
+            .iter()
+            .map(|c| format!("  {:?} {:?}  {}", c.risk, c.kind, c.path))
+            .collect();
+        return Err(Error::Refused(format!(
+            "{} change(s) are above the tier an unattended caller may apply, so this needs a \
+             person. **Nothing was written.**\n{}\n\nApply with an approver, or split the change \
+             so the rest can go alone: `apply … --approved-by <who>`",
+            above.len(),
+            named.join("\n")
+        )));
+    }
+
+    // 3. Atomic write of the thing that was validated.
+    let bytes = serde_json::to_vec_pretty(new)
+        .map_err(|e| Error::Invalid(format!("the new generation does not serialise: {e}")))?;
+    let tmp = target.with_extension("morph-new");
+    std::fs::write(&tmp, &bytes).map_err(|e| Error::Invalid(format!("{}: {e}", tmp.display())))?;
+    // Flush before the rename, so the rename cannot publish a name whose contents are still
+    // only in cache.
+    if let Ok(f) = std::fs::File::open(&tmp) {
+        let _ = f.sync_all();
+    }
+    std::fs::rename(&tmp, target)
+        .map_err(|e| Error::Invalid(format!("{}: {e}", target.display())))?;
+
+    Ok(Applied {
+        target: target.display().to_string(),
+        risk: plan.risk,
+        changes: plan.changes.len(),
+        approved_by: approved_by.map(str::to_string),
+    })
+}
 
 /// Classify a changed path. Rules are checked in order; the first match wins.
 ///
