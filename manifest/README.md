@@ -8,8 +8,15 @@ The Manifest is the one document that describes a MorpheOS machine. See
 cargo run -q -p morph-manifest -- validate manifest/examples/studio-pc.toml
 cargo run -q -p morph-manifest -- render   manifest/examples/seed-shed-pi.toml
 cargo run -q -p morph-manifest -- plan     manifest/examples/desk-laptop.toml manifest/examples/desk-laptop-proposed.toml
+cargo run -q -p morph-manifest -- apply    manifest/examples/desk-laptop.toml manifest/examples/desk-laptop-proposed.toml --to /tmp/out.json
 cargo run -q -p morph-manifest -- schema
 ```
+
+`plan` reports what would change and at which risk tier; **`apply` is where that tier refuses
+something.** It exits **0** applied, **1** `REFUSED` (a decision — the reason is on stderr and the target is
+left untouched) or **2** a defect. An invalid generation is refused for every caller, and above tier 1 it
+is refused unless a person is named with `--approved-by <who>`. So the `apply` line above **refuses** —
+widening a capsule's file access is tier 3. Add `--approved-by <who>` to watch it apply.
 
 | Example | Profile | What it shows |
 |---|---|---|

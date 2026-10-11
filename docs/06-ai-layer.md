@@ -81,6 +81,17 @@ what "AI-reconfigurable to stable possibilities" means in practice.
 
 In enterprise deployments, policy can tighten or relax these tiers per fleet.
 
+**Where a tier does something today.** `morph-manifest apply` is the write path for a Manifest
+generation, and it enforces three things: an invalid generation is refused for *every* caller,
+approved or not; a change above tier 1 is refused unless a person is named (`--approved-by`), so
+tier 4's *"the AI can't trigger it alone"* is a property of the code rather than a promise about
+behaviour; and the write is atomic, so an interrupted apply leaves the previous generation intact.
+Tiers 0–1 auto-apply with no approver, which is what the table above says they should.
+
+**What that does not yet cover:** these tiers are enforced on the `apply` path only. The applier
+that owns a *store* of generations — keeping the previous ones, and rolling back to one — is
+`morphd`, and it is not built. A caller that writes a Manifest by hand bypasses all of it.
+
 ## Hardware-aware AI placement
 
 | Profile | Default AI capability |
