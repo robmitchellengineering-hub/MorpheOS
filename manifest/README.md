@@ -22,7 +22,7 @@ cargo run -q -p morph-manifest -- schema
 
 | Code | Rule |
 |---|---|
-| `INV-BOOT` | A/B boot slots on, 1–5 boot attempts before fallback |
+| `INV-BOOT` | A/B boot slots on (a failed trial falls back after one boot, [ADR 0008](../docs/adr/0008-one-try-trial.md)) |
 | `INV-RECOVERY` | The immutable recovery image stays on |
 | `INV-ADMIN` | At least one admin user |
 | `INV-RECOVERY-KEY` | At least one user holds a recovery key |

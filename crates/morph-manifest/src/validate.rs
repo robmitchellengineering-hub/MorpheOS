@@ -199,13 +199,6 @@ fn invariants(m: &Manifest, r: &mut Report) {
             "A/B boot slots must stay enabled: without them a bad update can leave no bootable system",
         );
     }
-    if !(1..=5).contains(&m.system.boot.max_boot_attempts) {
-        r.error(
-            "INV-BOOT",
-            "/system/boot/max_boot_attempts",
-            "max_boot_attempts must be 1–5 so a failing slot falls back automatically",
-        );
-    }
     if !m.system.recovery_image {
         r.error(
             "INV-RECOVERY",
@@ -282,14 +275,13 @@ fn invariants(m: &Manifest, r: &mut Report) {
 /// WHY THIS IS A LIST AND NOT A SILENCE. A configuration field that nothing obeys is
 /// worse than a missing one: this Manifest is the contract between the operator, the AI
 /// and the system, so a field that looks implemented and does nothing is a promise the
-/// system does not keep. Six had accumulated here before anything noticed (2026-10-10)
-/// — among them `boot.max_boot_attempts`, which `docs/15-self-healing.md` leans on for
-/// *"boot counting: 3 failed boots trigger an automatic fallback"* while the A/B design
-/// in `morph-boot` actually falls back after **one**, because the firmware's trial is
-/// one-shot by construction. That is a real design question, not a missing loop, and it
-/// is now visible in the tool instead of in a conversation.
+/// system does not keep. Six had accumulated here before anything noticed (2026-10-10).
+/// One of them, `boot.max_boot_attempts`, backed doc 15's *"3 failed boots trigger an
+/// automatic fallback"* while `morph-boot` falls back after **one**, because the
+/// firmware's trial is one-shot by construction. Listing it here is what turned that
+/// into a decision: ADR 0008 keeps the one try and removed the field.
 ///
-/// ONE GROUPED WARNING, not one per field: six warnings on every validate would train
+/// ONE GROUPED WARNING, not one per field: a warning per field on every validate would train
 /// people to ignore warnings, which is its own failure mode.
 ///
 /// **Deleting a line here is part of implementing the field.** `tests/manifests.rs`
@@ -301,10 +293,6 @@ pub fn unenforced_settings() -> &'static [(&'static str, &'static str)] {
         (
             "/system/update_ring",
             "update rings are Fleet-tier and not built",
-        ),
-        (
-            "/system/boot/max_boot_attempts",
-            "the trial is one-shot, so a failed boot already falls back after one; nothing counts attempts",
         ),
         (
             "/storage/retention",

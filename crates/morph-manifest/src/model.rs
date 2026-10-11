@@ -101,9 +101,9 @@ pub enum KernelVariant {
 #[serde(deny_unknown_fields)]
 pub struct Boot {
     /// A/B system slots, so an update never overwrites the running system.
+    /// A failed trial falls back after one boot; there is no attempt count to set
+    /// (`docs/adr/0008-one-try-trial.md`).
     pub ab_slots: bool,
-    /// Failed boots before falling back to the previous slot (heal rung H3).
-    pub max_boot_attempts: u8,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

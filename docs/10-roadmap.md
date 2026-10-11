@@ -14,7 +14,7 @@ measurements show it's needed.
 ## Phase 1: "Unbreakable" (months 3–9): the wedge
 Goal: a bootable MorpheOS that **cannot be broken**, on a Pi and an x86 laptop.
 - [ ] `morphd`: PID 1, the transaction engine, Manifest generations, invariant checks, parallel boot
-- [ ] Immutable, verified system image, A/B boot with boot counting, an immutable recovery image
+- [ ] Immutable, verified system image, A/B boot with a one-shot trial ([ADR 0008](adr/0008-one-try-trial.md)), an immutable recovery image
 - [x] Strata v0: versions on every save, file restore, folder rewind (undoable), ransomware burst detection ([ADR 0007](adr/0007-strata-v0-watcher.md))
 - [x] Strata in the x86 image: `strata.service` watches `/home` on a data partition shared by both slots, and the VM test rewinds a ransomware attack ([images](../images/README.md))
 - [ ] Strata in the Pi image (on rpi-image-gen's persistent partition), metadata, full-text search

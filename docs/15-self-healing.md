@@ -89,7 +89,7 @@ Data-level healing works alongside the ladder:
 
 | Layer | Mechanism |
 |---|---|
-| Firmware/boot | Secure Boot plus a UKI, A/B boot entries, and boot counting: 3 failed boots trigger an automatic fallback |
+| Firmware/boot | Secure Boot plus a UKI, and A/B slots: an update boots once as a one-shot trial, and if that boot fails, the next one is the proven slot again ([ADR 0008](adr/0008-one-try-trial.md)) |
 | System image | Read-only and verified (dm-verity). The system can't be "partially" modified |
 | Recovery | A separate, **immutable recovery image** that can rebuild everything else, including over the mesh or network |
 | Config | Manifest generations, each checked against invariants before it's applied |
@@ -132,7 +132,7 @@ Data-level healing works alongside the ladder:
 A live, public challenge on a stock MorpheOS laptop and a Pi:
 
 1. `rm -rf` the entire system root → automatic **H4**, back in about 3 minutes, with all files intact.
-2. Install a deliberately broken driver → boot counting brings it back on **H3**.
+2. Install a deliberately broken driver as an update → its one trial boot fails, and the next boot is the previous system (**H3**).
 3. Run a ransomware simulator on Documents → it's detected, frozen and rewound (**data heal**).
 4. Fill the disk to 100% → caches are evicted and old versions tiered out, with no crash.
 5. Pull the SSD → put in a blank one → **Phoenix** restores from the Pi on the mesh.
