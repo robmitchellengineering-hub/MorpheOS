@@ -105,12 +105,12 @@ EOF
         # them here is the difference between finding out now and finding out on a dark screen:
         # a kernel flavour can be built without USB storage at all (the `-virtual` flavour
         # exists for VMs, and this image used it).
-        # A module, or built into the kernel — `efifb` is built in on amd64, so a check that
-        # only looked for the .ko would fail a perfectly good image, and a check that failed
-        # every run is a check nobody reads (H2).
+        # ⚠️ MODULE FILE NAMES DO NOT MATCH MODULE NAMES. The first version of this check asked
+        # for `xhci_hcd.ko` when the file is `xhci-hcd.ko`, and CI failed the build for it — which
+        # is the check doing its job on the only input it could be wrong about.
         builtin=$(cat "$dir"/usr/lib/modules/*/modules.builtin 2>/dev/null || true)
         missing=""
-        for mod in usb-storage uas xhci_hcd ahci sd_mod ext4 vfat efifb; do
+        for mod in usb-storage uas xhci-hcd ahci sd_mod ext4 vfat; do
             found=$(find "$dir/usr/lib/modules" -name "$mod.ko*" -print -quit 2>/dev/null || true)
             if [ -z "$found" ] && ! printf '%s' "$builtin" | grep -q "/$mod\.ko"; then
                 missing="$missing $mod"
@@ -119,6 +119,14 @@ EOF
         if [ -n "$missing" ]; then
             echo "the image has no driver for:$missing — a real machine cannot boot from this" >&2
             echo "kernel flavour: $(ls "$dir"/boot/vmlinuz-* 2>/dev/null | xargs -n1 basename)" >&2
+            exit 1
+        fi
+        # The screen, asserted from the kernel's own config instead: `efifb` is built into this
+        # kernel, so it has no .ko to look for, and a check that looked for one failed a good
+        # image. A dark screen with no serial port is a machine nobody can use.
+        config=$(ls "$dir"/boot/config-* 2>/dev/null | tail -1 || true)
+        if [ -z "$config" ] || ! grep -qE '^CONFIG_(FB_EFI|DRM_SIMPLEDRM|FB_VESA)=y' "$config"; then
+            echo "this kernel has no built-in framebuffer console, so a laptop screen stays dark" >&2
             exit 1
         fi
     fi
