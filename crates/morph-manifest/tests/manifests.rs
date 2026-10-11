@@ -74,6 +74,26 @@ fn disabling_ab_boot_is_blocked() {
 }
 
 #[test]
+fn a_boot_attempt_count_is_refused_not_ignored() {
+    // ADR 0008 removed `max_boot_attempts`: a trial gets one boot on every platform.
+    // A Manifest that still asks for three must fail to load. If it loaded and was
+    // ignored, it would be the H5 problem again: a setting that looks obeyed and isn't.
+    let err = resolve(
+        &with(
+            "[system.boot]
+max_boot_attempts = 3
+",
+        ),
+        "t",
+    )
+    .unwrap_err();
+    assert!(
+        format!("{err}").contains("max_boot_attempts"),
+        "the error should name the field: {err}"
+    );
+}
+
+#[test]
 fn heal_engine_cannot_be_disabled_or_overreach() {
     let m = resolve(&with("[heal]\nenabled = false\nmax_auto_rung = 5\n"), "t").unwrap();
     let r = validate(&m);
@@ -175,7 +195,7 @@ fn schema_names_every_section() {
 fn every_unenforced_setting_still_exists_in_the_schema() {
     // The list of unenforced settings is the one place a field's absence of an
     // implementation is recorded, so the PATHS in it are the thing that rots: rename
-    // `max_boot_attempts` and the warning keeps printing a path that is not there.
+    // `update_ring` and the warning keeps printing a path that is not there.
     // Walking the generated schema is what makes that a build failure instead.
     let schema = morph_manifest::json_schema();
 
@@ -229,7 +249,7 @@ fn a_manifest_names_the_settings_nothing_enforces() {
         .filter(|f| f.code == "W-UNENFORCED")
         .collect();
 
-    // ONE grouped warning, not one per field: six warnings on every validate would
+    // ONE grouped warning, not one per field: a warning per field on every validate would
     // teach people to ignore warnings, and an ignored warning is not a check.
     assert_eq!(
         warnings.len(),

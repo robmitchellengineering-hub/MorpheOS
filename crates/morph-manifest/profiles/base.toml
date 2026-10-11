@@ -10,7 +10,6 @@ recovery_image = true
 
 [system.boot]
 ab_slots = true
-max_boot_attempts = 3
 
 [storage]
 min_free_percent = 10
