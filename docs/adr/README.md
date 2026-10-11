@@ -15,3 +15,4 @@ after it's accepted. A later ADR supersedes it instead.
 | [0008](0008-one-try-trial.md) | A trial boot gets exactly one try; no boot counter | Accepted |
 | [0009](0009-heal-ladder.md) | The heal ladder: six rungs H0–H5 with Phoenix as H5, consent only where data can be lost, and which rungs exist today | Accepted |
 | [0010](0010-flow-shell-first.md) | The Flow shell is built first: a Smithay compositor, and no stock desktop stands in for it | Accepted |
+| [0011](0011-the-humans-mark.md) | The human's mark: `.rob` signs an approved change, `rob` places it, and the Rob pass is the check that looks at the frame | Accepted |
