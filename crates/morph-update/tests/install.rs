@@ -265,6 +265,28 @@ fn a_write_that_cannot_happen_leaves_the_slot_marked_incomplete() {
 }
 
 #[test]
+fn a_payload_file_that_is_a_device_is_read_not_called_missing() {
+    // `/dev/null` stands in for a block device: `Path::is_file()` is false for both, and
+    // that is precisely what made a repair report *"root.img is missing"* for a file that
+    // was present and perfectly readable. A portable stand-in, so the property is covered
+    // on every machine rather than only where a spare partition exists.
+    let base = scratch("device");
+    let dir = base.join("payload");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::os::unix::fs::symlink("/dev/null", dir.join("root.img")).unwrap();
+    std::fs::write(dir.join("vmlinuz"), b"k").unwrap();
+    std::fs::write(dir.join("initrd.img"), b"i").unwrap();
+
+    morph_update::seal(&dir).expect("a device is a readable payload file, not a missing one");
+    let mut payload = Payload::open(&dir).unwrap();
+    let sizes = payload.check().expect("and it still checks");
+    assert_eq!(
+        sizes["root.img"], 0,
+        "/dev/null reads as empty, which is the point: it was read at all"
+    );
+}
+
+#[test]
 fn check_reports_the_files_without_writing_anything() {
     let f = Fixture::new(NEW_ROOT);
     let mut payload = f.open();

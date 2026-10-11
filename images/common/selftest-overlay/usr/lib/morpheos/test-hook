@@ -5,6 +5,12 @@
 #   step 1: plain reboot, to prove whatever was decided has stuck
 #   step 2: report the result, then finish
 #
+# The heal walk is longer, so it uses its own steps (11, 12) rather than renumbering the
+# three above — a scenario that already passes must not have its walk changed by a new one:
+#   step 1,  with a heal medium: rebuild the failed spare, then trial it
+#   step 11: plain reboot
+#   step 12: report the result, then finish
+#
 # MORPH_TEST_DIR     where the step counter lives (shared by both slots)
 # MORPH_TEST_EXPECT  slot that should be the default at the end (optional)
 # MORPH_TEST_FINISH  poweroff (VM tests) or stay (real hardware)
@@ -13,61 +19,83 @@ dir=${MORPH_TEST_DIR:-/efi/morph-test}
 mkdir -p "$dir"
 step=$(cat "$dir/step" 2>/dev/null || echo 0)
 echo "morph-test: step $step"
+medium=${MORPH_TEST_PAYLOAD:-/dev/vdb}
+
+# ⚠️ THE MOUNT POINT GOES UNDER /run, AND EVERY STEP IS GUARDED.
+#
+# The root filesystem is mounted READ-ONLY — the loader entry passes `ro` — so
+# `mkdir /mnt/update` failed with "Read-only file system". That line was the one step left
+# unguarded, so `set -e` ended the driver there: no trial was armed, no poweroff happened,
+# and the VM sat at a login prompt until the harness gave up 900 seconds later. The serial
+# log said so in one line; the job said only "the VM did not power off".
+#
+# /run is a tmpfs and writable whatever the root is. The lesson this whole scenario keeps
+# teaching: **guard every step, not the ones you happened to be thinking about.** One
+# unguarded command on a failure path turns a clear error into a twenty-minute silence.
+mnt=/run/morph-media
+mount_medium() {
+    [ -b "$medium" ] || return 1
+    mkdir -p "$mnt" || return 1
+    mount -o ro "$medium" "$mnt" || return 1
+    return 0
+}
+
 case "$step" in
     0)
-        # An update medium, if one is attached. This step is why the flow is real:
-        # without it the trial below booted whatever was ALREADY in slot B — and every
-        # image we build makes both slots from one image, so it trialled a copy of the
-        # system it was already running. Nothing was ever updated, and the test could
-        # not tell the difference.
+        # An update medium, if one is attached. This step is why the flow is real: without
+        # it the trial below booted whatever was ALREADY in slot B — and every image we
+        # build makes both slots from one image, so it trialled a copy of the system it was
+        # already running. Nothing was ever updated, and the test could not tell.
         #
-        # The medium is a second disk the harness attaches read-only; if it is absent
-        # (every other scenario) this block does nothing and those scenarios are
-        # unchanged.
-        medium=${MORPH_TEST_PAYLOAD:-/dev/vdb}
-        if [ -b "$medium" ]; then
-            # ⚠️ THE MOUNT POINT GOES UNDER /run, AND EVERY STEP IS GUARDED.
-            #
-            # The root filesystem is mounted READ-ONLY — the loader entry passes `ro` —
-            # so `mkdir /mnt/update` failed with "Read-only file system". That line was
-            # the one step in this block left unguarded, so `set -e` ended the driver
-            # there: no trial was armed, no poweroff happened, and the VM sat at a login
-            # prompt until the harness gave up 900 seconds later. The serial log said so
-            # in one line; the job said only "the VM did not power off".
-            #
-            # /run is a tmpfs and writable whatever the root is. The lesson is the one
-            # this whole scenario keeps teaching: **guard every step, not the ones you
-            # happened to be thinking about.** A single unguarded command on a failure
-            # path is enough to turn a clear error into a twenty-minute silence.
-            mnt=/run/morph-update
-            if mkdir -p "$mnt"; then
-                if mount -o ro "$medium" "$mnt"; then
-                    echo "morph-test: installing the payload from $medium into the inactive slot"
-                    # Bounded, so a slow or stuck install cannot stall the machine until
-                    # the harness gives up — the test must always reach its own verdict.
-                    if timeout 600 "$mnt/morph-update" --esp /efi --root /dev/vda3 \
-                        --payload "$mnt/payload" install
-                    then
-                        echo "morph-test: morph-update reported success"
-                    else
-                        echo "morph-test: MORPH-UPDATE FAILED (exit $?) — slot b is unchanged"
-                    fi
-                    umount "$mnt" || echo "morph-test: could not unmount $mnt"
+        # The medium is a second disk the harness attaches read-only; if it is absent, or
+        # carries the healer instead, this block does nothing.
+        if mount_medium; then
+            if [ -x "$mnt/morph-update" ] && [ -d "$mnt/payload" ]; then
+                echo "morph-test: installing the payload from $medium into the inactive slot"
+                # Bounded, so a slow or stuck install cannot stall the machine until the
+                # harness gives up — the test must always reach its own verdict.
+                if timeout 600 "$mnt/morph-update" --esp /efi --root /dev/vda3 \
+                    --payload "$mnt/payload" install
+                then
+                    echo "morph-test: morph-update reported success"
                 else
-                    echo "morph-test: COULD NOT MOUNT the update medium $medium"
+                    echo "morph-test: MORPH-UPDATE FAILED (exit $?) — slot b is unchanged"
                 fi
-            else
-                echo "morph-test: could not create the mount point $mnt"
             fi
+            umount "$mnt" || echo "morph-test: could not unmount $mnt"
         else
-            echo "morph-test: no update medium at $medium; trialling whatever slot b holds"
+            echo "morph-test: no medium at $medium; trialling whatever slot b holds"
         fi
         echo 1 > "$dir/step"; sync
         echo "morph-test: arming trial of slot b"
         morph-boot trial b --reboot
         ;;
     1)
-        echo 2 > "$dir/step"; sync
+        # With a heal medium: the trial in step 0 has just failed and the machine has
+        # fallen back, so the spare is known-broken and this is the moment to rebuild it.
+        # Then trial the REPAIRED slot — that is the whole point: a machine that heals is
+        # one that can use the slot again, not one that merely wrote to it.
+        if mount_medium && [ -x "$mnt/morph-heal" ]; then
+            echo "morph-test: the spare is broken; repairing it from the running system"
+            if timeout 600 "$mnt/morph-heal" --esp /efi \
+                --root-running /dev/vda2 --root-spare /dev/vda3 repair
+            then
+                echo "morph-test: morph-heal reported success"
+            else
+                echo "morph-test: MORPH-HEAL FAILED (exit $?) — the spare is still broken"
+            fi
+            umount "$mnt" || echo "morph-test: could not unmount $mnt"
+            echo 11 > "$dir/step"; sync
+            echo "morph-test: arming a trial of the repaired slot b"
+            morph-boot trial b --reboot
+        else
+            echo 2 > "$dir/step"; sync
+            echo "morph-test: plain reboot"
+            systemctl reboot
+        fi
+        ;;
+    11)
+        echo 12 > "$dir/step"; sync
         echo "morph-test: plain reboot"
         systemctl reboot
         ;;

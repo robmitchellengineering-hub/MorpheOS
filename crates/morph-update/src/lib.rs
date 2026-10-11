@@ -109,6 +109,19 @@ fn hash_reader(mut r: impl Read, what: &str) -> Result<(String, u64)> {
     Ok((hasher.finalize().to_hex().to_string(), total))
 }
 
+/// Whether a payload file can be read at all.
+///
+/// ⚠️ **NOT `Path::is_file()`, WHICH IS FALSE FOR A DEVICE.** A payload's root image is
+/// legitimately a **block device** when a repair reuses the running system's own image
+/// rather than copying it: `morph-heal` symlinks the running root into the payload, which is
+/// the difference between a repair that needs 1.2 GiB of RAM and one that needs none. The
+/// first version of this used `is_file()` and rejected exactly that case with *"root.img is
+/// missing"* — a file that was present and perfectly readable. **Ask what is needed — can it
+/// be read — not what it is.**
+fn readable(path: &Path) -> bool {
+    std::fs::OpenOptions::new().read(true).open(path).is_ok()
+}
+
 fn hash_file(path: &Path) -> Result<(String, u64)> {
     let f = std::fs::File::open(path).map_err(io(format!("opening {}", path.display())))?;
     hash_reader(f, &path.display().to_string())
@@ -210,8 +223,11 @@ impl Payload {
     pub fn check(&mut self) -> Result<&BTreeMap<String, u64>> {
         for name in REQUIRED {
             let path = self.dir.join(name);
-            if !path.is_file() {
-                return Err(Error::BadPayload(format!("{} is missing", path.display())));
+            if !readable(&path) {
+                return Err(Error::BadPayload(format!(
+                    "{} cannot be read",
+                    path.display()
+                )));
             }
             let (got, size) = hash_file(&path)?;
             let want = &self.digests[name];
@@ -252,8 +268,11 @@ pub fn seal(dir: &Path) -> Result<BTreeMap<String, u64>> {
     let mut text = String::new();
     for name in REQUIRED {
         let path = dir.join(name);
-        if !path.is_file() {
-            return Err(Error::BadPayload(format!("{} is missing", path.display())));
+        if !readable(&path) {
+            return Err(Error::BadPayload(format!(
+                "{} cannot be read",
+                path.display()
+            )));
         }
         let (digest, size) = hash_file(&path)?;
         text.push_str(&format!("{digest}  {name}\n"));
