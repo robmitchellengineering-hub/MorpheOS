@@ -277,6 +277,23 @@ fn a_missing_kernel_for_the_running_slot_fails_before_anything_is_written() {
 }
 
 #[test]
+fn the_source_image_survives_the_cleanup() {
+    // The staged image is a SYMLINK to the running root, so the cleanup at the end removes
+    // a link — it must not follow it and delete the device it points at. Nothing else here
+    // would catch that: the spare would still hold the right bytes while the machine's own
+    // system was gone.
+    let m = Machine::new(&history_with_failure("b", "a"));
+    m.heal
+        .repair(&running_a(), Slot::A, &m.running_root, &m.spare_root)
+        .unwrap();
+    assert!(
+        m.running_root.exists(),
+        "the running root must still exist after the repair"
+    );
+    assert_eq!(std::fs::read(&m.running_root).unwrap(), RUNNING_IMAGE);
+}
+
+#[test]
 fn the_report_does_not_exist_until_a_repair_has_succeeded() {
     let m = Machine::new(&history_with_failure("b", "a"));
     assert!(!Path::new(&m.heal.report).exists());

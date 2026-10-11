@@ -236,13 +236,26 @@ impl Heal {
             )));
         }
 
-        // Stage the running system as a payload. The root is read from the device, so the
-        // spare receives an image rather than a file-by-file copy.
+        // Stage the running system as a payload. The root is **referenced, not copied**:
+        // a block device is a file, and `morph-update` hashes and streams whatever path it
+        // is given, so a symlink stages the whole system image at no cost in space.
+        //
+        // ⚠️ THIS WAS A COPY, AND A COPY IS WRONG TWICE OVER. The scratch directory is a
+        // tmpfs on a real machine, so copying a 1.2 GiB system image into it asks for
+        // 1.2 GiB of RAM — the VM test has 1 GiB of it, which is how this was found — and
+        // on a machine with more RAM it is still a pointless full-image write before the
+        // write that matters. The image is read twice (hashed, then written) and neither
+        // read needs a second copy to exist.
+        //
+        // Reading the running root is safe precisely because it is mounted read-only; the
+        // image cannot change under the read. If that ever stops being true, this is the
+        // line that becomes a lie.
         let stage = self.stage.join("payload");
         let _ = std::fs::remove_dir_all(&self.stage);
         std::fs::create_dir_all(&stage).map_err(io(format!("creating {}", stage.display())))?;
-        std::fs::copy(running_root, stage.join(morph_update::ROOT_IMAGE)).map_err(io(format!(
-            "reading the running root {}",
+        let image = stage.join(morph_update::ROOT_IMAGE);
+        std::os::unix::fs::symlink(running_root, &image).map_err(io(format!(
+            "referencing the running root {}",
             running_root.display()
         )))?;
         for name in [morph_update::KERNEL, morph_update::INITRD] {

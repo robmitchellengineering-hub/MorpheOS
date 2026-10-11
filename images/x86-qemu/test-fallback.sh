@@ -23,12 +23,18 @@
 #              during the run**. Every other scenario trials a slot B that build.sh
 #              had already populated — which, since both slots come from one image, is
 #              a copy of the system already running, so no update happens at all.
+#   heal       the same failed trial as `unhealthy`, and then the machine REPAIRS itself:
+#              the in-image driver rebuilds the broken spare from the running slot with
+#              `morph-heal` and trials it again, so slot B ends up **bootable and
+#              committed** instead of left broken. The verdict is content, not flow: the
+#              service whose failure broke the trial must be GONE from slot B's root, with
+#              the same check run before the machine boots as the control.
 set -euo pipefail
 
-WORK=${1:?usage: test-fallback.sh <workdir> [good|unhealthy|crash ...]}
+WORK=${1:?usage: test-fallback.sh <workdir> [good|unhealthy|crash|update|heal ...]}
 shift
 SCENARIOS=("$@")
-[ ${#SCENARIOS[@]} -gt 0 ] || SCENARIOS=(good unhealthy crash update)
+[ ${#SCENARIOS[@]} -gt 0 ] || SCENARIOS=(good unhealthy crash update heal)
 HERE=$(cd "$(dirname "$0")" && pwd)
 
 # One line per boot that reached the health check: "<booted>/<phase>/<action>".
@@ -38,9 +44,13 @@ expected() {
         unhealthy) printf '%s\n' a/committed/none b/trial/fallback a/committed/none a/committed/none ;;
         crash)     printf '%s\n' a/committed/none a/committed/none a/committed/none ;;
         update)    printf '%s\n' a/committed/none b/trial/committed b/committed/none ;;
+        # `unhealthy`'s four boots, then the repair, then the repaired slot trialling and
+        # committing: the machine ends up on B, which is the whole point — a healed slot is
+        # one the machine can USE, not merely one that was written to.
+        heal)      printf '%s\n' a/committed/none b/trial/fallback a/committed/none b/trial/committed b/committed/none ;;
     esac
 }
-expected_default() { case "$1" in good|update) echo b ;; *) echo a ;; esac; }
+expected_default() { case "$1" in good|update|heal) echo b ;; *) echo a ;; esac; }
 
 # The verdict: one "<booted>/<phase>/<action>" per line of the boot history.
 recorded() {
@@ -74,13 +84,29 @@ marker_present() {
     case "$out" in *"Inode:"*) return 0 ;; *) return 1 ;; esac
 }
 
+# Verdict for the heal scenario: does slot B's own root still carry the service that made
+# its trial fail? `build.sh` puts `morph-broken.service` into slot B for the `unhealthy`
+# scenario, and a repair replaces that root with the running slot's — so the file being GONE
+# is the evidence that the spare was rebuilt, and it is read off the disk rather than taken
+# from a log line. Same helper shape as `marker_present`, including the debugfs caveat.
+broken_service_present() {
+    local loop out
+    loop=$(losetup -Pf --show "$1")
+    out=$(debugfs -R "stat /usr/lib/systemd/system/morph-broken.service" "${loop}p3" 2>&1)
+    losetup -d "$loop"
+    case "$out" in *"Inode:"*) return 0 ;; *) return 1 ;; esac
+}
+
 fail=0
 for sc in "${SCENARIOS[@]}"; do
     echo "=== scenario: $sc"
-    # `update` reuses the `good` disk deliberately: slot B is a healthy system either
-    # way, and what the scenario changes is that morph-update REPLACES it first.
+    # Both of these reuse a disk built for another scenario, deliberately. `update` uses
+    # `good` because slot B is a healthy system either way and the scenario's change is that
+    # morph-update REPLACES it first. `heal` uses `unhealthy` because that is the disk whose
+    # slot B has a service that fails — which is precisely what there is to heal.
     build_sc=$sc
     [ "$sc" = update ] && build_sc=good
+    [ "$sc" = heal ] && build_sc=unhealthy
     disk=$("$HERE/build.sh" "$WORK" "$build_sc" | tail -1)
     rm -f "${disk%.img}.vars.fd"
 
@@ -93,6 +119,17 @@ for sc in "${SCENARIOS[@]}"; do
             fail=1
         fi
         payload=$("$HERE/build-payload.sh" "$WORK" "$WORK/payload.img" | tail -1)
+    fi
+    if [ "$sc" = heal ]; then
+        # The control for this one: slot B must HAVE the broken service, or a "repair" would
+        # be indistinguishable from nothing having happened.
+        if broken_service_present "$disk"; then
+            echo "    slot b carries the broken service its trial will fail on"
+        else
+            echo "    FAIL: slot B has no broken service, so this scenario would heal nothing"
+            fail=1
+        fi
+        payload=$("$HERE/build-payload.sh" "$WORK" "$WORK/heal.img" heal | tail -1)
     fi
 
     log="$WORK/serial-$sc.log"
@@ -131,6 +168,18 @@ for sc in "${SCENARIOS[@]}"; do
         else
             echo "    FAIL: slot b booted without the payload's marker — the trial ran on the pre-built image"
             ok=0
+        fi
+    fi
+    if [ "$sc" = heal ]; then
+        # The verdict, and it is content rather than flow: the service whose failure broke
+        # the trial must be GONE from slot B's root. The history above would look identical
+        # if the repair had done nothing at all and slot B happened to boot anyway, so this
+        # is the assertion that means something.
+        if broken_service_present "$disk"; then
+            echo "    FAIL: slot b still carries the broken service — the spare was never repaired"
+            ok=0
+        else
+            echo "    slot b no longer carries the broken service: the spare was rebuilt from the running slot AND booted"
         fi
     fi
     if [ $ok = 1 ]; then echo "    PASS"; else fail=1; fi
