@@ -31,6 +31,7 @@ run the A/B flow by itself:
 | `unhealthy` | As `good`, but a required service fails | Trial, health check fails, back on A, A stays default |
 | `crash` | As `good`, but its init dies, so the kernel panics | Trial, panic and reset, back on A, A stays default |
 | `update` | A healthy system — and the run **replaces it first**: the driver installs a sealed payload from a second read-only disk with `morph-update`, then trials what it wrote | Trial, committed, still B; **and slot B's root carries the payload's marker, which it did not before** |
+| `heal` | The **`unhealthy`** disk: a required service fails — and after the fallback the driver **rebuilds the broken spare from the running slot** with `morph-heal`, then trials it again | The `unhealthy` boots, then a trial of the rebuilt slot, committed, still B; **and the broken service is gone from slot B's root** |
 
 ⚠️ **Only `update` performs an update, and until it existed none of them did.** Every
 image built here makes both slots from **one** image — `boot_a`/`boot_b` from one

@@ -31,6 +31,13 @@ OUT=${2:?usage: build-payload.sh <workdir> <payload.img>}
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
 MORPH_UPDATE=${MORPH_UPDATE:-$REPO/target/release/morph-update}
+MORPH_HEAL=${MORPH_HEAL:-$REPO/target/release/morph-heal}
+
+# Which medium: `update` carries the updater and a sealed payload; `heal` carries only the
+# healer. The in-image driver tells them apart by what it finds on the medium rather than by
+# being told, so a scenario cannot be handed the wrong one and quietly do nothing.
+KIND=${3:-update}
+case "$KIND" in update|heal) ;; *) echo "unknown medium kind: $KIND" >&2; exit 2 ;; esac
 
 # Built by the workflow, like morph-boot, and for the same reason: this script runs
 # under sudo, whose PATH does not contain the invoking user's cargo. A clear error beats
@@ -39,6 +46,26 @@ MORPH_UPDATE=${MORPH_UPDATE:-$REPO/target/release/morph-update}
     echo "$MORPH_UPDATE is not built; run: cargo build --release -p morph-update" >&2
     exit 1
 }
+[ -x "$MORPH_HEAL" ] || {
+    echo "$MORPH_HEAL is not built; run: cargo build --release -p morph-heal" >&2
+    exit 1
+}
+
+STAGE=$(mktemp -d)
+trap 'rm -rf "$STAGE"' EXIT
+
+if [ "$KIND" = heal ]; then
+    # A healer needs no payload: it rebuilds the spare from the running system, which is
+    # already on the machine. So this medium is just the binary, and it is small.
+    cp "$MORPH_HEAL" "$STAGE/morph-heal"
+    rm -f "$OUT"
+    # `-d` is the staging DIRECTORY, then the device, then the size — the same order as the
+    # update medium below. Without `-d`, mkfs read the staging directory as the device name
+    # and died with "invalid blocks ... on device /tmp/tmp.XXXX".
+    mkfs.ext4 -q -L heal -d "$STAGE" "$OUT" 64M
+    echo "$OUT"
+    exit 0
+fi
 
 # Slot A's root still exists in the work directory after build.sh assembles the disk,
 # along with the ESP tree it copied into the image. Reuse both: a payload built from
@@ -47,8 +74,6 @@ SRC="$WORK/root-a.img"
 [ -f "$SRC" ] || { echo "no $SRC: run build.sh before this" >&2; exit 1; }
 [ -f "$WORK/esp/morpheos/a/vmlinuz" ] || { echo "no kernel at $WORK/esp/morpheos/a" >&2; exit 1; }
 
-STAGE=$(mktemp -d)
-trap 'rm -rf "$STAGE"' EXIT
 P="$STAGE/payload"
 mkdir -p "$P"
 
