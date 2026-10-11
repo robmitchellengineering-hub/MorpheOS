@@ -97,7 +97,11 @@ for sc in "${SCENARIOS[@]}"; do
 
     log="$WORK/serial-$sc.log"
     start=$(date +%s)
-    "$HERE/run-vm.sh" "$disk" "$log" "${VM_TIMEOUT:-2400}" "$payload" || { echo "VM did not power off cleanly"; fail=1; }
+    # 900s, not 2400s: the passing scenarios take under 30 SECONDS each, so a run that
+    # reaches a quarter of an hour is hung, and the only thing a longer timeout buys is a
+    # longer wait to find that out. Debugging a hang against a 40-minute loop is how a
+    # twenty-minute stall got read twice as "probably just slow".
+    "$HERE/run-vm.sh" "$disk" "$log" "${VM_TIMEOUT:-900}" "$payload" || { echo "VM did not power off cleanly"; fail=1; }
     echo "    vm time: $(( $(date +%s) - start ))s"
 
     got=$(recorded "$disk")

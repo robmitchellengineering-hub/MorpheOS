@@ -62,6 +62,20 @@ printf 'this file was installed by morph-update\n' > "$MARKER"
 # one build.sh produced and not a payload that has already been through this.
 debugfs -w -R "write $MARKER /etc/morph-update-marker" "$P/root.img" >/dev/null
 
+# ⚠️ MAKE THE FILESYSTEM CLEAN, AND PROVE IT. `debugfs -w` edits an image without
+# clearing the superblock's state, so the image comes out marked **dirty** — and a dirty
+# ext4 with an unreplayed journal cannot be mounted **read-only**, which is precisely how
+# the loader entry boots this slot (`ro` in its options). A payload that cannot be
+# mounted is not a payload, and the failure mode is not a clean error: it stalled the
+# first update run for twenty minutes while each boot's health check waited out its
+# timeout. `-n` afterwards means "make no changes and tell me if anything is wrong", so
+# the check cannot pass by repairing what it is testing.
+e2fsck -f -y "$P/root.img" >/dev/null 2>&1 || true
+e2fsck -f -n "$P/root.img" >/dev/null 2>&1 || {
+    echo "the payload root image is still not clean after e2fsck" >&2
+    exit 1
+}
+
 "$MORPH_UPDATE" --payload "$P" seal >/dev/null
 cp "$MORPH_UPDATE" "$STAGE/morph-update"
 
