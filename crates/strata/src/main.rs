@@ -23,6 +23,8 @@ commands:
                                      nothing is deleted (newer files go to quarantine)
   prune [--keep-hours N] [--hourly-days N] [--daily-days N]
                                      thin out old versions (defaults 24 / 30 / 365)
+  alerts [--json]                    ransomware-like bursts seen by `watch`, oldest first,
+                                     each with the rewind command that undoes it
   stats                              versions, files and store size
 
 TIME: -90s | -15m | -2h | -3d | @<unix seconds> | 2026-10-10T13:05:09Z
@@ -231,6 +233,34 @@ fn run(a: Args) -> Result<(), String> {
                 "{versions} old versions removed; {} objects ({} bytes) freed",
                 gc.objects_removed, gc.bytes_freed
             );
+            Ok(())
+        }
+        ["alerts", opts @ ..] if opts.iter().all(|o| *o == "--json") => {
+            let s = Strata::open(&a.store).map_err(err)?;
+            let alerts = s.alerts().map_err(err)?;
+            let json = !opts.is_empty();
+            if alerts.is_empty() && !json {
+                println!("no alerts");
+            }
+            for al in &alerts {
+                let rewind_at = time::format(al.rewind_to);
+                if json {
+                    // The alert as stored, plus the rewind point in the form `--at` reads,
+                    // so a script can pass it straight back without date arithmetic.
+                    let mut v = serde_json::to_value(al).expect("alert serializes");
+                    v["rewind_at"] = rewind_at.into();
+                    println!("{v}");
+                    continue;
+                }
+                println!(
+                    "{}  {} files turned into ciphertext",
+                    time::format(al.first_ts),
+                    al.files
+                );
+                for f in &al.folders {
+                    println!("    strata rewind {} --at {rewind_at}", f.display());
+                }
+            }
             Ok(())
         }
         ["stats"] => {

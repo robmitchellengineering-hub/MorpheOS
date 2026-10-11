@@ -6,6 +6,7 @@ on:
     paths:
       - "images/**"
       - "crates/morph-boot/**"
+      - "crates/strata/**"
       - ".github/workflows/images.yml"
   # ⚠️ NO `paths:` FILTER ON pull_request, AND THAT IS THE POINT.
   #
@@ -30,13 +31,16 @@ on:
 
 jobs:
   x86-ab-fallback:
+    # The name is a required check (AGENTS.md H10): renaming it needs the branch
+    # protection changed in the same step, so it stays as it was although the job now
+    # also runs the ransomware scenario.
     name: "Try to Break It: A/B updates (x86 VM)"
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build --release -p morph-boot
+      - run: cargo build --release -p morph-boot -p strata
       # The update scenario needs the updater. Built here, as a sibling of the line
       # above and for the same reason: the harness scripts run under `sudo`, whose PATH
       # has no cargo, so a binary built inside them cannot find its own toolchain.
@@ -53,8 +57,13 @@ jobs:
             echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
             sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
           fi
+      # Both sides of this step existed and both are real: this branch adds the Strata
+      # ransomware test, and `main` grew the `heal` scenario. Kept both — a merge that
+      # drops one of them is the quiet way to lose a test.
       - name: Good, unhealthy, crashing, updating and healing
         run: sudo images/x86-qemu/test-fallback.sh "$RUNNER_TEMP/img" good unhealthy crash update heal
+      - name: Ransomware against Strata
+        run: sudo images/x86-qemu/test-ransomware.sh "$RUNNER_TEMP/img"
       - name: Keep serial logs
         if: always()
         uses: actions/upload-artifact@v4
