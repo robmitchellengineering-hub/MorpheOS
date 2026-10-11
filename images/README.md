@@ -10,7 +10,7 @@
 ## The x86 "Try to Break It" test
 
 ```bash
-cargo build --release -p morph-boot -p strata -p morph-update
+cargo build --release -p morph-boot -p strata -p morph-update -p morph-heal
 sudo apt-get install mmdebstrap qemu-system-x86 ovmf systemd-boot-efi dosfstools mtools fdisk e2fsprogs
 sudo images/x86-qemu/test-fallback.sh /tmp/morph-img
 sudo images/x86-qemu/test-ransomware.sh /tmp/morph-img
@@ -30,6 +30,7 @@ run the A/B flow by itself:
 | `good` | A healthy system, put there by `build.sh` | Trial, committed, still B after a reboot |
 | `unhealthy` | As `good`, but a required service fails | Trial, health check fails, back on A, A stays default |
 | `crash` | As `good`, but its init dies, so the kernel panics | Trial, panic and reset, back on A, A stays default |
+| `plain` | **Not a test**: no self-test driver, no scenario damage, an autologin root shell and the tools to drive an A/B update by hand. This is the image that goes on real hardware ([HARDWARE.md](x86-qemu/HARDWARE.md)) | Boots, reaches a login, commits slot A and **stays up** — `test-boot.sh` asserts it does not power itself off |
 | `update` | A healthy system — and the run **replaces it first**: the driver installs a sealed payload from a second read-only disk with `morph-update`, then trials what it wrote | Trial, committed, still B; **and slot B's root carries the payload's marker, which it did not before** |
 | `heal` | The **`unhealthy`** disk: a required service fails — and after the fallback the driver **rebuilds the broken spare from the running slot** with `morph-heal`, then trials it again | The `unhealthy` boots, then a trial of the rebuilt slot, committed, still B; **and the broken service is gone from slot B's root** |
 

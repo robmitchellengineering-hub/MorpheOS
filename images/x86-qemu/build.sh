@@ -6,6 +6,8 @@
 # scenario: good | unhealthy | crash   (what slot B's "update" does)
 #           ransomware                 (no update: slot A attacks its own files,
 #                                       and Strata has to get them back)
+#           plain                      (no self-test at all: a machine to USE, for real
+#                                       hardware — see images/x86-qemu/HARDWARE.md)
 #
 # Disk layout (GPT):
 #   1 esp     FAT32  systemd-boot, loader.conf, one kernel+initrd per slot
@@ -22,7 +24,10 @@ set -euo pipefail
 
 WORK=${1:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
 SCENARIO=${2:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
-case "$SCENARIO" in good|unhealthy|crash|ransomware) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
+case "$SCENARIO" in good|unhealthy|crash|ransomware|plain) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
+# `plain` is the one that leaves the CI harness behind and is meant to be booted by a person.
+HARDWARE=0
+if [ "$SCENARIO" = plain ]; then HARDWARE=1; fi
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
@@ -30,6 +35,8 @@ SUITE=${SUITE:-noble}
 MIRROR=${MIRROR:-http://archive.ubuntu.com/ubuntu}
 MORPH_BOOT=${MORPH_BOOT:-$REPO/target/release/morph-boot}
 STRATA=${STRATA:-$REPO/target/release/strata}
+MORPH_UPDATE=${MORPH_UPDATE:-$REPO/target/release/morph-update}
+MORPH_HEAL=${MORPH_HEAL:-$REPO/target/release/morph-heal}
 SDBOOT_EFI=${SDBOOT_EFI:-/usr/lib/systemd/boot/efi/systemd-bootx64.efi}
 
 [ -x "$MORPH_BOOT" ] || { echo "missing $MORPH_BOOT: run cargo build --release -p morph-boot" >&2; exit 1; }
@@ -58,7 +65,18 @@ make_root() {
     rm -f "$dir/.complete"
     cp -a "$REPO/images/common/overlay/." "$dir/"
     cp -a "$HERE/overlay/." "$dir/"
-    cp -a "$REPO/images/common/selftest-overlay/." "$dir/"
+    if [ "$HARDWARE" = 1 ]; then
+        # No self-test driver: nothing here powers the machine off or walks a scenario. The
+        # tools the person at the console needs instead, and an autologin so that a machine
+        # whose screen is dark can still be reached (see the overlay's own comments).
+        cp -a "$HERE/overlay-hardware/." "$dir/"
+        for tool in "$MORPH_UPDATE:$dir/usr/bin/morph-update" "$MORPH_HEAL:$dir/usr/bin/morph-heal"; do
+            src=${tool%%:*}; dst=${tool#*:}
+            if [ -x "$src" ]; then install -m 0755 "$src" "$dst"; fi
+        done
+    else
+        cp -a "$REPO/images/common/selftest-overlay/." "$dir/"
+    fi
     install -m 0755 "$MORPH_BOOT" "$dir/usr/bin/morph-boot"
     install -m 0755 "$STRATA" "$dir/usr/bin/strata"
     echo "morpheos-$slot" > "$dir/etc/hostname"
@@ -77,9 +95,32 @@ EOF
         ln -sf "/usr/lib/systemd/system/$unit.service" \
             "$dir/etc/systemd/system/multi-user.target.wants/$unit.service"
     done
-    if [ "$SCENARIO" = ransomware ]; then
-        # No update in this scenario: the self-test attacks the files instead.
-        ln -sf ransomware-test "$dir/usr/lib/morpheos/test-hook"
+    if [ "$HARDWARE" = 1 ]; then
+        ln -sf /usr/lib/systemd/system/morph-banner.service \
+            "$dir/etc/systemd/system/multi-user.target.wants/morph-banner.service"
+        # ⚠️ A VM IS NOT A LAPTOP, AND THE KERNEL IS WHERE THAT BITES.
+        #
+        # This image is meant to boot from a USB stick on real hardware, and the drivers it
+        # needs for that are simply not exercised by QEMU — which presents virtio. Asserting
+        # them here is the difference between finding out now and finding out on a dark screen:
+        # a kernel flavour can be built without USB storage at all (the `-virtual` flavour
+        # exists for VMs, and this image used it).
+        # A module, or built into the kernel — `efifb` is built in on amd64, so a check that
+        # only looked for the .ko would fail a perfectly good image, and a check that failed
+        # every run is a check nobody reads (H2).
+        builtin=$(cat "$dir"/usr/lib/modules/*/modules.builtin 2>/dev/null || true)
+        missing=""
+        for mod in usb-storage uas xhci_hcd ahci sd_mod ext4 vfat efifb; do
+            found=$(find "$dir/usr/lib/modules" -name "$mod.ko*" -print -quit 2>/dev/null || true)
+            if [ -z "$found" ] && ! printf '%s' "$builtin" | grep -q "/$mod\.ko"; then
+                missing="$missing $mod"
+            fi
+        done
+        if [ -n "$missing" ]; then
+            echo "the image has no driver for:$missing — a real machine cannot boot from this" >&2
+            echo "kernel flavour: $(ls "$dir"/boot/vmlinuz-* 2>/dev/null | xargs -n1 basename)" >&2
+            exit 1
+        fi
     fi
     # Hardware watchdog: a hung kernel or PID 1 gets reset, and a reset ends a trial.
     mkdir -p "$dir/etc/systemd/system.conf.d"
@@ -117,6 +158,14 @@ for slot in a b; do
     cp "$(ls "$root"/boot/vmlinuz-* | sort | tail -1)" "$ESPDIR/morpheos/$slot/vmlinuz"
     cp "$(ls "$root"/boot/initrd.img-* | sort | tail -1)" "$ESPDIR/morpheos/$slot/initrd.img"
     extra=""
+    console="console=ttyS0"
+    if [ "$HARDWARE" = 1 ]; then
+        # A laptop's screen is the only console anyone is looking at. `tty0` is listed FIRST
+        # so the kernel's own messages reach it, while `/dev/console` stays on the serial port
+        # (the last one wins) — which keeps this image's behaviour identical to the test
+        # images' on the one console CI reads.
+        console="console=tty0 console=ttyS0,115200"
+    fi
     if [ "$slot" = b ] && [ "$SCENARIO" = crash ]; then
         # An "update" whose init dies immediately: the kernel panics.
         extra=" init=/bin/false"
@@ -125,7 +174,7 @@ for slot in a b; do
 title   MorpheOS (slot $slot)
 linux   /morpheos/$slot/vmlinuz
 initrd  /morpheos/$slot/initrd.img
-options root=PARTLABEL=root-$slot ro morph.slot=$slot console=ttyS0 panic=5$extra
+options root=PARTLABEL=root-$slot ro morph.slot=$slot $console panic=5$extra
 EOF
 done
 
