@@ -4,7 +4,7 @@ MorpheOS x86 test image
 This image exists so the A/B update path can be used by hand on real hardware.
 It is not a product and it is not hardened: root has no password and logs in
 automatically on the local console and on the serial port. There is no network
-configured, deliberately — everything below works offline, from a second USB
+configured, deliberately - everything below works offline, from a second USB
 stick.
 
 What it is
@@ -27,7 +27,7 @@ payload). Plug it in and the tool finds it by its label:
       --payload /mnt/payload install
 
 The inactive slot's device is whichever of /dev/disk/by-partlabel/root-a or
-root-b is NOT the booted slot — `morph-boot status` says which.
+root-b is NOT the booted slot - `morph-boot status` says which.
 
 Reading the result afterwards
 -----------------------------

@@ -6,5 +6,5 @@
 # type". The boot check asserts this line appears when nothing was typed.
 if [ -t 0 ]; then
     status=$(/usr/bin/morph-boot status 2>/dev/null || echo '{"error":"morph-boot status failed"}')
-    printf '\nMORPHEOS CONSOLE READY — %s\n\n' "$status"
+    printf '\nMORPHEOS CONSOLE READY - %s\n\n' "$status"
 fi
