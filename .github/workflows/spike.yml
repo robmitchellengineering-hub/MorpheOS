@@ -1,0 +1,18 @@
+name: spike
+on: [push, workflow_dispatch]
+jobs:
+  libs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: what a Wayland compositor build would need on this runner
+        run: |
+          echo "--- dev packages ---"
+          for p in pkg-config libwayland-dev libpixman-1-dev libxkbcommon-dev libdrm-dev libudev-dev libinput-dev libseat-dev libegl1-mesa-dev libgles2-mesa-dev; do
+            if dpkg -s "$p" >/dev/null 2>&1; then echo "PRESENT  $p"; else echo "ABSENT   $p"; fi
+          done
+          echo "--- can pkg-config find them? (this is what wayland-sys and pixman-sys fail on) ---"
+          for m in wayland-server wayland-client pixman-1 xkbcommon libdrm libudev libinput libseat egl glesv2; do
+            if pkg-config --exists "$m" 2>/dev/null; then echo "OK   $m $(pkg-config --modversion $m)"; else echo "NO   $m"; fi
+          done
+          echo "--- image ---"
+          grep -E "^(PRETTY_NAME)=" /etc/os-release
