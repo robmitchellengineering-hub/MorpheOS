@@ -59,6 +59,27 @@ the re-read would have been the wrong one.
 `heal` is unchanged by this and reports the same `root_bytes: 1258291200`, because it
 rebuilds the spare from the **running partition**, which is still the whole slot.
 
+### The result file, and why it is on a FAT partition
+
+Test images write a **`MORPH-TEST-RESULT.TXT`** as they go: one timestamped line per step, and
+at the end a `RESULT:` line with the slot state, the kernel, the command line and the boot
+history. It is written to the boot partition — FAT on both images — because the first boot on
+real hardware is a *diagnosis*, and requiring a serial cable to find out what happened would
+make the test depend on a part nobody has. Pull the card or the disk out, open the file on any
+computer.
+
+- `MORPH_TEST_REPORT` names the path (`/efi/MORPH-TEST-RESULT.TXT` on the x86 image,
+  `/bootfs/MORPH-TEST-RESULT.TXT` on the Pi), and the driver stays silent when it is unset.
+- The x86 harness asserts the file is **not** on the disk before the VM boots, is there
+  afterwards, and names the steps *that scenario* took (the install, the repair, the trial) — so
+  what is checked is that the machine wrote down what it actually did, not that an image was
+  built with a file in it. `RESULT:` reads `UNKNOWN` on x86 by design: that image declares no
+  expected slot, because the verdict for this platform is the boot history.
+- The `PASS`/`FAIL` comparison is exercised against a stubbed `morph-boot` — the one place it can
+  be run without a Pi — and then by the Pi itself, where it is the whole point.
+- Every write is guarded: a report that cannot be written must never be the reason a test does
+  not finish.
+
 ### Ransomware
 
 `test-ransomware.sh` boots slot A only, with no update. The self-test writes 24

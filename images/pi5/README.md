@@ -28,6 +28,38 @@ power-on it tests the update path on real hardware, by itself:
 Attach a screen to see progress. The whole run takes a few minutes, with
 two automatic reboots.
 
+### ⚠️ It has never been booted, and the result file is how we find out
+
+**No Raspberry Pi has ever run this image.** The build is verified structurally and nothing
+more, and there is no QEMU model for a Pi 5 — so the first power-on is the only way to learn
+whether the firmware boots it, the kernel starts, and the health check runs. Expect the first
+attempt to teach us something.
+
+**You do not need a serial cable.** Every step appends a line to
+**`MORPH-TEST-RESULT.TXT` on the boot partition** (the FAT one), and the end of the run writes
+the verdict, the slot state, the kernel, the command line and the whole boot history into the
+same file. The trail is written as it goes, so a machine that stops half way still says how far
+it got.
+
+1. Download `morpheos-pi5-selftest` from the `images` workflow run and unpack it.
+2. Flash it to a microSD card (Raspberry Pi Imager → *Use custom image*, or `dd`).
+3. Put the card in the Pi 5, attach a screen (HDMI), and power on.
+4. Wait for it to settle — it should reboot itself twice. **Then power it off and put the card
+   back in your computer.**
+5. Open the FAT partition and send back `MORPH-TEST-RESULT.TXT`.
+
+What the file means:
+
+| in the file | what it tells us |
+|---|---|
+| `RESULT: PASS` | the firmware booted slot B as a trial, the health check committed it, and the commit survived a reboot — **the wedge, on real hardware** |
+| `RESULT: FAIL` | the flow ran but the default slot is not B; the history above it says which boot decided otherwise |
+| the trail stops after `step 0` | the trial was armed and the machine never came back — the firmware did not boot slot B |
+| no file at all | the image did not reach `morph-boot-check`; the screen then matters, and a photo of it is the useful next thing |
+
+If the screen shows a kernel panic or drops to the firmware's rainbow screen, a photograph of
+it plus the (possibly absent) result file is the whole diagnosis.
+
 ## What is verified, and what is not
 
 The `images` workflow builds this image and then **reads it back**: the six

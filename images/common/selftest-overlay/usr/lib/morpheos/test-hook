@@ -14,12 +14,33 @@
 # MORPH_TEST_DIR     where the step counter lives (shared by both slots)
 # MORPH_TEST_EXPECT  slot that should be the default at the end (optional)
 # MORPH_TEST_FINISH  poweroff (VM tests) or stay (real hardware)
+# MORPH_TEST_REPORT  where to write the result, on a partition a person can read (optional)
 set -eu
 dir=${MORPH_TEST_DIR:-/efi/morph-test}
 mkdir -p "$dir"
 step=$(cat "$dir/step" 2>/dev/null || echo 0)
-echo "morph-test: step $step"
 medium=${MORPH_TEST_PAYLOAD:-/dev/vdb}
+
+# ⚠️ THE RESULT GOES ON A FAT PARTITION, BECAUSE THE FIRST BOOT ON REAL HARDWARE IS A
+# DIAGNOSIS RATHER THAN A DEMONSTRATION.
+#
+# Nothing in this repository has ever been powered on with a Raspberry Pi, and there is no
+# QEMU model for one — so the first attempt is the only way to learn whether the firmware
+# boots the image, the kernel starts, and the health check runs. Requiring a serial cable to
+# find that out would make the test depend on a part nobody has. The boot partition is FAT:
+# pull the card out, open it on any computer, read the file. Every step appends a line, so a
+# machine that stops half way still says how far it got.
+#
+# Unset by default, so the x86 harness behaves exactly as it did. Guarded at every write: a
+# report that cannot be written must never be the reason a test does not finish.
+report=${MORPH_TEST_REPORT:-}
+say() {
+    echo "morph-test: $*"
+    [ -n "$report" ] || return 0
+    printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo '?')" "$*" \
+        >> "$report" 2>/dev/null || true
+}
+say "step $step: starting"
 
 # ⚠️ THE MOUNT POINT GOES UNDER /run, AND EVERY STEP IS GUARDED.
 #
@@ -51,23 +72,23 @@ case "$step" in
         # carries the healer instead, this block does nothing.
         if mount_medium; then
             if [ -x "$mnt/morph-update" ] && [ -d "$mnt/payload" ]; then
-                echo "morph-test: installing the payload from $medium into the inactive slot"
+                say "installing the payload from $medium into the inactive slot"
                 # Bounded, so a slow or stuck install cannot stall the machine until the
                 # harness gives up — the test must always reach its own verdict.
                 if timeout 600 "$mnt/morph-update" --esp /efi --root /dev/vda3 \
                     --payload "$mnt/payload" install
                 then
-                    echo "morph-test: morph-update reported success"
+                    say "morph-update reported success"
                 else
-                    echo "morph-test: MORPH-UPDATE FAILED (exit $?) — slot b is unchanged"
+                    say "MORPH-UPDATE FAILED — slot b is unchanged"
                 fi
             fi
-            umount "$mnt" || echo "morph-test: could not unmount $mnt"
+            umount "$mnt" || say "could not unmount $mnt"
         else
-            echo "morph-test: no medium at $medium; trialling whatever slot b holds"
+            say "no medium at $medium; trialling whatever slot b holds"
         fi
         echo 1 > "$dir/step"; sync
-        echo "morph-test: arming trial of slot b"
+        say "arming trial of slot b"
         morph-boot trial b --reboot
         ;;
     1)
@@ -76,39 +97,57 @@ case "$step" in
         # Then trial the REPAIRED slot — that is the whole point: a machine that heals is
         # one that can use the slot again, not one that merely wrote to it.
         if mount_medium && [ -x "$mnt/morph-heal" ]; then
-            echo "morph-test: the spare is broken; repairing it from the running system"
+            say "the spare is broken; repairing it from the running system"
             if timeout 600 "$mnt/morph-heal" --esp /efi \
                 --root-running /dev/vda2 --root-spare /dev/vda3 repair
             then
-                echo "morph-test: morph-heal reported success"
+                say "morph-heal reported success"
             else
-                echo "morph-test: MORPH-HEAL FAILED (exit $?) — the spare is still broken"
+                say "MORPH-HEAL FAILED — the spare is still broken"
             fi
-            umount "$mnt" || echo "morph-test: could not unmount $mnt"
+            umount "$mnt" || say "could not unmount $mnt"
             echo 11 > "$dir/step"; sync
-            echo "morph-test: arming a trial of the repaired slot b"
+            say "arming a trial of the repaired slot b"
             morph-boot trial b --reboot
         else
             echo 2 > "$dir/step"; sync
-            echo "morph-test: plain reboot"
+            say "plain reboot"
             systemctl reboot
         fi
         ;;
     11)
         echo 12 > "$dir/step"; sync
-        echo "morph-test: plain reboot"
+        say "plain reboot"
         systemctl reboot
         ;;
     *)
         status=$(morph-boot status)
-        echo "morph-test: done $status"
+        say "done $status"
+        verdict=UNKNOWN
         if [ -n "${MORPH_TEST_EXPECT:-}" ]; then
             case "$status" in
                 *"\"default\":\"$MORPH_TEST_EXPECT\""*)
-                    echo "morph-test: MORPHEOS SELF-TEST PASS (default slot is $MORPH_TEST_EXPECT)" ;;
+                    verdict=PASS
+                    say "MORPHEOS SELF-TEST PASS (default slot is $MORPH_TEST_EXPECT)" ;;
                 *)
-                    echo "morph-test: MORPHEOS SELF-TEST FAIL (expected default slot $MORPH_TEST_EXPECT; see: journalctl -u morph-boot-check)" ;;
+                    verdict=FAIL
+                    say "MORPHEOS SELF-TEST FAIL (expected default slot $MORPH_TEST_EXPECT; see: journalctl -u morph-boot-check)" ;;
             esac
+        fi
+        if [ -n "$report" ]; then
+            {
+                printf '\n=== MorpheOS self-test result ===\n'
+                printf 'RESULT:   %s\n' "$verdict"
+                printf 'when:     %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo '?')"
+                printf 'expected: default slot %s\n' "${MORPH_TEST_EXPECT:-<not checked>}"
+                printf 'status:   %s\n' "$status"
+                printf '\nkernel:   %s\n' "$(uname -r 2>/dev/null || echo '?')"
+                printf 'cmdline:  %s\n' "$(cat /proc/cmdline 2>/dev/null || echo '?')"
+                printf '\nboot history (%s):\n' "${MORPH_BOOT_HISTORY:-not set}"
+                cat "${MORPH_BOOT_HISTORY:-/nonexistent}" 2>/dev/null || printf '  (no history file)\n'
+                printf '\nIf this says FAIL, or the trail above stops part way, send this whole\n'
+                printf 'file: it says which step the machine reached and what the firmware chose.\n'
+            } >> "$report" 2>/dev/null || echo "morph-test: could not write $report"
         fi
         [ "${MORPH_TEST_FINISH:-poweroff}" = poweroff ] && systemctl poweroff
         ;;
