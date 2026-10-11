@@ -25,8 +25,12 @@ The goal is that "Mac vs PC vs Linux vs Android" stops being a question people a
 
 - **It's what everyone feels.** Every Windows, Mac and Linux user has lost a day to a
   broken update, a bad driver, malware or a dead disk. Nobody has solved this end to end.
-- **It's demonstrable.** "Delete the system folder live on stage, and it heals in
-  30 seconds" is a demo nobody else can give ([15](15-self-healing.md)).
+- **It's demonstrable.** "Delete the system folder live on stage, and it comes back" is a demo
+  nobody else can give. That is **H4**, rebuild in place, and the measured cost of its core —
+  write a system image into a slot and verify it by reading it back — is **~7 s** on the x86
+  test VM (measured 2026-10-11). **What H4 still needs is the immutable recovery image to
+  rebuild *from*;** the rung that costs a reboot and is already built is **H3**
+  ([15](15-self-healing.md), [ADR 0009](adr/0009-heal-ladder.md)).
 - **It's the foundation for everything else.** The AI setup, the Windows capsules and the
   experiments (doc 12) are only safe *because* nothing can break.
 - **It fits the market.** Pi and edge devices, schools, small businesses,

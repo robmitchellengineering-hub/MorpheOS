@@ -69,6 +69,13 @@ running machine:
 | H4 | **Rebuild in place** from the immutable recovery image: reflash system, keep Strata | ~2–5 min | None |
 | H5 | **Phoenix restore**: a new or wiped device is rebuilt from a mesh peer or backup | ~5–15 min, with data streaming in as it's needed | Back to the last sync point (usually seconds) |
 
+> ⚠️ **Every figure in that table is a TARGET. None of them is measured.** What *is* measured
+> (2026-10-11, the x86 test VM) is the core of H3 and H4: writing a system image into a slot and
+> verifying it by reading it back takes **~6–7 s**, and a boot reaches its health decision in
+> **~2.4 s**. Which rungs exist at all — and which are blocked on what — is
+> [ADR 0009](adr/0009-heal-ladder.md)'s table, not this one's. [doc 13](13-physics-and-math.md)
+> requires a figure to say whether it is measured or intended; this table did not.
+
 Data-level healing works alongside the ladder:
 - **File rewind:** any file or folder back to any version (Strata CoW).
 - **Ransomware rewind:** detect mass encryption, freeze the capsule doing it, and rewind the
@@ -131,7 +138,11 @@ Data-level healing works alongside the ladder:
 
 A live, public challenge on a stock MorpheOS laptop and a Pi:
 
-1. `rm -rf` the entire system root → automatic **H4**, back in about 3 minutes, with all files intact.
+1. `rm -rf` the entire system root → automatic **H4**, with all files intact. ⚠️ **The "about 3
+   minutes" this used to claim was a target, and no measurement supported it.** The measured part
+   is H4's core — write a system image into a slot and verify it by reading it back — at **~7 s**
+   on the x86 test VM (measured 2026-10-11), and **H4 itself is not built**: it needs the
+   immutable recovery image to rebuild *from*. See [ADR 0009](adr/0009-heal-ladder.md).
 2. Install a deliberately broken driver as an update → its one trial boot fails, and the next boot is the previous system (**H3**).
 3. Run a ransomware simulator on Documents → it's detected, frozen and rewound (**data heal**).
 4. Fill the disk to 100% → caches are evicted and old versions tiered out, with no crash.
