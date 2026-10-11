@@ -1,0 +1,13 @@
+[package]
+name = "morph-heal"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "MorpheOS: notice that the spare slot is broken and rebuild it from the running system"
+
+[dependencies]
+morph-boot = { path = "../morph-boot" }
+morph-update = { path = "../morph-update" }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"

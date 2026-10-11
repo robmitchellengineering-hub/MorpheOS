@@ -283,6 +283,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "morph-heal"
+version = "0.1.0"
+dependencies = [
+ "morph-boot",
+ "morph-update",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "morph-manifest"
 version = "0.1.0"
 dependencies = [
