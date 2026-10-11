@@ -10,11 +10,13 @@
 pub mod layer;
 pub mod model;
 pub mod plan;
+pub mod store;
 pub mod validate;
 
 pub use layer::{resolve, resolve_value};
 pub use model::Manifest;
 pub use plan::{Applied, Plan, Risk, apply, plan_values};
+pub use store::{Generation, Store};
 pub use validate::{Finding, Report, Severity, unenforced_settings, validate};
 
 use std::fmt;

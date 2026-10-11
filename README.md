@@ -83,6 +83,10 @@ cargo run -q -p morph-manifest -- apply manifest/examples/desk-laptop.toml \
   manifest/examples/desk-laptop-proposed.toml --to /tmp/out.json
 ```
 
+`--to` writes one generation where you say. `--store <dir>` **keeps them**: every generation is
+retained, `current` names the newest, and `rollback` moves that pointer back — or forward again —
+without deleting anything. Use it when the change should be undoable rather than only refused.
+
 Licensed under [Apache-2.0](LICENSE).
 
 ## Status

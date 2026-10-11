@@ -9,14 +9,24 @@ cargo run -q -p morph-manifest -- validate manifest/examples/studio-pc.toml
 cargo run -q -p morph-manifest -- render   manifest/examples/seed-shed-pi.toml
 cargo run -q -p morph-manifest -- plan     manifest/examples/desk-laptop.toml manifest/examples/desk-laptop-proposed.toml
 cargo run -q -p morph-manifest -- apply    manifest/examples/desk-laptop.toml manifest/examples/desk-laptop-proposed.toml --to /tmp/out.json
+cargo run -q -p morph-manifest -- apply    manifest/examples/desk-laptop.toml manifest/examples/desk-laptop-proposed.toml --store /tmp/store --approved-by you
+cargo run -q -p morph-manifest -- history  --store /tmp/store
 cargo run -q -p morph-manifest -- schema
 ```
 
 `plan` reports what would change and at which risk tier; **`apply` is where that tier refuses
 something.** It exits **0** applied, **1** `REFUSED` (a decision — the reason is on stderr and the target is
 left untouched) or **2** a defect. An invalid generation is refused for every caller, and above tier 1 it
-is refused unless a person is named with `--approved-by <who>`. So the `apply` line above **refuses** —
-widening a capsule's file access is tier 3. Add `--approved-by <who>` to watch it apply.
+is refused unless a person is named with `--approved-by <who>`. So the first `apply` line above
+**refuses** — widening a capsule's file access is tier 3 — and the second applies it into a store.
+
+`--to` writes one generation over a file. **`--store` keeps them:** every generation is retained,
+`current` names the newest, and `history` lists them with the tier and who approved it. `rollback
+[--to <number>]` moves that pointer back — or forward again — **without deleting anything**, so a
+rollback to the wrong generation is itself undone by another one. A plan that starts from a
+generation the store has moved past is refused rather than applied over a machine it never saw, and
+a refused apply leaves the store exactly as it was. With only one generation, `rollback` refuses and
+says why.
 
 | Example | Profile | What it shows |
 |---|---|---|
