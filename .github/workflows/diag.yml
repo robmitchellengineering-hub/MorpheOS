@@ -15,6 +15,7 @@ jobs:
           LOOP=$(sudo losetup -Pf --show disk.img)
           sudo partprobe "$LOOP" || true
           sleep 2
+          sudo mkdir -p /mnt/root
           echo "=== partitions ==="
           sudo blkid | sed -n '1,12p'
           for part in ${LOOP}p1 ${LOOP}p2 ${LOOP}p3 ${LOOP}p4; do
