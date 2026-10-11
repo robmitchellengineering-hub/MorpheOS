@@ -188,8 +188,25 @@ for sc in "${SCENARIOS[@]}"; do
         echo "$report" | grep -q '^RESULT:' || { echo "    FAIL: the report has no RESULT line"; ok=0; }
         echo "$report" | grep -q 'step 0: starting' || { echo "    FAIL: the report does not say the walk started"; ok=0; }
         echo "$report" | grep -q 'arming trial of slot b' || { echo "    FAIL: the report does not name the trial"; ok=0; }
+        # The trail must name what THIS scenario did, not merely exist. `RESULT:` is UNKNOWN on
+        # x86 by design — the image declares no expected slot here, because the verdict for this
+        # platform is the boot history below. What the file has to prove is that the machine
+        # recorded the steps it actually took.
+        case "$sc" in
+            update)
+                echo "$report" | grep -q 'installing the payload' || { echo "    FAIL: the report does not mention the install"; ok=0; }
+                echo "$report" | grep -q 'morph-update reported success' || { echo "    FAIL: the report does not mention the install succeeding"; ok=0; }
+                ;;
+            heal)
+                echo "$report" | grep -q 'repairing it from the running system' || { echo "    FAIL: the report does not mention the repair"; ok=0; }
+                echo "$report" | grep -q 'morph-heal reported success' || { echo "    FAIL: the report does not mention the repair succeeding"; ok=0; }
+                ;;
+            *)
+                echo "$report" | grep -q 'arming trial of slot b' || { echo "    FAIL: the report does not mention the trial"; ok=0; }
+                ;;
+        esac
         if [ $ok = 1 ]; then
-            echo "    report: $(echo "$report" | grep '^RESULT:' | head -1)"
+            echo "    report: $(echo "$report" | grep '^RESULT:' | head -1) ($(echo "$report" | wc -l | tr -d ' ') lines, written by the machine)"
         fi
     fi
     if [ "$sc" = heal ]; then
