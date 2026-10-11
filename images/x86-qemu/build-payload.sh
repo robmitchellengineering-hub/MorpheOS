@@ -59,7 +59,10 @@ if [ "$KIND" = heal ]; then
     # already on the machine. So this medium is just the binary, and it is small.
     cp "$MORPH_HEAL" "$STAGE/morph-heal"
     rm -f "$OUT"
-    mkfs.ext4 -q -L heal "$STAGE" "$OUT" 64M
+    # `-d` is the staging DIRECTORY, then the device, then the size — the same order as the
+    # update medium below. Without `-d`, mkfs read the staging directory as the device name
+    # and died with "invalid blocks ... on device /tmp/tmp.XXXX".
+    mkfs.ext4 -q -L heal -d "$STAGE" "$OUT" 64M
     echo "$OUT"
     exit 0
 fi
