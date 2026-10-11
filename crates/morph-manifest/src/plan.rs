@@ -132,8 +132,29 @@ fn change(path: String, kind: ChangeKind, before: Option<&Value>, after: Option<
     }
 }
 
+/// The tier a path gets when **no rule matches it**.
+///
+/// ⚠️ **This constant is the whole point of this function's shape, and it used to be a
+/// silent `PersistentConfig`.** Tier 2 is the middle of the range, and because it was the
+/// fallback it was also the tier applied to every path the table did not anticipate — so a
+/// setting added to the Manifest arrived already classified, by nobody. The risk tier is what
+/// decides whether a change may be applied without a person, so a tier that was never chosen
+/// is worse than a wrong one: a wrong tier can be argued with.
+///
+/// It is now the **most conservative** tier, which is the safe direction: an unclassified
+/// change is never auto-applied, so the failure mode is "a person is asked" rather than "an
+/// unclassified change is applied alone".
+///
+/// And it is close to unreachable: `every_leaf_in_the_schema_is_classified` walks
+/// [`crate::schema_leaf_paths`] and fails if any leaf the schema can produce lands here.
+/// **Reaching this constant with a real Manifest path is a bug, not a policy.**
+pub const UNCLASSIFIED: Risk = Risk::SecurityCritical;
+
 /// Classify a changed path. Rules are checked in order; the first match wins.
-pub fn risk_of(path: &str) -> Risk {
+///
+/// Returns `None` when no rule matches, so that "the table classified this" and "the table had
+/// nothing to say" are distinguishable. [`risk_of`] is the version callers want.
+pub fn risk_rule_of(path: &str) -> Option<Risk> {
     // `/services[mixer]/class` → `/services[*]/class`
     let mut generic = String::with_capacity(path.len());
     let mut in_name = false;
@@ -163,6 +184,38 @@ pub fn risk_of(path: &str) -> Risk {
         ("/services[*]/class", Risk::ReversibleLocal),
         ("/storage/min_free_percent", Risk::ReversibleLocal),
         ("/machine/name", Risk::ReversibleLocal),
+        // ── classified deliberately, when the table was checked against the schema ─────
+        //
+        // Every rule below was added on 2026-10-11 after `every_leaf_in_the_schema_is_
+        // classified_by_a_rule` found **16 of 34 schema leaves matching no rule** — which
+        // meant sixteen settings had a tier nobody chose. The tier is now a decision and the
+        // comment is the reason. Tiers are doc 06's: 0 cosmetic (auto, silent), 1 reversible
+        // local (auto, with Undo), 2 persistent config (ask, one tap), 3 data-affecting
+        // (always ask, show a diff), 4 security-critical (strong auth; the AI cannot do it
+        // alone).
+        //
+        // 4 — what code runs, and how much the machine may do without a person. Same class
+        // as `/system/boot` and `/heal/enabled`, which were already here.
+        ("/manifest_version", Risk::SecurityCritical), // changes how every other value is read
+        ("/system/kernel", Risk::SecurityCritical),    // selects the code booted at the top layer
+        ("/services[*]/exec", Risk::SecurityCritical), // arbitrary code, as the service user
+        ("/heal/max_auto_rung", Risk::SecurityCritical), // how far it may repair alone
+        ("/heal/ask_after_failed_rungs", Risk::SecurityCritical), // when it must ask instead
+        // 2 — preferences that change behaviour and want a person's nod. Doc 06 puts both
+        // "install an app" and "change a network profile" here.
+        ("/system/channel", Risk::PersistentConfig), // which software you are offered
+        ("/system/update_ring", Risk::PersistentConfig),
+        ("/machine/profile", Risk::PersistentConfig), // moves many defaults at once
+        ("/network/ethernet", Risk::PersistentConfig),
+        ("/network/wifi", Risk::PersistentConfig),
+        ("/capsules[*]/source", Risk::PersistentConfig), // what gets installed
+        ("/services[*]/enabled", Risk::PersistentConfig),
+        ("/services[*]/after", Risk::PersistentConfig), // startup order; wrong is a bad boot
+        // 1 — names, and the capsule recipe. Doc 06 names "capsule recipe" as a tier 1
+        // example, and `/machine/name` was already here for the same reason.
+        ("/capsules[*]/name", Risk::ReversibleLocal),
+        ("/capsules[*]/runtime", Risk::ReversibleLocal),
+        ("/services[*]/name", Risk::ReversibleLocal),
     ];
     RULES
         .iter()
@@ -172,7 +225,11 @@ pub fn risk_of(path: &str) -> Risk {
                 || p.starts_with(&format!("{prefix}["))
         })
         .map(|(_, r)| *r)
-        .unwrap_or(Risk::PersistentConfig)
+}
+
+/// The tier for a changed path: the table's answer, or [`UNCLASSIFIED`].
+pub fn risk_of(path: &str) -> Risk {
+    risk_rule_of(path).unwrap_or(UNCLASSIFIED)
 }
 
 #[cfg(test)]
@@ -186,9 +243,45 @@ mod tests {
         assert_eq!(risk_of("/capsules[daw]/grants"), Risk::DataAffecting);
         assert_eq!(risk_of("/storage/replicas[nas]"), Risk::DataAffecting);
         assert_eq!(risk_of("/services[mixer]/class"), Risk::ReversibleLocal);
-        assert_eq!(risk_of("/services[mixer]/exec"), Risk::PersistentConfig);
         assert_eq!(risk_of("/network/wifi"), Risk::PersistentConfig);
         // A prefix must match a whole segment, not part of a name.
-        assert_eq!(risk_of("/usersettings"), Risk::PersistentConfig);
+        assert_eq!(risk_of("/usersettings"), UNCLASSIFIED);
+        // ⚠️ **This line used to assert `PersistentConfig`, and it was wrong in a way worth
+        // keeping.** `/services[*]/exec` matched no rule, so it inherited the silent default —
+        // and the test recorded that accident as if it were the decision. A service's `exec`
+        // is the command run as that service, frequently as root: it is arbitrary code, which
+        // is what tier 4 is for. The assertion was correct about the code and wrong about the
+        // intent, which is exactly what a test of a default cannot tell you.
+        assert_eq!(risk_of("/services[mixer]/exec"), Risk::SecurityCritical);
+        // And the tiers the schema check forced us to choose:
+        assert_eq!(risk_of("/system/kernel"), Risk::SecurityCritical);
+        assert_eq!(risk_of("/capsules[daw]/runtime"), Risk::ReversibleLocal);
+        assert_eq!(risk_of("/capsules[daw]/source"), Risk::PersistentConfig);
+        assert_eq!(risk_of("/system/channel"), Risk::PersistentConfig);
+    }
+
+    /// **The check the risk table has never had.** It used to be a hand-written table with a
+    /// silent default, so "is every path classified?" could only be answered by reading the
+    /// table and the schema side by side and hoping. This walks the schema and asks.
+    #[test]
+    fn every_leaf_in_the_schema_is_classified_by_a_rule() {
+        let leaves = crate::schema_leaf_paths();
+        assert!(
+            !leaves.is_empty(),
+            "the schema walker found no leaves at all"
+        );
+        let unclassified: Vec<&String> = leaves
+            .iter()
+            .filter(|p| risk_rule_of(p).is_none())
+            .collect();
+        assert!(
+            unclassified.is_empty(),
+            "{} of {} schema leaves match no rule, so they fall to {:?} — a tier nobody chose \
+             for them. Add a rule for each:\n{:#?}",
+            unclassified.len(),
+            leaves.len(),
+            UNCLASSIFIED,
+            unclassified
+        );
     }
 }
