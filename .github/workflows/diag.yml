@@ -11,28 +11,33 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: mount the published image and read what prints the login banner
         run: |
-          set -x
           xz -dc disk-plain.img.xz > disk.img
           LOOP=$(sudo losetup -Pf --show disk.img)
-          sudo lsblk -f "$LOOP"
-          ROOT=$(lsblk -ln -o NAME,LABEL "$LOOP" | awk '$2=="root-a"{print $1}')
-          echo "root partition: $ROOT"
-          sudo mkdir -p /mnt/root
-          sudo mount -o ro "/dev/$ROOT" /mnt/root
-          echo "=== is /etc/motd a file or a link? ==="
-          sudo ls -l /mnt/root/etc/motd
-          echo "=== /etc/motd, in full ==="
-          sudo cat /mnt/root/etc/motd
-          echo "=== /etc/update-motd.d/ ==="
-          sudo ls -la /mnt/root/etc/update-motd.d/ || echo "(no such directory)"
-          for f in $(sudo ls /mnt/root/etc/update-motd.d/ 2>/dev/null); do
-            echo "--- /etc/update-motd.d/$f"
-            sudo cat "/mnt/root/etc/update-motd.d/$f"
+          sudo partprobe "$LOOP" || true
+          sleep 2
+          echo "=== partitions ==="
+          sudo blkid | sed -n '1,12p'
+          for part in ${LOOP}p1 ${LOOP}p2 ${LOOP}p3 ${LOOP}p4; do
+            [ -b "$part" ] || continue
+            sudo mount -o ro "$part" /mnt/root 2>/dev/null || continue
+            if [ -d /mnt/root/etc ]; then
+              echo "=== root filesystem is $part ==="
+              echo "=== /etc/motd: $(sudo ls -l /mnt/root/etc/motd 2>/dev/null || echo 'absent') ==="
+              sudo cat /mnt/root/etc/motd 2>/dev/null || true
+              echo "=== /etc/update-motd.d/ ==="
+              sudo ls -la /mnt/root/etc/update-motd.d/ 2>/dev/null || echo "(no such directory)"
+              for f in $(sudo ls /mnt/root/etc/update-motd.d/ 2>/dev/null); do
+                echo "--- /etc/update-motd.d/$f"
+                sudo cat "/mnt/root/etc/update-motd.d/$f"
+              done
+              echo "=== /etc/motd.d/ ==="
+              sudo ls -la /mnt/root/etc/motd.d/ 2>/dev/null || echo "(no such directory)"
+              echo "=== pam_motd lines ==="
+              sudo grep -rn pam_motd /mnt/root/etc/pam.d/ 2>/dev/null || echo "(none)"
+              echo "=== /usr/sbin/update-motd ==="
+              sudo cat /mnt/root/usr/sbin/update-motd 2>/dev/null || echo "(absent)"
+              sudo umount /mnt/root
+              break
+            fi
+            sudo umount /mnt/root 2>/dev/null || true
           done
-          echo "=== /etc/motd.d/ ==="
-          sudo ls -la /mnt/root/etc/motd.d/ 2>/dev/null || echo "(no such directory)"
-          echo "=== pam_motd lines ==="
-          sudo grep -rn pam_motd /mnt/root/etc/pam.d/ || true
-          echo "=== who owns /etc/motd ==="
-          sudo chroot /mnt/root dpkg -S /etc/motd 2>/dev/null || true
-          sudo chroot /mnt/root dpkg -l 2>/dev/null | grep -E "base-files|update-motd|pam" | head
