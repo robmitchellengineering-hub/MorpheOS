@@ -240,7 +240,13 @@ pub fn apply(
     // 3. Atomic write of the thing that was validated.
     let bytes = serde_json::to_vec_pretty(new)
         .map_err(|e| Error::Invalid(format!("the new generation does not serialise: {e}")))?;
-    let tmp = target.with_extension("morph-new");
+    // **Append** the suffix; do not replace the extension. `with_extension` maps both `gen.1`
+    // and `gen.2` to `gen.morph-new`, so two generations written in the same directory would
+    // share one temporary file — one rename would then publish the other's contents. In the
+    // component whose whole job is to not corrupt a generation, that is worth a line to avoid.
+    let mut tmp = target.as_os_str().to_os_string();
+    tmp.push(".morph-new");
+    let tmp = std::path::PathBuf::from(tmp);
     std::fs::write(&tmp, &bytes).map_err(|e| Error::Invalid(format!("{}: {e}", tmp.display())))?;
     // Flush before the rename, so the rename cannot publish a name whose contents are still
     // only in cache.

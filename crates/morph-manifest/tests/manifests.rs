@@ -274,10 +274,14 @@ fn a_manifest_names_the_settings_nothing_enforces() {
 /// A refused apply that creates the file it refused to write is the failure this catches.
 const SENTINEL: &str = "{\"untouched\": true}\n";
 
-fn scratch(name: &str) -> std::path::PathBuf {
+fn scratch_dir() -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("morph-manifest-apply-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join(format!("{name}.json"));
+    dir
+}
+
+fn scratch(name: &str) -> std::path::PathBuf {
+    let path = scratch_dir().join(format!("{name}.json"));
     std::fs::write(&path, SENTINEL).unwrap();
     path
 }
@@ -288,20 +292,17 @@ fn read(path: &std::path::Path) -> String {
 
 /// The temp file `apply` writes before the rename. It must not survive — a leftover is a
 /// half-written generation sitting next to the real one, and the next reader may pick it up.
+///
+/// Matched by the **exact appended name**, not by a stem prefix: `gen.1` and `gen.morph-new`
+/// share the stem `gen`, so a prefix match would call an unrelated neighbour a leftover.
 fn leftovers(path: &std::path::Path) -> Vec<std::path::PathBuf> {
     let dir = path.parent().unwrap();
-    let stem = path.file_stem().unwrap().to_string_lossy().to_string();
+    let expected = format!("{}.morph-new", path.file_name().unwrap().to_string_lossy());
     std::fs::read_dir(dir)
         .unwrap()
         .filter_map(Result::ok)
         .map(|e| e.path())
-        .filter(|p| {
-            p.file_name()
-                .unwrap()
-                .to_string_lossy()
-                .starts_with(&format!("{stem}."))
-                && p.extension().is_some_and(|e| e == "morph-new")
-        })
+        .filter(|p| p.file_name().is_some_and(|n| n == expected.as_str()))
         .collect()
 }
 
@@ -377,5 +378,38 @@ fn an_invalid_generation_is_refused_even_with_an_approver() {
         SENTINEL,
         "a refused apply wrote to the target"
     );
+    assert!(leftovers(&target).is_empty(), "{:?}", leftovers(&target));
+}
+
+#[test]
+fn a_temporary_name_is_appended_so_two_generations_cannot_collide() {
+    // `Path::with_extension` maps BOTH `gen.1` and `gen.2` to `gen.morph-new`, so two
+    // generations written into one directory would share a single temporary file — and one
+    // rename would then publish the other's contents. That is a wrong generation written by
+    // the component whose entire job is not to corrupt one, so the name is appended instead.
+    // The assertion is on a file the OLD scheme would have taken over: it must still be there.
+    let dir = scratch_dir();
+    let neighbour = dir.join("gen.morph-new");
+    std::fs::write(&neighbour, "somebody else's temporary file").unwrap();
+    let target = dir.join("gen.1");
+    std::fs::write(&target, "the previous generation").unwrap();
+
+    let old = resolve_value(DESK_MINIMAL, "old").unwrap();
+    let new = resolve_value(&with("[storage]\nmin_free_percent = 12\n"), "new").unwrap();
+    apply(&old, &new, &target, None).unwrap();
+
+    assert!(
+        neighbour.exists(),
+        "apply consumed a file named by REPLACING the target's extension instead of appending \
+         its own suffix: {} is gone",
+        neighbour.display()
+    );
+    assert_eq!(
+        read(&neighbour),
+        "somebody else's temporary file",
+        "apply wrote over a path derived by replacing the target's extension"
+    );
+    let written: serde_json::Value = serde_json::from_str(&read(&target)).unwrap();
+    assert_eq!(written["storage"]["min_free_percent"], 12);
     assert!(leftovers(&target).is_empty(), "{:?}", leftovers(&target));
 }

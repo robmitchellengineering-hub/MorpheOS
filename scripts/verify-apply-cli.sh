@@ -48,8 +48,9 @@ expect_untouched() {
         fail "$1: the target was written to. It now holds: $(cat "$WORK/out.json")"
     fi
     # The temp file `apply` writes before the rename must not survive: a leftover is a
-    # half-written generation sitting next to the real one.
-    if compgen -G "$WORK/out.morph-new" > /dev/null; then
+    # half-written generation sitting next to the real one. The suffix is APPENDED, so the
+    # glob is on the suffix rather than on the target's stem.
+    if compgen -G "$WORK/*.morph-new" > /dev/null; then
         fail "$1: a temporary generation was left behind"
     fi
 }
