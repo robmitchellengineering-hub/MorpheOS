@@ -27,6 +27,8 @@
 
 use std::collections::BTreeSet;
 
+mod png;
+
 /// The reference frame size. A real display negotiates its own; this is the size the
 /// shell lays out for when nothing has told it otherwise.
 pub const DEFAULT_WIDTH: u32 = 1280;

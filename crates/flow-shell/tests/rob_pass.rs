@@ -144,3 +144,36 @@ fn an_empty_shell_still_draws_something() {
     let pass = rob_pass(&shell.paint());
     assert!(pass.passed(), "{}", pass.verdict());
 }
+
+#[test]
+fn a_frame_written_as_a_png_is_a_real_png() {
+    // The frame exists to be LOOKED AT, and `convert` is not on the CI runner - so the
+    // encoding is this crate's job and it has to be correct. The CRC over IEND is fixed by
+    // the format, so asserting it catches a broken chunk writer rather than only a short
+    // file. A real decoder accepting the output is checked separately, on the frame the
+    // binary writes.
+    let mut shell = Shell::new(8, 4);
+    shell.add_session("x");
+    let png = shell.paint().to_png();
+
+    assert_eq!(
+        &png[..8],
+        &[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a],
+        "PNG signature"
+    );
+    assert_eq!(&png[12..16], b"IHDR", "IHDR is the first chunk");
+    let width = u32::from_be_bytes([png[16], png[17], png[18], png[19]]);
+    let height = u32::from_be_bytes([png[20], png[21], png[22], png[23]]);
+    assert_eq!((width, height), (8, 4));
+    assert_eq!(png[24], 8, "bit depth");
+    assert_eq!(png[25], 2, "colour type: truecolour");
+    assert_eq!(png[26], 0, "compression: deflate");
+    assert_eq!(png[27], 0, "filter method");
+    assert_eq!(png[28], 0, "interlace: none");
+    assert_eq!(
+        &png[png.len() - 12..],
+        &[0, 0, 0, 0, b'I', b'E', b'N', b'D', 0xae, 0x42, 0x60, 0x82],
+        "IEND with the CRC the format fixes"
+    );
+    assert!(png.len() > 8 * 4 * 3, "the pixels are in there");
+}

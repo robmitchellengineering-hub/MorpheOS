@@ -19,7 +19,7 @@ flow-shell - paint the shell's frame and write it as a PPM
 
 usage: flow-shell [--out FILE.ppm] [--width N] [--height N] [--sessions N]
 
-  --out       where to write the frame        (default flow-shell.ppm)
+  --out       where to write the frame        (default flow-shell.png; .png or .ppm)
   --width     frame width in pixels           (default 1280)
   --height    frame height in pixels          (default 800)
   --sessions  how many sessions to lay out    (default 1)
@@ -30,7 +30,7 @@ fn main() -> ExitCode {
     let mut width: u32 = DEFAULT_WIDTH;
     let mut height: u32 = DEFAULT_HEIGHT;
     let mut sessions: u32 = 1;
-    let mut out = String::from("flow-shell.ppm");
+    let mut out = String::from("flow-shell.png");
 
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut index = 0;
@@ -82,12 +82,23 @@ fn main() -> ExitCode {
     let frame = shell.paint();
     let pass = rob_pass(&frame);
 
-    if let Err(err) = std::fs::write(&out, frame.to_ppm()) {
+    // The extension picks the encoding. PNG is the default because the whole point is that
+    // a person looks at the frame, and a PPM cannot be opened by a browser or a phone.
+    let lower = out.to_ascii_lowercase();
+    let (bytes, kind) = if lower.ends_with(".png") {
+        (frame.to_png(), "PNG")
+    } else if lower.ends_with(".ppm") {
+        (frame.to_ppm(), "PPM")
+    } else {
+        return refuse("--out must end in .png (viewable anywhere) or .ppm");
+    };
+
+    if let Err(err) = std::fs::write(&out, bytes) {
         eprintln!("could not write {out}: {err}");
         return ExitCode::FAILURE;
     }
 
-    println!("wrote {out} ({}x{}, PPM)", frame.width(), frame.height());
+    println!("wrote {out} ({}x{}, {kind})", frame.width(), frame.height());
     println!("sessions laid out: {}", shell.sessions().len());
     println!("{}", pass.verdict());
 
