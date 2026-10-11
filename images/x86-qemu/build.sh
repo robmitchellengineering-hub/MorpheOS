@@ -135,6 +135,10 @@ EOF
             exit 1
         fi
     fi
+    if [ "$SCENARIO" = ransomware ]; then
+        # No update in this scenario: the self-test attacks the files instead.
+        ln -sf ransomware-test "$dir/usr/lib/morpheos/test-hook"
+    fi
     # Hardware watchdog: a hung kernel or PID 1 gets reset, and a reset ends a trial.
     mkdir -p "$dir/etc/systemd/system.conf.d"
     printf '[Manager]\nRuntimeWatchdogSec=30s\n' > "$dir/etc/systemd/system.conf.d/50-morpheos-watchdog.conf"
