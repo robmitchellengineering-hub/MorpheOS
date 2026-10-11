@@ -9,36 +9,23 @@ jobs:
           name: morpheos-x86-usb
           run-id: 38134288120
           github-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: mount the published image and read what prints the login banner
+      - name: who prints the legal notice, and how many times
         run: |
           xz -dc disk-plain.img.xz > disk.img
           LOOP=$(sudo losetup -Pf --show disk.img)
           sudo partprobe "$LOOP" || true
           sleep 2
           sudo mkdir -p /mnt/root
-          echo "=== partitions ==="
-          sudo blkid | sed -n '1,12p'
-          for part in ${LOOP}p1 ${LOOP}p2 ${LOOP}p3 ${LOOP}p4; do
-            [ -b "$part" ] || continue
-            sudo mount -o ro "$part" /mnt/root 2>/dev/null || continue
-            if [ -d /mnt/root/etc ]; then
-              echo "=== root filesystem is $part ==="
-              echo "=== /etc/motd: $(sudo ls -l /mnt/root/etc/motd 2>/dev/null || echo 'absent') ==="
-              sudo cat /mnt/root/etc/motd 2>/dev/null || true
-              echo "=== /etc/update-motd.d/ ==="
-              sudo ls -la /mnt/root/etc/update-motd.d/ 2>/dev/null || echo "(no such directory)"
-              for f in $(sudo ls /mnt/root/etc/update-motd.d/ 2>/dev/null); do
-                echo "--- /etc/update-motd.d/$f"
-                sudo cat "/mnt/root/etc/update-motd.d/$f"
-              done
-              echo "=== /etc/motd.d/ ==="
-              sudo ls -la /mnt/root/etc/motd.d/ 2>/dev/null || echo "(no such directory)"
-              echo "=== pam_motd lines ==="
-              sudo grep -rn pam_motd /mnt/root/etc/pam.d/ 2>/dev/null || echo "(none)"
-              echo "=== /usr/sbin/update-motd ==="
-              sudo cat /mnt/root/usr/sbin/update-motd 2>/dev/null || echo "(absent)"
-              sudo umount /mnt/root
-              break
-            fi
-            sudo umount /mnt/root 2>/dev/null || true
-          done
+          sudo mount -o ro "/dev/$(lsblk -ln -o NAME,LABEL "$LOOP" | awk '$2=="root-a"{print $1}')" /mnt/root
+          echo "=== the legal notice lives where? ==="
+          sudo ls -l /mnt/root/etc/motd /mnt/root/etc/legal /mnt/root/etc/motd.d 2>&1 || true
+          echo "=== /etc/legal ==="
+          sudo cat /mnt/root/etc/legal 2>&1 || echo "(absent)"
+          echo "=== grep for the text across /etc ==="
+          sudo grep -rl "The programs included with the Ubuntu system" /mnt/root/etc/ 2>/dev/null || echo "(not in /etc)"
+          echo "=== what generates /run/motd.dynamic ==="
+          sudo cat /mnt/root/usr/sbin/update-motd 2>&1 | tail -30 || echo "(absent)"
+          echo "=== and what the scripts actually PRINT, run for real ==="
+          sudo mount --bind /proc /mnt/root/proc 2>/dev/null || true
+          sudo mount --bind /dev /mnt/root/dev 2>/dev/null || true
+          sudo chroot /mnt/root /usr/bin/env -i PATH=/usr/bin:/bin /bin/sh -c 'run-parts /etc/update-motd.d/ 2>&1; echo "--- end of run-parts ---"' 2>&1 | head -40
