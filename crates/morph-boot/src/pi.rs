@@ -4,8 +4,12 @@
 //! (`documentation/asciidoc/computers/config_txt/autoboot.adoc`):
 //!
 //! - partition 1 is a small FAT partition holding only `autoboot.txt`;
-//! - partitions 2 and 3 are the boot partitions of slots A and B, each with
-//!   its own `cmdline.txt` pointing at its own root;
+//! - partitions 2 and 3 are the boot partitions of slots A and B, and the images
+//!   in `images/pi5` give both slots the **same** boot files
+//!   (`image/gpt/ab_userdata` builds `boot_a` and `boot_b` from one `boot.vfat`, and
+//!   `system_a`/`system_b` from one `system.erofs`), so a slot is identified at boot
+//!   by its GPT label and the per-slot root is
+//!   `/etc/kernel/cmdline` inside that slot's own rootfs, not a `cmdline.txt` here;
 //! - `autoboot.txt` names the default partition under `[all]`, and the trial
 //!   partition under `[tryboot]`, with `tryboot_a_b=1` so the normal
 //!   `config.txt` is used in both;

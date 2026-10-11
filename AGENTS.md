@@ -156,6 +156,44 @@ skip shows up in the test count (`63 passed; 3 ignored`) instead of hiding insid
 **Rule:** when you stub a platform out, audit every assertion that expects the stub's
 failure. A negative test satisfied by "we never implemented this" is not a passing test.
 
+**H10 — a required check that a path filter can skip, and a workflow nobody required.**
+`main` sat **red** on the `images` workflow for hours, through three merged pull requests,
+and every one of those merges was green. Both halves were needed for that to happen: the
+two image jobs were **path-filtered** (so a PR touching only `crates/` or docs never ran
+them) **and** they were **not required checks** (only `rust` was), so a red `main` blocked
+nothing and warned nobody. It was found by comparing each workflow's latest run on `main`
+against its trigger conditions — not by any failing gate, because there was no gate. The
+fix for the red itself was sitting in a branch nobody had opened a pull request for.
+**Rule:** a check that matters to `main` must be **required**, and a required check must be
+one that **every** pull request actually runs. Those two constraints pull against each
+other — requiring a path-filtered job makes it a wall that blocks every unrelated PR
+forever, because it will never report — so the filter goes, not the requirement.
+**If you rename a required job, update the branch protection in the same change**, or every
+pull request waits on a check whose name no longer exists. And **"merged green" is not "the
+repository is green":** check every workflow's latest run on `main`, not only the one your
+pull request touched.
+
+**H11 — one unguarded command on a failure path, and the run says nothing at all.** The x86
+`update` scenario hung, twice, for the full harness timeout, and the job reported only *"the
+VM did not power off cleanly"*. The cause was **one line**: the slot root is mounted
+read-only — the loader entry passes `ro` — so `mkdir -p /mnt/update` failed with *"Read-only
+file system"*, and the in-image driver runs under `set -e`, so the script **ended right
+there**. No trial was armed, no poweroff happened, and the VM sat at a login prompt until
+the harness gave up. The serial console said so in one line:
+
+```
+boot-check[292]: mkdir: cannot create directory '/mnt/update': Read-only file system
+morpheos-a login:
+```
+
+**Rule:** on a failure path, guard **every** step, not the ones you were thinking about — the
+first attempt at fixing this guarded the mount and the install and left the `mkdir`. And
+**when a boot- or image-level test times out, read the console artifact, not the job log**;
+the job log cannot know anything but that time ran out. A timeout is not a diagnosis. Two
+900-second timeouts were spent on hypotheses (a dirty payload filesystem, a slow install)
+that the console would have dismissed immediately — that log is uploaded by `if: always()`
+for exactly this reason.
+
 ## Writing code here
 
 - Match the existing style: doc comments that explain **why**, module headers that
