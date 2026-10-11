@@ -88,9 +88,17 @@ tier 4's *"the AI can't trigger it alone"* is a property of the code rather than
 behaviour; and the write is atomic, so an interrupted apply leaves the previous generation intact.
 Tiers 0–1 auto-apply with no approver, which is what the table above says they should.
 
-**What that does not yet cover:** these tiers are enforced on the `apply` path only. The applier
-that owns a *store* of generations — keeping the previous ones, and rolling back to one — is
-`morphd`, and it is not built. A caller that writes a Manifest by hand bypasses all of it.
+**Where a generation is kept.** `morph-manifest apply --store <dir>` keeps every generation it
+has been given and points `current` at the newest, so an applied change is *recoverable* rather
+than only refused: `rollback` moves that pointer back without deleting anything, and a plan that
+starts from a generation the store has moved past is refused rather than applied over a machine
+it never saw. A refused apply leaves the store exactly as it was.
+
+**What that does not yet cover:** these tiers are enforced on the `apply` path only, and a caller
+that writes a Manifest by hand bypasses all of it. The store holds *configuration* generations —
+rolling one back does not roll back an operating system (that is ADR 0009's H3, which is boot
+policy). The applier that would run this on a live machine, and decide *when* to roll back, is
+`morphd`, and it is not built.
 
 ## Hardware-aware AI placement
 

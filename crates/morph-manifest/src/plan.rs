@@ -9,7 +9,7 @@
 
 use std::path::Path;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::model::Manifest;
@@ -17,7 +17,11 @@ use crate::validate::{Report, validate};
 use crate::{Error, layer};
 
 /// Risk tiers from doc 06.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+///
+/// `Deserialize` is not decoration: a stored generation's record carries its tier, and an
+/// unknown tier in that file must fail to parse rather than default to something. A tier
+/// nobody chose is the hazard this enum has already produced once.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Risk {
     Cosmetic = 0,

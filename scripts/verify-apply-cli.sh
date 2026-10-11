@@ -127,9 +127,89 @@ if grep -q "invalid manifest" "$WORK/stderr"; then
 fi
 run "$BIN" apply "$OLD" "$NEW" --to "$WORK/out.json" --nope
 [ "$CODE" = 2 ] || fail "expected exit 2 for an unknown option, got $CODE"
+run "$BIN" apply "$OLD" "$NEW" --to "$WORK/out.json" --store "$WORK/store"
+[ "$CODE" = 2 ] || fail "expected exit 2 for --to and --store together, got $CODE"
+
+# ---------------------------------------------------------------- the generation store
+#
+# The store is the difference between "it was refused" and "there is a way back", so the
+# cases below check the things a store can get wrong while looking healthy: a refusal that
+# moves the pointer anyway, a rollback that deletes what it rolled past, and a plan applied
+# over a generation it never saw.
+STORE="$WORK/store"
+
+echo "6. a store that has never been applied to is empty, not broken"
+run "$BIN" history --store "$STORE"
+[ "$CODE" = 0 ] || fail "history on an empty store exited $CODE"
+[ "$(tr -d ' \n' < "$WORK/stdout")" = "[]" ] || fail "an empty store printed $(cat "$WORK/stdout")"
+run "$BIN" rollback --store "$STORE"
+[ "$CODE" = 1 ] || fail "expected exit 1 (nothing to roll back to), got $CODE"
+
+echo "7. applying into a store keeps a generation and points current at it"
+run "$BIN" apply "$WORK/ok.toml" "$WORK/small.toml" --store "$STORE"
+[ "$CODE" = 0 ] || fail "expected exit 0, got $CODE: $(cat "$WORK/stderr")"
+grep -q '"generation": 1' "$WORK/stdout" || fail "generation 1 was not reported: $(cat "$WORK/stdout")"
+[ -f "$STORE/generations/0001.json" ] || fail "generation 1's manifest is not in the store"
+[ "$(readlink "$STORE/current")" = "generations/0001.json" ] || fail "current does not name generation 1"
+
+echo "8. a refused apply leaves the store exactly as it was"
+before=$(find "$STORE" | sort)
+before_current=$(readlink "$STORE/current")
+# The plan starts from the generation IN FORCE, so the refusal under test is the tier one.
+# Written the obvious way it would be refused for starting from the wrong generation, and
+# this case would pass for a reason that is not its subject.
+cat > "$WORK/capsule.toml" <<'TOML'
+[machine]
+name = "t"
+profile = "desk"
+arch = "x86_64"
+
+[[users]]
+name = "a"
+admin = true
+recovery_key = true
+
+[[storage.replicas]]
+name = "usb"
+kind = "disk"
+target = "USB"
+
+[storage]
+min_free_percent = 12
+
+[[capsules]]
+name = "crm"
+runtime = "wine"
+source = "recipe:acme-crm-2012"
+grants = ["files:documents"]
+TOML
+run "$BIN" apply "$WORK/small.toml" "$WORK/capsule.toml" --store "$STORE"
+[ "$CODE" = 1 ] || fail "expected exit 1 (a capsule is security-critical), got $CODE"
+grep -q "above the tier" "$WORK/stderr" || fail "refused, but not for the tier: $(cat "$WORK/stderr")"
+[ "$(find "$STORE" | sort)" = "$before" ] || fail "a refused apply changed the store"
+[ "$(readlink "$STORE/current")" = "$before_current" ] || fail "a refused apply moved current"
+
+echo "9. rollback moves the pointer back and destroys nothing"
+write_manifest "$WORK/larger.toml" '[storage]
+min_free_percent = 15
+'
+run "$BIN" apply "$WORK/small.toml" "$WORK/larger.toml" --store "$STORE"
+[ "$CODE" = 0 ] || fail "the second apply exited $CODE: $(cat "$WORK/stderr")"
+run "$BIN" rollback --store "$STORE"
+[ "$CODE" = 0 ] || fail "rollback exited $CODE: $(cat "$WORK/stderr")"
+[ "$(readlink "$STORE/current")" = "generations/0001.json" ] || fail "rollback did not point at generation 1"
+[ -f "$STORE/generations/0002.json" ] || fail "rollback DELETED the generation it rolled past"
+run "$BIN" rollback --store "$STORE"
+[ "$CODE" = 1 ] || fail "expected exit 1 (generation 1 is the oldest), got $CODE"
+[ "$(readlink "$STORE/current")" = "generations/0001.json" ] || fail "a refused rollback moved current"
+
+echo "10. a plan that starts from another generation is refused"
+run "$BIN" apply "$WORK/ok.toml" "$WORK/larger.toml" --store "$STORE"
+[ "$CODE" = 1 ] || fail "expected exit 1 (the store has moved on), got $CODE"
+grep -q "generation 1 is in force" "$WORK/stderr" || fail "refused, but not for the reason under test: $(cat "$WORK/stderr")"
 
 if [ "$FAILED" != 0 ]; then
     echo "apply CLI: FAILED" >&2
     exit 1
 fi
-echo "apply CLI: 5/5 — refusals refuse, approvals apply, usage errors are not manifest errors"
+echo "apply CLI: 10/10 — refusals refuse, approvals apply, the store keeps its history, and usage errors are not manifest errors"
