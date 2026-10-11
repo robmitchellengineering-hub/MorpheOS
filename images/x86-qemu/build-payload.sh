@@ -101,6 +101,53 @@ e2fsck -f -n "$P/root.img" >/dev/null 2>&1 || {
     exit 1
 }
 
+# ⚠️ SHRINK THE PAYLOAD TO WHAT IT ACTUALLY HOLDS. The traffic IS the time.
+#
+# Measured on run `38117817003`, from the guest's own kernel timestamps in
+# `serial-update.log`: install ran 3.836 s → 11.155 s, and the serial log says why —
+# `morph-update` reported `root_bytes: 1258291200`. That is the whole 1200 MiB slot, for a
+# debootstrap whose **content** is a fraction of it. `install` reads the payload to hash it,
+# writes it, and reads the device back to verify it, so the cost is 3x the image size:
+# ~3.6 GB of I/O to install a few hundred megabytes of system.
+#
+# So the image is resized to the smallest filesystem that still holds its contents and then
+# truncated to that length. Nothing in the update path assumes the image fills the slot:
+# `write_image` copies the file's bytes rather than the partition, `hash_prefix` re-reads
+# exactly those bytes, and slot B's boot entry mounts the filesystem the superblock
+# describes. The tail of the partition keeps whatever was there before and is never read.
+#
+# This is the honest lever rather than a weaker check: the read-back verification stays
+# whole, because it is the operation the wedge depends on.
+BEFORE=$(stat -c %s "$P/root.img")
+resize2fs -M "$P/root.img" >/dev/null 2>&1 || {
+    echo "resize2fs could not shrink the payload root image" >&2
+    exit 1
+}
+# `resize2fs` shrinks the filesystem *inside* the file; the file stays 1200 MiB until it is
+# truncated, and it is the file's length that `morph-update` writes and hashes.
+SIZE=$({ dumpe2fs -h "$P/root.img" 2>/dev/null || true; } | awk -F: '
+    /^Block count:/ { c = $2 }
+    /^Block size:/  { s = $2 }
+    END { gsub(/[^0-9]/, "", c); gsub(/[^0-9]/, "", s); if (c != "" && s != "") print c * s }')
+[ -n "$SIZE" ] || {
+    echo "could not read the resized payload's size" >&2
+    exit 1
+}
+truncate -s "$SIZE" "$P/root.img"
+AFTER=$(stat -c %s "$P/root.img")
+
+# The shrink must have DONE something (a `resize2fs` that quietly no-opped would leave the
+# cost where it was and the job green), and it must not have broken the filesystem.
+[ "$AFTER" -lt "$BEFORE" ] || {
+    echo "the payload root image did not shrink ($BEFORE -> $AFTER bytes)" >&2
+    exit 1
+}
+e2fsck -f -n "$P/root.img" >/dev/null 2>&1 || {
+    echo "the payload root image is not clean after the shrink" >&2
+    exit 1
+}
+echo "payload root image: $BEFORE -> $AFTER bytes ($((AFTER * 100 / BEFORE))%)"
+
 "$MORPH_UPDATE" --payload "$P" seal >/dev/null
 cp "$MORPH_UPDATE" "$STAGE/morph-update"
 
