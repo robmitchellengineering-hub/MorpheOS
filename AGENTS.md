@@ -171,6 +171,27 @@ pull request waits on a check whose name no longer exists. And **"merged green" 
 repository is green":** check every workflow's latest run on `main`, not only the one your
 pull request touched.
 
+**H11 — one unguarded command on a failure path, and the run says nothing at all.** The x86
+`update` scenario hung, twice, for the full harness timeout, and the job reported only *"the
+VM did not power off cleanly"*. The cause was **one line**: the slot root is mounted
+read-only — the loader entry passes `ro` — so `mkdir -p /mnt/update` failed with *"Read-only
+file system"*, and the in-image driver runs under `set -e`, so the script **ended right
+there**. No trial was armed, no poweroff happened, and the VM sat at a login prompt until
+the harness gave up. The serial console said so in one line:
+
+```
+boot-check[292]: mkdir: cannot create directory '/mnt/update': Read-only file system
+morpheos-a login:
+```
+
+**Rule:** on a failure path, guard **every** step, not the ones you were thinking about — the
+first attempt at fixing this guarded the mount and the install and left the `mkdir`. And
+**when a boot- or image-level test times out, read the console artifact, not the job log**;
+the job log cannot know anything but that time ran out. A timeout is not a diagnosis. Two
+900-second timeouts were spent on hypotheses (a dirty payload filesystem, a slow install)
+that the console would have dismissed immediately — that log is uploaded by `if: always()`
+for exactly this reason.
+
 ## Writing code here
 
 - Match the existing style: doc comments that explain **why**, module headers that

@@ -17,12 +17,18 @@
 #   good       B is healthy  → committed, and still B after a plain reboot
 #   unhealthy  B boots but a service fails → one trial, then back on A for good
 #   crash      B's kernel panics → one trial, then back on A for good
+#   update     slot B starts without the new system: the in-image driver installs a
+#              payload into it with `morph-update` FIRST, then trials it. The flow is
+#              `good`'s; what differs is that the slot B which boots was **written
+#              during the run**. Every other scenario trials a slot B that build.sh
+#              had already populated — which, since both slots come from one image, is
+#              a copy of the system already running, so no update happens at all.
 set -euo pipefail
 
 WORK=${1:?usage: test-fallback.sh <workdir> [good|unhealthy|crash ...]}
 shift
 SCENARIOS=("$@")
-[ ${#SCENARIOS[@]} -gt 0 ] || SCENARIOS=(good unhealthy crash)
+[ ${#SCENARIOS[@]} -gt 0 ] || SCENARIOS=(good unhealthy crash update)
 HERE=$(cd "$(dirname "$0")" && pwd)
 
 # One line per boot that reached the health check: "<booted>/<phase>/<action>".
@@ -31,9 +37,10 @@ expected() {
         good)      printf '%s\n' a/committed/none b/trial/committed b/committed/none ;;
         unhealthy) printf '%s\n' a/committed/none b/trial/fallback a/committed/none a/committed/none ;;
         crash)     printf '%s\n' a/committed/none a/committed/none a/committed/none ;;
+        update)    printf '%s\n' a/committed/none b/trial/committed b/committed/none ;;
     esac
 }
-expected_default() { [ "$1" = good ] && echo b || echo a; }
+expected_default() { case "$1" in good|update) echo b ;; *) echo a ;; esac; }
 
 # The verdict: one "<booted>/<phase>/<action>" per line of the boot history.
 recorded() {
@@ -50,14 +57,51 @@ console() {
         awk '$1=="S"{s=$2} $1=="D"{print s "/" $2}'
 }
 
+# Verdict for the update scenario: does slot B's own root now carry the file
+# morph-update writes? Read off the disk after the VM powers off, with the partition
+# mounted by the kernel — not from a log line the image could have printed for any
+# reason. The boot history shows the FLOW; only this shows the CONTENT changed.
+marker_present() {
+    local loop out
+    loop=$(losetup -Pf --show "$1")
+    # ⚠️ DEBUGFS EXITS 0 WHETHER OR NOT THE FILE EXISTS. The first version of this
+    # treated the exit code as the answer and reported the marker present on every disk,
+    # so the control check failed on a slot that had never been written — a check
+    # satisfied by something other than its subject, which is the failure mode this repo
+    # keeps meeting. Parse what it printed instead.
+    out=$(debugfs -R "stat /etc/morph-update-marker" "${loop}p3" 2>&1)
+    losetup -d "$loop"
+    case "$out" in *"Inode:"*) return 0 ;; *) return 1 ;; esac
+}
+
 fail=0
 for sc in "${SCENARIOS[@]}"; do
     echo "=== scenario: $sc"
-    disk=$("$HERE/build.sh" "$WORK" "$sc" | tail -1)
+    # `update` reuses the `good` disk deliberately: slot B is a healthy system either
+    # way, and what the scenario changes is that morph-update REPLACES it first.
+    build_sc=$sc
+    [ "$sc" = update ] && build_sc=good
+    disk=$("$HERE/build.sh" "$WORK" "$build_sc" | tail -1)
     rm -f "${disk%.img}.vars.fd"
+
+    payload=""
+    if [ "$sc" = update ]; then
+        # The control, and it has to come first: if slot B already carried the marker,
+        # the assertion after the run would prove nothing.
+        if marker_present "$disk"; then
+            echo "    FAIL: slot B already has the update marker before the VM booted"
+            fail=1
+        fi
+        payload=$("$HERE/build-payload.sh" "$WORK" "$WORK/payload.img" | tail -1)
+    fi
+
     log="$WORK/serial-$sc.log"
     start=$(date +%s)
-    "$HERE/run-vm.sh" "$disk" "$log" "${VM_TIMEOUT:-2400}" || { echo "VM did not power off cleanly"; fail=1; }
+    # 900s, not 2400s: the passing scenarios take under 30 SECONDS each, so a run that
+    # reaches a quarter of an hour is hung, and the only thing a longer timeout buys is a
+    # longer wait to find that out. Debugging a hang against a 40-minute loop is how a
+    # twenty-minute stall got read twice as "probably just slow".
+    "$HERE/run-vm.sh" "$disk" "$log" "${VM_TIMEOUT:-900}" "$payload" || { echo "VM did not power off cleanly"; fail=1; }
     echo "    vm time: $(( $(date +%s) - start ))s"
 
     got=$(recorded "$disk")
@@ -76,6 +120,17 @@ for sc in "${SCENARIOS[@]}"; do
             echo "    slot b panicked as intended"
         else
             echo "    FAIL: slot b never panicked"; ok=0
+        fi
+    fi
+    if [ "$sc" = update ]; then
+        # The verdict. The history above shows the trial flow ran; only the marker shows
+        # that the slot B which booted is the one morph-update WROTE, rather than the
+        # one build.sh had already put there.
+        if marker_present "$disk"; then
+            echo "    slot b carries the payload's marker: the update was written AND booted"
+        else
+            echo "    FAIL: slot b booted without the payload's marker — the trial ran on the pre-built image"
+            ok=0
         fi
     fi
     if [ $ok = 1 ]; then echo "    PASS"; else fail=1; fi
