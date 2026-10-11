@@ -303,6 +303,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "morph-transaction"
+version = "0.1.0"
+dependencies = [
+ "morph-manifest",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "morph-update"
 version = "0.1.0"
 dependencies = [

@@ -157,6 +157,15 @@ impl Store {
         self.meta(number).map(Some)
     }
 
+    /// Read one generation's record without reading its Manifest.
+    ///
+    /// The transaction layer needs this after a commit: it has to report *what* is now in
+    /// force (tier, how many paths, who approved it) without re-reading a document it did not
+    /// write.
+    pub fn generation(&self, number: u64) -> Result<Generation, Error> {
+        self.meta(number)
+    }
+
     /// Read a stored generation's manifest.
     pub fn load(&self, number: u64) -> Result<Value, Error> {
         let path = self.path_of(number);
@@ -277,7 +286,13 @@ impl Store {
         self.meta(target)
     }
 
-    fn next_number(&self) -> Result<u64, Error> {
+    /// The number the next generation will be given.
+    ///
+    /// Public because it is **not** `current + 1`: generations are append-only and a rollback
+    /// moves `current` backwards, so after rolling back to 1 in a store that holds 1 and 2, the
+    /// next generation is 3. A caller that assumes otherwise arms a trial for a number the
+    /// store will not use, which is how the transaction layer found this.
+    pub fn next_number(&self) -> Result<u64, Error> {
         Ok(self.history()?.last().map(|g| g.number + 1).unwrap_or(1))
     }
 

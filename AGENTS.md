@@ -195,6 +195,16 @@ the job log cannot know anything but that time ran out. A timeout is not a diagn
 that the console would have dismissed immediately — that log is uploaded by `if: always()`
 for exactly this reason.
 
+**H12 — a generator number is not `current + 1` when the pointer can move backwards.**
+`morph-transaction` armed a trial for `current.number + 1`. That is right until a rollback:
+generations are append-only, so after rolling back to 1 in a store that holds 1 and 2, the
+next generation is **3**, not 2 — and the transaction then armed a trial for a number the store
+would not use.
+**Rule:** a number that identifies an entry in an append-only log comes from the log (a counter,
+a max, a `next_number()` the owner exposes), never from the position of a pointer into it. Caught
+here by the tests written in the same change, which is the only reason it is a rule and not an
+incident: **if a store can roll back, `current + 1` is a different value from "the next one".**
+
 ## Writing code here
 
 - Match the existing style: doc comments that explain **why**, module headers that
