@@ -111,6 +111,12 @@ for sc in "${SCENARIOS[@]}"; do
     rm -f "${disk%.img}.vars.fd"
 
     payload=""
+    # The same control for the self-test report: if it is already on the disk, the file proves
+    # nothing about the machine that just ran. It must be written BY the run.
+    if mtype -i "$disk@@1M" ::/MORPH-TEST-RESULT.TXT > /dev/null 2>&1; then
+        echo "    FAIL: the self-test report is already on the disk before the VM booted"
+        fail=1
+    fi
     if [ "$sc" = update ]; then
         # The control, and it has to come first: if slot B already carried the marker,
         # the assertion after the run would prove nothing.
@@ -168,6 +174,22 @@ for sc in "${SCENARIOS[@]}"; do
         else
             echo "    FAIL: slot b booted without the payload's marker — the trial ran on the pre-built image"
             ok=0
+        fi
+    fi
+    # The report: written by the machine, on the FAT partition a person can read without a
+    # serial cable. This is the mechanism the Pi's first boot depends on, so it is proven here
+    # on the platform that can be run — the report file, its trail, and the fact that it
+    # survives the poweroff.
+    report=$(mtype -i "$disk@@1M" ::/MORPH-TEST-RESULT.TXT 2>/dev/null || true)
+    if [ -z "$report" ]; then
+        echo "    FAIL: the machine wrote no self-test report"
+        ok=0
+    else
+        echo "$report" | grep -q '^RESULT:' || { echo "    FAIL: the report has no RESULT line"; ok=0; }
+        echo "$report" | grep -q 'step 0: starting' || { echo "    FAIL: the report does not say the walk started"; ok=0; }
+        echo "$report" | grep -q 'arming trial of slot b' || { echo "    FAIL: the report does not name the trial"; ok=0; }
+        if [ $ok = 1 ]; then
+            echo "    report: $(echo "$report" | grep '^RESULT:' | head -1)"
         fi
     fi
     if [ "$sc" = heal ]; then
