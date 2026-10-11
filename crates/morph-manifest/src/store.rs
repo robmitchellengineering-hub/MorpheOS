@@ -51,6 +51,31 @@ pub struct Generation {
     pub approved_by: Option<String>,
 }
 
+/// **A person's mark on a change** ([ADR 0012]). Written beside the generation it authorises
+/// as `<number>.rob`, and read back by the applier.
+///
+/// The extension is the point: this is the machine's own record that a person, not the AI,
+/// took responsibility for a change — so "what has somebody signed here?" is a directory
+/// listing rather than an audit of a log.
+///
+/// It is a record of **consent**, not a cryptographic signature. Anyone who can write the
+/// store can forge it, which is one more reason the store is single-writer by contract.
+///
+/// [ADR 0012]: ../../docs/adr/0012-the-name-in-the-machine.md
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Mark {
+    /// The generation this marks.
+    pub generation: u64,
+    /// Who took responsibility.
+    pub approved_by: String,
+    /// How risky the change they signed was.
+    pub risk: Risk,
+    /// How many paths it touched.
+    pub changes: usize,
+    /// When, in seconds since the Unix epoch. No clock dependency: the store has none.
+    pub approved_at_unix: u64,
+}
+
 /// A directory of generations, with `current` naming the one in force.
 pub struct Store {
     root: PathBuf,
@@ -83,6 +108,59 @@ impl Store {
 
     fn meta_of(&self, number: u64) -> PathBuf {
         self.generations().join(format!("{number:04}.meta.json"))
+    }
+
+    /// Where generation `number`'s mark lives, when a person made one.
+    ///
+    /// `.rob` and not `.json`, deliberately: the name belongs to the machine, and a file
+    /// the OS writes about a person should say whose it is.
+    pub fn mark_of(&self, number: u64) -> PathBuf {
+        self.generations().join(format!("{number:04}.rob"))
+    }
+
+    /// The mark on a generation, or `None` when no person approved it.
+    ///
+    /// A mark that exists but cannot be read is **an error naming it** rather than `None`:
+    /// the only way that file exists is somebody having written it, and a mark that quietly
+    /// reads as absent is worse than one that reads as broken.
+    pub fn mark(&self, number: u64) -> Result<Option<Mark>, Error> {
+        let path = self.mark_of(number);
+        if !path.is_file() {
+            return Ok(None);
+        }
+        let text = std::fs::read_to_string(&path)
+            .map_err(|e| Error::Invalid(format!("{}: {e}", path.display())))?;
+        let mark: Mark = serde_json::from_str(&text).map_err(|e| {
+            Error::Invalid(format!("{} is not a readable mark: {e}", path.display()))
+        })?;
+        Ok(Some(mark))
+    }
+
+    /// Every mark the store holds, oldest generation first.
+    pub fn marks(&self) -> Result<Vec<Mark>, Error> {
+        let mut marks = Vec::new();
+        for generation in self.history()? {
+            if let Some(mark) = self.mark(generation.number)? {
+                marks.push(mark);
+            }
+        }
+        Ok(marks)
+    }
+
+    fn write_mark(&self, generation: &Generation) -> Result<(), Error> {
+        let mark = Mark {
+            generation: generation.number,
+            approved_by: generation.approved_by.clone().unwrap_or_default(),
+            risk: generation.risk,
+            changes: generation.changes,
+            approved_at_unix: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0),
+        };
+        let bytes = serde_json::to_vec_pretty(&mark)
+            .map_err(|e| Error::Invalid(format!("the mark does not serialise: {e}")))?;
+        write_atomic(&self.mark_of(generation.number), &bytes)
     }
 
     /// Every generation, oldest first.
@@ -233,6 +311,17 @@ impl Store {
             Error::Invalid(format!("the generation record does not serialise: {e}"))
         })?;
         write_atomic(&self.meta_of(number), &meta)?;
+
+        // THE PERSON'S MARK (ADR 0012). Written after the record and before `current`, for
+        // the same reason as every other step in this order: a crash can leave an UNSIGNED
+        // generation, which is honest, but never a signed one that does not exist.
+        //
+        // Only a change a person took responsibility for gets a mark. That is what makes
+        // the absence of one mean something: `ls generations/*.rob` is the list of changes
+        // somebody stood behind.
+        if generation.approved_by.is_some() {
+            self.write_mark(&generation)?;
+        }
 
         sync_dir(&dir);
         self.point_current_at(number)?;

@@ -330,3 +330,103 @@ fn the_history_records_who_took_responsibility() {
     assert_eq!(history[0].approved_by.as_deref(), Some("rob"));
     assert_eq!(history[0].risk, Risk::DataAffecting);
 }
+
+// ---------------------------------------------------------------------------
+// The person's mark (ADR 0012): the store's own record that somebody stood behind a
+// change — and, just as importantly, that nobody did when nobody did.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_person_who_signs_a_change_leaves_a_mark_beside_it() {
+    let root = scratch("mark-signed");
+    let store = Store::open(&root);
+    let v1 = value(V1);
+    // A capsule is SecurityCritical: a change nobody may apply alone.
+    let v2 = value(&with(&capsule("\"clipboard\"")));
+
+    let generation = store
+        .apply(&v1, &v2, Some("Rob Mitchell"))
+        .expect("a person signed it, so it may be applied");
+    assert_eq!(generation.approved_by.as_deref(), Some("Rob Mitchell"));
+
+    let mark = store
+        .mark(generation.number)
+        .unwrap()
+        .expect("a signed change leaves a mark");
+    assert_eq!(mark.generation, generation.number);
+    assert_eq!(mark.approved_by, "Rob Mitchell");
+    assert_eq!(mark.risk, generation.risk);
+    assert_eq!(mark.changes, generation.changes);
+    assert!(
+        mark.approved_at_unix > 0,
+        "a mark records when, not only who"
+    );
+
+    // It is a file in the machine's own state, beside the generation it authorises, so
+    // "what has a person signed here?" is a directory listing.
+    let path = store.mark_of(generation.number);
+    assert!(path.ends_with("generations/0001.rob"), "{}", path.display());
+    assert!(path.is_file(), "{}", path.display());
+    assert_eq!(store.marks().unwrap().len(), 1);
+}
+
+#[test]
+fn a_change_nobody_signed_has_no_mark() {
+    // The absence is the claim. A tier-1 change may be applied unattended, and no person
+    // stood behind it, so there is nothing to find.
+    let root = scratch("mark-unsigned");
+    let store = Store::open(&root);
+    let v1 = value(V1);
+    let v2 = value(&with(FREE));
+
+    let generation = store
+        .apply(&v1, &v2, None)
+        .expect("tier 1 may be applied alone");
+    assert!(generation.approved_by.is_none());
+    assert!(store.mark(generation.number).unwrap().is_none());
+    assert!(!store.mark_of(generation.number).exists());
+    assert!(store.marks().unwrap().is_empty());
+}
+
+#[test]
+fn a_refused_apply_leaves_no_mark() {
+    let root = scratch("mark-refused");
+    let store = Store::open(&root);
+    let v1 = value(V1);
+    let v2 = value(&with(&capsule("\"clipboard\"")));
+
+    let err = store
+        .apply(&v1, &v2, None)
+        .expect_err("a capsule change needs a person to take responsibility");
+    assert!(matches!(err, Error::Refused(_)), "{err:?}");
+
+    assert!(
+        !store.mark_of(1).exists(),
+        "a refusal must not leave a mark"
+    );
+    assert!(store.marks().unwrap().is_empty());
+    assert!(store.history().unwrap().is_empty(), "nor a generation");
+}
+
+#[test]
+fn a_mark_belongs_to_its_generation_and_survives_a_rollback() {
+    let root = scratch("mark-rollback");
+    let store = Store::open(&root);
+    let capsule_src = with(&capsule("\"clipboard\""));
+    let v1 = value(V1);
+    let v2 = value(&capsule_src);
+    let v3 = value(&format!("{capsule_src}\n{FREE}"));
+
+    let signed = store.apply(&v1, &v2, Some("Rob Mitchell")).unwrap();
+    let unsigned = store.apply(&v2, &v3, None).unwrap();
+
+    store.rollback(Some(signed.number)).unwrap();
+    assert_eq!(store.current().unwrap().unwrap().number, signed.number);
+
+    // A mark belongs to the change it authorises, not to whatever is current: rolling back
+    // does not erase the fact that somebody signed generation 1, and generation 2 was never
+    // signed at all.
+    assert!(store.mark(signed.number).unwrap().is_some());
+    assert!(store.mark(unsigned.number).unwrap().is_none());
+    assert_eq!(store.marks().unwrap().len(), 1);
+}
