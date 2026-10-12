@@ -18,3 +18,4 @@ after it's accepted. A later ADR supersedes it instead.
 | [0011](0011-the-humans-mark.md) | The human's mark: `.rob` signs an approved change, and `rob` places it | Accepted — **the check's name is superseded by [0012](0012-the-name-in-the-machine.md)** |
 | [0012](0012-the-name-in-the-machine.md) | The name goes in the machine: `generations/<n>.rob` is written and read by the store, and the frame check loses its name | Accepted |
 | [0013](0013-flow-shell-feels.md) | The shell's feel is a property of the session; a Desktop session is first-class | Accepted |
+| [0014](0014-express-road-first.md) | Express road: a general user drives it first, the rest re-sequences behind it (nothing dropped) | Accepted |
