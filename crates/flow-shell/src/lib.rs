@@ -28,15 +28,18 @@
 //! it is opening — carried inside a [`SessionView`] that adds only the two things the shell
 //! owns, where the session is drawn and the text it has accumulated.
 //!
-//! The first per-feel slice of ADR 0013 is here: when the focused session's feel is
+//! The per-feel slices of ADR 0013 are here. When the focused session's feel is
 //! [`Feel::SessionShelf`], [`Shell::paint`] draws that feel's two pieces of chrome — a
 //! **shelf** listing the focused session's [`Openable`]s (a thin strip of its capsules, not
 //! an app grid) and an **intent bar** that is a search field, not an intent engine. A
 //! character typed while the intent bar is the input target builds a query; Enter commits
 //! it through [`match_query`], a deterministic case-insensitive match over session labels
 //! and openable names that moves focus to the first match — or, with none, paints "no
-//! match" rather than inventing a result. Flow's tiles and Classic's windows are the later
-//! slices; their feels keep the one frame this crate already paints.
+//! match" rather than inventing a result. When the focused session's feel is
+//! [`Feel::Flow`], [`Shell::paint`] lays the sessions out as **tiles** — large, labelled by
+//! the session's name in large type, no shelf and no app grid — and a press on a tile
+//! opens it by making it the hero (focus, space, and the focus border). Classic's windows
+//! remain the later slice, and Classic keeps the one frame this crate already paints.
 //!
 //! Still absent: multi-display, capsules, the Device Broker, a real Wayland client, and any
 //! pty. The terminal is a text buffer with a cursor, not a shell behind a tty — it is
@@ -52,6 +55,7 @@ mod input;
 mod png;
 mod shelf;
 mod terminal;
+mod tiles;
 
 // The session model lives in `flow-session` (ADR 0010 step 4); this crate is one consumer of
 // it. `Session` and `SessionId` are re-exported so a caller of the shell meets exactly one
@@ -87,6 +91,13 @@ pub const GLYPH_ADVANCE: u32 = GLYPH_W + 1;
 pub const LINE_ADVANCE: u32 = GLYPH_H + 1;
 /// Space between a session's surface edge and its terminal text.
 pub const TEXT_PAD: u32 = 6;
+/// How much larger than the terminal font the Flow feel's tile label is drawn: each
+/// font pixel of the 5×7 glyph is scaled to this many pixels. This is the feel's
+/// "large type" (ADR 0013), and it is asserted — not just documented — by the Flow tests.
+pub const LARGE_TYPE_SCALE: u32 = 3;
+/// Width of the focus chrome border drawn around the focused Flow tile — the mark that
+/// says "this tile has been opened".
+pub const FOCUS_BORDER: u32 = 3;
 
 /// A colour in the frame, stored as ARGB - the layout a compositor and a PPM both use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -642,6 +653,11 @@ impl Shell {
         self.focused_feel() == Some(Feel::SessionShelf)
     }
 
+    /// Whether the frame shows the Flow chrome: sessions as tiles, no shelf or intent bar.
+    fn flow_chrome(&self) -> bool {
+        self.focused_feel() == Some(Feel::Flow)
+    }
+
     /// The area the session surfaces share: inside the margin, below the bar — and, for
     /// the Session + shelf feel, below the intent bar and above the shelf.
     #[must_use]
@@ -667,11 +683,34 @@ impl Shell {
         )
     }
 
+    /// Lay the sessions out for the feel being presented: tiles for Flow, the vertical
+    /// stack for Session + shelf and Classic.
+    fn relayout(&mut self) {
+        if self.flow_chrome() {
+            self.relayout_flow();
+        } else {
+            self.relayout_stack();
+        }
+    }
+
+    /// The Flow feel lays sessions out as tiles, the focused one as the hero (opened).
+    fn relayout_flow(&mut self) {
+        let area = self.content_area();
+        let count = self.sessions.len();
+        let focused_index = self
+            .focused
+            .and_then(|id| self.sessions.iter().position(|s| s.model.id() == id));
+        let rects = tiles::tile_layout(area, count, focused_index);
+        for (view, rect) in self.sessions.iter_mut().zip(rects) {
+            view.surface = rect;
+        }
+    }
+
     /// Stack the sessions vertically, with a margin between them.
     ///
     /// Deliberately the simplest layout that gives every session a real surface. The
     /// shapes a session can take — and whether it can be moved — are later records.
-    fn relayout(&mut self) {
+    fn relayout_stack(&mut self) {
         let area = self.content_area();
         let count = self.sessions.len() as u32;
         if count == 0 {
@@ -713,13 +752,23 @@ impl Shell {
         }
         for view in &self.sessions {
             let focused = self.focused == Some(view.model.id());
-            let colour = if focused {
-                palette::SURFACE_FOCUSED
+            if self.flow_chrome() {
+                tiles::paint_tile(
+                    &mut frame,
+                    view.model.label(),
+                    view.model.openables(),
+                    view.surface,
+                    focused,
+                );
             } else {
-                palette::SURFACE
-            };
-            frame.fill_rect(view.surface, colour);
-            terminal::paint(&mut frame, &view.terminal, view.surface, focused);
+                let colour = if focused {
+                    palette::SURFACE_FOCUSED
+                } else {
+                    palette::SURFACE
+                };
+                frame.fill_rect(view.surface, colour);
+                terminal::paint(&mut frame, &view.terminal, view.surface, focused);
+            }
         }
         if self.session_shelf_chrome() {
             let openables = self.focused.and_then(|id| {
