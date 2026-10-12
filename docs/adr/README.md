@@ -17,3 +17,4 @@ after it's accepted. A later ADR supersedes it instead.
 | [0010](0010-flow-shell-first.md) | The Flow shell is built first: a Smithay compositor, and no stock desktop stands in for it | Accepted |
 | [0011](0011-the-humans-mark.md) | The human's mark: `.rob` signs an approved change, and `rob` places it | Accepted — **the check's name is superseded by [0012](0012-the-name-in-the-machine.md)** |
 | [0012](0012-the-name-in-the-machine.md) | The name goes in the machine: `generations/<n>.rob` is written and read by the store, and the frame check loses its name | Accepted |
+| [0013](0013-flow-shell-feels.md) | The shell's feel is a property of the session; a Desktop session is first-class | Accepted |
