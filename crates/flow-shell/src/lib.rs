@@ -26,11 +26,21 @@
 //! typed this" is now a picture rather than a claim. The session a shell lays out is no
 //! longer defined here: it is a [`flow_session::Session`] — identity, label, feel, and what
 //! it is opening — carried inside a [`SessionView`] that adds only the two things the shell
-//! owns, where the session is drawn and the text it has accumulated. Per-feel *layout* is
-//! the next slice (ADR 0013); for now the shell carries the feel and paints the one frame.
-//! Still absent: the Intent Bar, multi-display, capsules, the Device Broker, a real Wayland
-//! client, and any pty. The terminal is a text buffer with a cursor, not a shell behind a
-//! tty — it is honest as long as it is called that.
+//! owns, where the session is drawn and the text it has accumulated.
+//!
+//! The first per-feel slice of ADR 0013 is here: when the focused session's feel is
+//! [`Feel::SessionShelf`], [`Shell::paint`] draws that feel's two pieces of chrome — a
+//! **shelf** listing the focused session's [`Openable`]s (a thin strip of its capsules, not
+//! an app grid) and an **intent bar** that is a search field, not an intent engine. A
+//! character typed while the intent bar is the input target builds a query; Enter commits
+//! it through [`match_query`], a deterministic case-insensitive match over session labels
+//! and openable names that moves focus to the first match — or, with none, paints "no
+//! match" rather than inventing a result. Flow's tiles and Classic's windows are the later
+//! slices; their feels keep the one frame this crate already paints.
+//!
+//! Still absent: multi-display, capsules, the Device Broker, a real Wayland client, and any
+//! pty. The terminal is a text buffer with a cursor, not a shell behind a tty — it is
+//! honest as long as it is called that.
 //!
 //! [ADR 0010]: ../../docs/adr/0010-flow-shell-first.md
 //! [ADR 0011]: ../../docs/adr/0011-the-humans-mark.md
@@ -40,6 +50,7 @@ use std::collections::BTreeSet;
 mod font;
 mod input;
 mod png;
+mod shelf;
 mod terminal;
 
 // The session model lives in `flow-session` (ADR 0010 step 4); this crate is one consumer of
@@ -58,6 +69,10 @@ pub const DEFAULT_WIDTH: u32 = 1280;
 pub const DEFAULT_HEIGHT: u32 = 800;
 /// Height of the session bar across the top of the frame.
 pub const BAR_HEIGHT: u32 = 32;
+/// Height of the intent bar — the Session + shelf feel's search field, under the top bar.
+pub const INTENT_BAR_HEIGHT: u32 = 28;
+/// Height of the shelf — the thin strip of the focused session's openables at the bottom.
+pub const SHELF_HEIGHT: u32 = 40;
 /// Space between the frame edge and the content, and between sessions.
 pub const MARGIN: u32 = 24;
 /// Width of the focus indicator drawn on the bar.
@@ -124,6 +139,12 @@ pub mod palette {
     pub const ACCENT: Colour = Colour::rgb(0x5a, 0xa8, 0xff);
     /// The terminal's text.
     pub const TEXT: Colour = Colour::rgb(0xd8, 0xde, 0xe9);
+    /// The intent bar (the search field) background.
+    pub const INTENT_BAR: Colour = Colour::rgb(0x1f, 0x24, 0x2e);
+    /// The shelf that lists the focused session's openables.
+    pub const SHELF: Colour = Colour::rgb(0x15, 0x19, 0x1f);
+    /// A query that matched nothing, so the frame says so rather than faking a result.
+    pub const NO_MATCH: Colour = Colour::rgb(0xe0, 0x5f, 0x5f);
 }
 
 /// An axis-aligned rectangle, in pixels, with the origin at the top left.
@@ -326,6 +347,12 @@ pub struct Shell {
     sessions: Vec<SessionView>,
     focused: Option<SessionId>,
     next_id: u64,
+    /// The text in the intent bar — the Session + shelf feel's search field.
+    intent_query: String,
+    /// Whether the intent bar, rather than the focused terminal, receives keys.
+    intent_active: bool,
+    /// Whether the last committed query matched nothing.
+    intent_no_match: bool,
 }
 
 impl Shell {
@@ -338,6 +365,9 @@ impl Shell {
             sessions: Vec::new(),
             focused: None,
             next_id: 1,
+            intent_query: String::new(),
+            intent_active: false,
+            intent_no_match: false,
         }
     }
 
@@ -357,6 +387,59 @@ impl Shell {
     #[must_use]
     pub const fn focused(&self) -> Option<SessionId> {
         self.focused
+    }
+
+    /// The text in the intent bar — the Session + shelf feel's search field.
+    ///
+    /// This is the query the person has typed, not a result: matching it against what
+    /// exists is [`match_query`], which runs only when the query is committed.
+    #[must_use]
+    pub fn intent_query(&self) -> &str {
+        &self.intent_query
+    }
+
+    /// Whether the intent bar, rather than the focused terminal, is receiving keys.
+    ///
+    /// Two input targets, one model of them: a press inside the intent bar makes it the
+    /// target (so characters build the query), a press inside a session surface returns
+    /// keys to that session's terminal, and a match or Tab hands them back too.
+    #[must_use]
+    pub const fn is_intent_active(&self) -> bool {
+        self.intent_active
+    }
+
+    /// Whether the last committed query matched nothing.
+    #[must_use]
+    pub const fn intent_no_match(&self) -> bool {
+        self.intent_no_match
+    }
+
+    /// The intent bar's rectangle — the search field under the top bar.
+    ///
+    /// Empty when the focused session's feel is not [`Feel::SessionShelf`]: the field is
+    /// that feel's chrome, not a global fixture (ADR 0013: the feel is per-session).
+    #[must_use]
+    pub fn intent_bar_rect(&self) -> Rect {
+        if !self.session_shelf_chrome() {
+            return Rect::new(0, 0, 0, 0);
+        }
+        Rect::new(0, BAR_HEIGHT, self.width, INTENT_BAR_HEIGHT)
+    }
+
+    /// The shelf's rectangle — the thin strip of the focused session's openables.
+    ///
+    /// Empty for the other feels, like [`Self::intent_bar_rect`].
+    #[must_use]
+    pub fn shelf_rect(&self) -> Rect {
+        if !self.session_shelf_chrome() {
+            return Rect::new(0, 0, 0, 0);
+        }
+        Rect::new(
+            0,
+            self.height.saturating_sub(SHELF_HEIGHT),
+            self.width,
+            SHELF_HEIGHT,
+        )
     }
 
     /// Add a session and give it focus. Returns its id.
@@ -413,21 +496,25 @@ impl Shell {
     }
 
     /// Give a session focus. Returns whether it exists.
+    ///
+    /// Focus decides the feel on screen (the focused session's feel is the chrome), so the
+    /// layout is recomputed when it changes.
     pub fn focus(&mut self, id: SessionId) -> bool {
         if self.sessions.iter().any(|s| s.model.id() == id) {
             self.focused = Some(id);
+            self.relayout();
             true
         } else {
             false
         }
     }
 
-    /// Route one input event to the session it lands on.
+    /// Route one input event to where it lands: a session, or the intent bar.
     ///
-    /// Returns whether the event reached a session. That is the *routing* result, not the
+    /// Returns whether the event was consumed. That is the *routing* result, not the
     /// proof — what the event changed is asserted on the painted frame in the tests, so a
     /// method that returns `true` while drawing nothing cannot pass. An event with no
-    /// session to receive it returns `false` and changes nothing.
+    /// session or intent bar to receive it returns `false` and changes nothing.
     pub fn handle(&mut self, event: Event) -> bool {
         match event {
             Event::Key(key) => self.handle_key(key),
@@ -435,8 +522,12 @@ impl Shell {
         }
     }
 
-    /// A key goes to the focused session, or to focus itself for Tab.
+    /// A key goes to the intent bar when it is the input target, else to the focused
+    /// session — or to focus itself for Tab.
     fn handle_key(&mut self, key: Key) -> bool {
+        if self.intent_active {
+            return self.handle_intent_key(key);
+        }
         match key {
             Key::Tab => self.focus_next(),
             Key::Char(c) => self.with_focused(|s| s.terminal.insert(c)),
@@ -445,12 +536,57 @@ impl Shell {
         }
     }
 
-    /// A press gives focus to the session whose surface contains it.
+    /// A key goes to the intent bar: characters build the query, Enter commits it.
+    fn handle_intent_key(&mut self, key: Key) -> bool {
+        match key {
+            Key::Char(c) => {
+                self.intent_query.push(c);
+                // A new character makes the previous "no match" verdict stale.
+                self.intent_no_match = false;
+                true
+            }
+            Key::Backspace => {
+                self.intent_query.pop();
+                self.intent_no_match = false;
+                true
+            }
+            Key::Enter => match match_query(&self.intent_query, &self.sessions) {
+                Some(id) => {
+                    // The query returns a result: focus moves to it, and the intent bar
+                    // hands the keys back to that session's terminal.
+                    self.focused = Some(id);
+                    self.intent_no_match = false;
+                    self.intent_active = false;
+                    self.relayout();
+                    true
+                }
+                None => {
+                    // No match is a fact to show, never a result to invent.
+                    self.intent_no_match = true;
+                    true
+                }
+            },
+            Key::Tab => {
+                // Leave the search field for the focused session's terminal.
+                self.intent_active = false;
+                self.intent_no_match = false;
+                true
+            }
+        }
+    }
+
+    /// A press gives focus to the session whose surface contains it, or to the intent bar.
     fn handle_pointer(&mut self, pointer: Pointer) -> bool {
         match pointer {
             Pointer::Press { x, y } => {
+                if self.intent_bar_rect().contains(x, y) {
+                    self.intent_active = true;
+                    return true;
+                }
                 if let Some(view) = self.sessions.iter().find(|s| s.surface.contains(x, y)) {
                     self.focused = Some(view.model.id());
+                    self.intent_active = false;
+                    self.relayout();
                     true
                 } else {
                     false
@@ -469,6 +605,7 @@ impl Shell {
             .and_then(|id| self.sessions.iter().position(|s| s.model.id() == id))
             .map_or(0, |i| (i + 1) % self.sessions.len());
         self.focused = Some(self.sessions[index].model.id());
+        self.relayout();
         true
     }
 
@@ -487,15 +624,46 @@ impl Shell {
         true
     }
 
-    /// The area the session surfaces share: inside the margin, below the bar.
+    /// The feel the focused session carries, if there is one.
+    ///
+    /// This is what decides the chrome on screen: the focused session's feel is the feel
+    /// being presented (ADR 0013), not a global switch.
+    fn focused_feel(&self) -> Option<Feel> {
+        self.focused.and_then(|id| {
+            self.sessions
+                .iter()
+                .find(|s| s.model.id() == id)
+                .map(|s| s.model.feel())
+        })
+    }
+
+    /// Whether the frame shows the Session + shelf chrome: intent bar above, shelf below.
+    fn session_shelf_chrome(&self) -> bool {
+        self.focused_feel() == Some(Feel::SessionShelf)
+    }
+
+    /// The area the session surfaces share: inside the margin, below the bar — and, for
+    /// the Session + shelf feel, below the intent bar and above the shelf.
     #[must_use]
     pub fn content_area(&self) -> Rect {
-        let top = BAR_HEIGHT.saturating_add(MARGIN);
+        let shelf_chrome = self.session_shelf_chrome();
+        let top = if shelf_chrome {
+            BAR_HEIGHT
+                .saturating_add(INTENT_BAR_HEIGHT)
+                .saturating_add(MARGIN)
+        } else {
+            BAR_HEIGHT.saturating_add(MARGIN)
+        };
+        let bottom = if shelf_chrome {
+            SHELF_HEIGHT.saturating_add(MARGIN)
+        } else {
+            MARGIN
+        };
         Rect::new(
             MARGIN,
             top,
             self.width.saturating_sub(MARGIN * 2),
-            self.height.saturating_sub(top).saturating_sub(MARGIN),
+            self.height.saturating_sub(top).saturating_sub(bottom),
         )
     }
 
@@ -534,6 +702,15 @@ impl Shell {
                 palette::ACCENT,
             );
         }
+        if self.session_shelf_chrome() {
+            shelf::paint_intent_bar(
+                &mut frame,
+                self.intent_bar_rect(),
+                &self.intent_query,
+                self.intent_active,
+                self.intent_no_match,
+            );
+        }
         for view in &self.sessions {
             let focused = self.focused == Some(view.model.id());
             let colour = if focused {
@@ -544,8 +721,42 @@ impl Shell {
             frame.fill_rect(view.surface, colour);
             terminal::paint(&mut frame, &view.terminal, view.surface, focused);
         }
+        if self.session_shelf_chrome() {
+            let openables = self.focused.and_then(|id| {
+                self.sessions
+                    .iter()
+                    .find(|s| s.model.id() == id)
+                    .map(|s| s.model.openables())
+            });
+            shelf::paint_shelf(&mut frame, self.shelf_rect(), openables);
+        }
         frame
     }
+}
+
+/// The deterministic match the intent bar commits a query through.
+///
+/// ADR 0013's "a query returns a result" is this and nothing more: a case-insensitive
+/// substring match over session labels and openable names, first session in layout order
+/// whose label or one of whose openable labels contains the query. A blank query matches
+/// nothing, and a query no session matches returns `None` — the shell paints "no match"
+/// rather than inventing one. There is deliberately no scoring, ranking, or model behind
+/// it: the same honest, deterministic rule as `flow_session::infer_feel`.
+#[must_use]
+pub fn match_query(query: &str, sessions: &[SessionView]) -> Option<SessionId> {
+    let needle = query.trim().to_lowercase();
+    if needle.is_empty() {
+        return None;
+    }
+    sessions.iter().find_map(|view| {
+        let label_matches = view.model.label().to_lowercase().contains(&needle);
+        let openable_matches = view
+            .model
+            .openables()
+            .iter()
+            .any(|o| o.label.to_lowercase().contains(&needle));
+        (label_matches || openable_matches).then_some(view.model.id())
+    })
 }
 
 /// Whether a frame is evidence: how many colours it holds, and whether that is enough.

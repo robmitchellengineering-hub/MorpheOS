@@ -11,7 +11,7 @@
 
 use std::process::ExitCode;
 
-use flow_shell::{DEFAULT_HEIGHT, DEFAULT_WIDTH, Shell, frame_evidence};
+use flow_shell::{DEFAULT_HEIGHT, DEFAULT_WIDTH, Openable, Shell, frame_evidence};
 
 const USAGE: &str = "\
 flow-shell - paint the shell's frame and write it as a PPM
@@ -76,7 +76,16 @@ fn main() -> ExitCode {
 
     let mut shell = Shell::new(width, height);
     for n in 1..=sessions {
-        shell.add_session(&format!("session {n}"));
+        // A session described by what it opens, so the Session + shelf feel has a shelf
+        // to show: its tools, prewarmed around the task (ADR 0013). `add_session` would
+        // leave the shelf empty, which proves nothing about the feel.
+        shell.add_session_opening(
+            &format!("session {n}"),
+            vec![
+                Openable::tool(format!("editor {n}")),
+                Openable::tool(format!("terminal {n}")),
+            ],
+        );
     }
     let frame = shell.paint();
     let evidence = frame_evidence(&frame);

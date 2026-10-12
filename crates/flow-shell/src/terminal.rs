@@ -9,7 +9,9 @@
 //! keypress changes the buffer, and the painted frame reflects the buffer.
 
 use crate::font;
-use crate::{Frame, GLYPH_ADVANCE, GLYPH_H, GLYPH_W, LINE_ADVANCE, Rect, TEXT_PAD, palette};
+use crate::{
+    Colour, Frame, GLYPH_ADVANCE, GLYPH_H, GLYPH_W, LINE_ADVANCE, Rect, TEXT_PAD, palette,
+};
 
 /// The text one session has accumulated, and where its cursor sits.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,7 +106,7 @@ pub(crate) fn paint(frame: &mut Frame, terminal: &Terminal, surface: Rect, focus
         for (col, ch) in line.iter().enumerate() {
             let x = origin_x.saturating_add(col as u32 * GLYPH_ADVANCE);
             let y = origin_y.saturating_add(row as u32 * LINE_ADVANCE);
-            paint_glyph(frame, *ch, x, y);
+            paint_glyph(frame, *ch, x, y, palette::TEXT);
         }
     }
 
@@ -116,12 +118,25 @@ pub(crate) fn paint(frame: &mut Frame, terminal: &Terminal, surface: Rect, focus
     }
 }
 
-/// Draw one glyph at `(x, y)`, one pixel at a time so the frame clips it.
-fn paint_glyph(frame: &mut Frame, ch: char, x: u32, y: u32) {
+/// Draw one line of text at `(x, y)` in the given colour, one glyph per cell.
+///
+/// Shared by the terminal, the intent bar and the shelf, so "text appeared" means the
+/// same thing everywhere: glyph pixels in the frame. Characters with no glyph in the font
+/// are still advanced past, exactly as the terminal holds them, so the text is never
+/// silently dropped — what cannot be drawn is simply not drawn.
+pub(crate) fn paint_text(frame: &mut Frame, text: &str, x: u32, y: u32, colour: Colour) {
+    for (col, ch) in text.chars().enumerate() {
+        let cx = x.saturating_add(col as u32 * GLYPH_ADVANCE);
+        paint_glyph(frame, ch, cx, y, colour);
+    }
+}
+
+/// Draw one glyph at `(x, y)` in the given colour, one pixel at a time so the frame clips.
+fn paint_glyph(frame: &mut Frame, ch: char, x: u32, y: u32, colour: Colour) {
     for (col, byte) in font::glyph(ch).iter().enumerate() {
         for row in 0..GLYPH_H {
             if byte & (1 << row) != 0 {
-                frame.fill_rect(Rect::new(x + col as u32, y + row, 1, 1), palette::TEXT);
+                frame.fill_rect(Rect::new(x + col as u32, y + row, 1, 1), colour);
             }
         }
     }
