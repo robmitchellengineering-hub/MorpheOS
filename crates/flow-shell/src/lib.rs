@@ -19,17 +19,27 @@
 //! runs — which is the property the shell's proof actually needs. Compositing real client
 //! buffers is Smithay's job, later, on Linux, where those libraries exist.
 //!
-//! **What is deliberately absent:** the Intent Bar, multi-display, capsules, the Device
-//! Broker, input, and any actual Wayland client. The first slice is *a frame, not a
-//! framework*. A terminal does not appear in this frame yet — its surface is a rectangle
-//! standing in for one, which is honest as long as it is called that.
+//! **What is now present, and what is still absent.** Input is here as a model, not a
+//! backend: a [`Key`] or a [`Pointer`] lands on a session through [`Shell::handle`] — a
+//! press or Tab moves focus, and a character goes into the focused session's
+//! [`Terminal`], a buffer that accumulates text and is painted with a cursor. "The user
+//! typed this" is now a picture rather than a claim. Still absent: the Intent Bar,
+//! multi-display, capsules, the Device Broker, a real Wayland client, and any pty. The
+//! terminal is a text buffer with a cursor, not a shell behind a tty — it is honest as
+//! long as it is called that.
 //!
 //! [ADR 0010]: ../../docs/adr/0010-flow-shell-first.md
 //! [ADR 0011]: ../../docs/adr/0011-the-humans-mark.md
 
 use std::collections::BTreeSet;
 
+mod font;
+mod input;
 mod png;
+mod terminal;
+
+pub use input::{Event, Key, Pointer};
+pub use terminal::Terminal;
 
 /// The reference frame size. A real display negotiates its own; this is the size the
 /// shell lays out for when nothing has told it otherwise.
@@ -42,6 +52,16 @@ pub const BAR_HEIGHT: u32 = 32;
 pub const MARGIN: u32 = 24;
 /// Width of the focus indicator drawn on the bar.
 pub const FOCUS_MARK_WIDTH: u32 = 96;
+/// Width of one terminal glyph.
+pub const GLYPH_W: u32 = 5;
+/// Height of one terminal glyph.
+pub const GLYPH_H: u32 = 7;
+/// Horizontal advance of one terminal character: the glyph plus a pixel of spacing.
+pub const GLYPH_ADVANCE: u32 = GLYPH_W + 1;
+/// Vertical advance of one terminal line: the glyph plus a pixel of spacing.
+pub const LINE_ADVANCE: u32 = GLYPH_H + 1;
+/// Space between a session's surface edge and its terminal text.
+pub const TEXT_PAD: u32 = 6;
 
 /// A colour in the frame, stored as ARGB - the layout a compositor and a PPM both use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,8 +110,10 @@ pub mod palette {
     pub const SURFACE: Colour = Colour::rgb(0x22, 0x27, 0x30);
     /// A session surface that does.
     pub const SURFACE_FOCUSED: Colour = Colour::rgb(0x2d, 0x34, 0x40);
-    /// The focus indicator, and the only bright thing in the frame.
+    /// The focus indicator and the cursor — the bright things that mark where the person is.
     pub const ACCENT: Colour = Colour::rgb(0x5a, 0xa8, 0xff);
+    /// The terminal's text.
+    pub const TEXT: Colour = Colour::rgb(0xd8, 0xde, 0xe9);
 }
 
 /// An axis-aligned rectangle, in pixels, with the origin at the top left.
@@ -146,6 +168,16 @@ impl Rect {
             return None;
         }
         Some(Self::new(x, y, right - x, bottom - y))
+    }
+
+    /// True when the point is inside the rectangle.
+    ///
+    /// This is what a pointer press is hit-tested against, so "inside" follows the same
+    /// half-open convention as [`Self::intersect`]: the right and bottom edges are not
+    /// included.
+    #[must_use]
+    pub const fn contains(&self, x: u32, y: u32) -> bool {
+        x >= self.x && x < self.right() && y >= self.y && y < self.bottom()
     }
 }
 
@@ -254,7 +286,7 @@ impl Frame {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SessionId(pub u64);
 
-/// One session: an intent, and the surface it is being shown on.
+/// One session: an intent, a terminal surface, and where it is shown.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Session {
     /// Stable for the life of the session.
@@ -263,6 +295,17 @@ pub struct Session {
     pub title: String,
     /// Where it is drawn. Laid out by the shell, not by the session.
     pub surface: Rect,
+    /// The text the session has accumulated. Private: input reaches it only through
+    /// [`Shell::handle`], so no caller can paint text the shell did not route.
+    terminal: Terminal,
+}
+
+impl Session {
+    /// The session's terminal buffer, read-only.
+    #[must_use]
+    pub const fn terminal(&self) -> &Terminal {
+        &self.terminal
+    }
 }
 
 /// The shell: the sessions that exist, which one has focus, and how they are laid out.
@@ -314,6 +357,7 @@ impl Shell {
             id,
             title: title.to_owned(),
             surface: Rect::new(0, 0, 0, 0),
+            terminal: Terminal::new(),
         });
         self.focused = Some(id);
         self.relayout();
@@ -346,6 +390,71 @@ impl Shell {
         } else {
             false
         }
+    }
+
+    /// Route one input event to the session it lands on.
+    ///
+    /// Returns whether the event reached a session. That is the *routing* result, not the
+    /// proof — what the event changed is asserted on the painted frame in the tests, so a
+    /// method that returns `true` while drawing nothing cannot pass. An event with no
+    /// session to receive it returns `false` and changes nothing.
+    pub fn handle(&mut self, event: Event) -> bool {
+        match event {
+            Event::Key(key) => self.handle_key(key),
+            Event::Pointer(pointer) => self.handle_pointer(pointer),
+        }
+    }
+
+    /// A key goes to the focused session, or to focus itself for Tab.
+    fn handle_key(&mut self, key: Key) -> bool {
+        match key {
+            Key::Tab => self.focus_next(),
+            Key::Char(c) => self.with_focused(|s| s.terminal.insert(c)),
+            Key::Backspace => self.with_focused(|s| s.terminal.backspace()),
+            Key::Enter => self.with_focused(|s| s.terminal.newline()),
+        }
+    }
+
+    /// A press gives focus to the session whose surface contains it.
+    fn handle_pointer(&mut self, pointer: Pointer) -> bool {
+        match pointer {
+            Pointer::Press { x, y } => {
+                if let Some(session) = self.sessions.iter().find(|s| s.surface.contains(x, y)) {
+                    self.focused = Some(session.id);
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+    }
+
+    /// Move focus to the next session, wrapping. Returns whether a session got focus.
+    fn focus_next(&mut self) -> bool {
+        if self.sessions.is_empty() {
+            return false;
+        }
+        let index = self
+            .focused
+            .and_then(|id| self.sessions.iter().position(|s| s.id == id))
+            .map_or(0, |i| (i + 1) % self.sessions.len());
+        self.focused = Some(self.sessions[index].id);
+        true
+    }
+
+    /// Apply a change to the focused session's terminal, if there is one.
+    ///
+    /// `false` when nothing is focused — the honest "there was no terminal to give this
+    /// to", which the negative control in the tests asserts must not fake a pass.
+    fn with_focused(&mut self, change: impl FnOnce(&mut Session)) -> bool {
+        let Some(id) = self.focused else {
+            return false;
+        };
+        let Some(session) = self.sessions.iter_mut().find(|s| s.id == id) else {
+            return false;
+        };
+        change(session);
+        true
     }
 
     /// The area the session surfaces share: inside the margin, below the bar.
@@ -396,12 +505,14 @@ impl Shell {
             );
         }
         for session in &self.sessions {
-            let colour = if self.focused == Some(session.id) {
+            let focused = self.focused == Some(session.id);
+            let colour = if focused {
                 palette::SURFACE_FOCUSED
             } else {
                 palette::SURFACE
             };
             frame.fill_rect(session.surface, colour);
+            terminal::paint(&mut frame, &session.terminal, session.surface, focused);
         }
         frame
     }
