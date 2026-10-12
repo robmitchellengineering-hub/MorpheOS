@@ -5,3 +5,6 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "MorpheOS: the Flow shell's own frame - a session laid out and painted, with a check that something was actually drawn"
+
+[dependencies]
+flow-session = { path = "../flow-session" }

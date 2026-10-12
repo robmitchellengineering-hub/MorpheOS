@@ -23,10 +23,14 @@
 //! backend: a [`Key`] or a [`Pointer`] lands on a session through [`Shell::handle`] — a
 //! press or Tab moves focus, and a character goes into the focused session's
 //! [`Terminal`], a buffer that accumulates text and is painted with a cursor. "The user
-//! typed this" is now a picture rather than a claim. Still absent: the Intent Bar,
-//! multi-display, capsules, the Device Broker, a real Wayland client, and any pty. The
-//! terminal is a text buffer with a cursor, not a shell behind a tty — it is honest as
-//! long as it is called that.
+//! typed this" is now a picture rather than a claim. The session a shell lays out is no
+//! longer defined here: it is a [`flow_session::Session`] — identity, label, feel, and what
+//! it is opening — carried inside a [`SessionView`] that adds only the two things the shell
+//! owns, where the session is drawn and the text it has accumulated. Per-feel *layout* is
+//! the next slice (ADR 0013); for now the shell carries the feel and paints the one frame.
+//! Still absent: the Intent Bar, multi-display, capsules, the Device Broker, a real Wayland
+//! client, and any pty. The terminal is a text buffer with a cursor, not a shell behind a
+//! tty — it is honest as long as it is called that.
 //!
 //! [ADR 0010]: ../../docs/adr/0010-flow-shell-first.md
 //! [ADR 0011]: ../../docs/adr/0011-the-humans-mark.md
@@ -38,6 +42,12 @@ mod input;
 mod png;
 mod terminal;
 
+// The session model lives in `flow-session` (ADR 0010 step 4); this crate is one consumer of
+// it. `Session` and `SessionId` are re-exported so a caller of the shell meets exactly one
+// session concept; `Feel`/`Openable`/`OpenableKind` ride along because they appear on the
+// model the shell carries and a caller must be able to name them without reaching past the
+// shell for the model crate.
+pub use flow_session::{Feel, Openable, OpenableKind, Session, SessionId};
 pub use input::{Event, Key, Pointer};
 pub use terminal::Terminal;
 
@@ -282,17 +292,17 @@ impl Frame {
     }
 }
 
-/// What a session is called, for as long as the shell is running.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct SessionId(pub u64);
-
-/// One session: an intent, a terminal surface, and where it is shown.
+/// The shell's view of one session: the authoritative [`Session`] model, plus the two
+/// things only the shell knows — where it is drawn, and the text it has accumulated.
+///
+/// The session's identity, label, feel and openables all live on `model` (in `flow-session`);
+/// this struct adds nothing to what a session *is*. That is what "the shell is one consumer of
+/// the session model" means in code: the shell lays out and paints the model, it does not
+/// redefine it. There is no second `Session` here.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Session {
-    /// Stable for the life of the session.
-    pub id: SessionId,
-    /// What the session is for, as the bar shows it.
-    pub title: String,
+pub struct SessionView {
+    /// The session model: identity, label, feel, and what it is opening.
+    pub model: Session,
     /// Where it is drawn. Laid out by the shell, not by the session.
     pub surface: Rect,
     /// The text the session has accumulated. Private: input reaches it only through
@@ -300,7 +310,7 @@ pub struct Session {
     terminal: Terminal,
 }
 
-impl Session {
+impl SessionView {
     /// The session's terminal buffer, read-only.
     #[must_use]
     pub const fn terminal(&self) -> &Terminal {
@@ -313,7 +323,7 @@ impl Session {
 pub struct Shell {
     width: u32,
     height: u32,
-    sessions: Vec<Session>,
+    sessions: Vec<SessionView>,
     focused: Option<SessionId>,
     next_id: u64,
 }
@@ -337,9 +347,9 @@ impl Shell {
         (self.width, self.height)
     }
 
-    /// The sessions, in layout order.
+    /// The sessions, in layout order, each as the model plus the shell's presentation.
     #[must_use]
-    pub fn sessions(&self) -> &[Session] {
+    pub fn sessions(&self) -> &[SessionView] {
         &self.sessions
     }
 
@@ -350,12 +360,32 @@ impl Shell {
     }
 
     /// Add a session and give it focus. Returns its id.
+    ///
+    /// The shell has not been told what the session opens, so the model takes the default
+    /// feel ([`Feel::default`], ADR 0013 Decision 2). A session described by what it opens is
+    /// [`Shell::add_session_opening`], whose feel is inferred.
     pub fn add_session(&mut self, title: &str) -> SessionId {
-        let id = SessionId(self.next_id);
+        let model = Session::new(SessionId(self.next_id), title);
         self.next_id += 1;
-        self.sessions.push(Session {
-            id,
-            title: title.to_owned(),
+        self.push_session(model)
+    }
+
+    /// Add a session described by what it opens, and give it focus. Returns its id.
+    ///
+    /// The feel is inferred from the openables (ADR 0013 Decision 7) rather than left at the
+    /// default: a lone legacy app becomes Classic, a task with tools Session + shelf, nothing
+    /// app-shaped Flow. This is the path the shell takes once it knows what a session opens.
+    pub fn add_session_opening(&mut self, title: &str, openables: Vec<Openable>) -> SessionId {
+        let model = Session::opening(SessionId(self.next_id), title, openables);
+        self.next_id += 1;
+        self.push_session(model)
+    }
+
+    /// Lay a fully-built session model out, give it focus, and return its id.
+    fn push_session(&mut self, model: Session) -> SessionId {
+        let id = model.id();
+        self.sessions.push(SessionView {
+            model,
             surface: Rect::new(0, 0, 0, 0),
             terminal: Terminal::new(),
         });
@@ -371,12 +401,12 @@ impl Shell {
     /// they were using.
     pub fn close_session(&mut self, id: SessionId) -> bool {
         let before = self.sessions.len();
-        self.sessions.retain(|s| s.id != id);
+        self.sessions.retain(|s| s.model.id() != id);
         if self.sessions.len() == before {
             return false;
         }
         if self.focused == Some(id) {
-            self.focused = self.sessions.last().map(|s| s.id);
+            self.focused = self.sessions.last().map(|s| s.model.id());
         }
         self.relayout();
         true
@@ -384,7 +414,7 @@ impl Shell {
 
     /// Give a session focus. Returns whether it exists.
     pub fn focus(&mut self, id: SessionId) -> bool {
-        if self.sessions.iter().any(|s| s.id == id) {
+        if self.sessions.iter().any(|s| s.model.id() == id) {
             self.focused = Some(id);
             true
         } else {
@@ -419,8 +449,8 @@ impl Shell {
     fn handle_pointer(&mut self, pointer: Pointer) -> bool {
         match pointer {
             Pointer::Press { x, y } => {
-                if let Some(session) = self.sessions.iter().find(|s| s.surface.contains(x, y)) {
-                    self.focused = Some(session.id);
+                if let Some(view) = self.sessions.iter().find(|s| s.surface.contains(x, y)) {
+                    self.focused = Some(view.model.id());
                     true
                 } else {
                     false
@@ -436,9 +466,9 @@ impl Shell {
         }
         let index = self
             .focused
-            .and_then(|id| self.sessions.iter().position(|s| s.id == id))
+            .and_then(|id| self.sessions.iter().position(|s| s.model.id() == id))
             .map_or(0, |i| (i + 1) % self.sessions.len());
-        self.focused = Some(self.sessions[index].id);
+        self.focused = Some(self.sessions[index].model.id());
         true
     }
 
@@ -446,14 +476,14 @@ impl Shell {
     ///
     /// `false` when nothing is focused — the honest "there was no terminal to give this
     /// to", which the negative control in the tests asserts must not fake a pass.
-    fn with_focused(&mut self, change: impl FnOnce(&mut Session)) -> bool {
+    fn with_focused(&mut self, change: impl FnOnce(&mut SessionView)) -> bool {
         let Some(id) = self.focused else {
             return false;
         };
-        let Some(session) = self.sessions.iter_mut().find(|s| s.id == id) else {
+        let Some(view) = self.sessions.iter_mut().find(|s| s.model.id() == id) else {
             return false;
         };
-        change(session);
+        change(view);
         true
     }
 
@@ -482,9 +512,9 @@ impl Shell {
         let gap = MARGIN;
         let total_gap = gap.saturating_mul(count.saturating_sub(1));
         let each = area.h.saturating_sub(total_gap) / count;
-        for (index, session) in self.sessions.iter_mut().enumerate() {
+        for (index, view) in self.sessions.iter_mut().enumerate() {
             let index = index as u32;
-            session.surface = Rect::new(area.x, area.y + index * (each + gap), area.w, each);
+            view.surface = Rect::new(area.x, area.y + index * (each + gap), area.w, each);
         }
     }
 
@@ -504,15 +534,15 @@ impl Shell {
                 palette::ACCENT,
             );
         }
-        for session in &self.sessions {
-            let focused = self.focused == Some(session.id);
+        for view in &self.sessions {
+            let focused = self.focused == Some(view.model.id());
             let colour = if focused {
                 palette::SURFACE_FOCUSED
             } else {
                 palette::SURFACE
             };
-            frame.fill_rect(session.surface, colour);
-            terminal::paint(&mut frame, &session.terminal, session.surface, focused);
+            frame.fill_rect(view.surface, colour);
+            terminal::paint(&mut frame, &view.terminal, view.surface, focused);
         }
         frame
     }

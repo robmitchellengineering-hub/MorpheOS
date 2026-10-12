@@ -65,6 +65,7 @@ and constraints into execution across devices). See [doc 12](docs/12-radical-con
 | `crates/strata` | Strata v0: a version of every saved file, restore, folder rewind, ransomware detection ([ADR 0007](docs/adr/0007-strata-v0-watcher.md)) |
 | `crates/morph-heal` | Rebuild the spare slot from the running system after a failed trial, so a fallback does not leave the machine unredundant ([ADR 0009](docs/adr/0009-heal-ladder.md)) |
 | `crates/morph-transaction` | A state change that health-checks itself: arm a trial, apply, and commit or roll back without anyone having to notice |
+| `crates/flow-session` | The session model: identity, what it is opening, and the inferred feel (Flow / Session + shelf / Classic) — data only, no Smithay ([ADR 0010](docs/adr/0010-flow-shell-first.md), [ADR 0013](docs/adr/0013-flow-shell-feels.md)) |
 | `crates/flow-shell` | The Flow shell's own frame: a session laid out and painted, with a check that asserts something was actually drawn rather than that a unit started ([ADR 0010](docs/adr/0010-flow-shell-first.md)) |
 | `manifest/` | Example machines and how to validate them ([README](manifest/README.md)) |
 | `images/x86-qemu` | A/B test disk for a UEFI VM, with Strata watching `/home`, and the "Try to Break It" update and ransomware tests ([README](images/README.md)) |
