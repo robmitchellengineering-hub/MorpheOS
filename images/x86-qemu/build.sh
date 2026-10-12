@@ -65,6 +65,21 @@ make_root() {
     rm -f "$dir/.complete"
     cp -a "$REPO/images/common/overlay/." "$dir/"
     cp -a "$HERE/overlay/." "$dir/"
+    # The base's /etc/pam.d/login prints the Ubuntu legal notice TWICE at login. It carries
+    # two motd lines: `pam_motd.so motd=/run/motd.dynamic` (the welcome + help + legal notice,
+    # kept) and `pam_motd.so noupdate` (the DEFAULT motd). Because /etc/motd was never created
+    # — mmdebstrap's `--variant=apt` skips the base-files postinst that makes it — the default
+    # falls back to the distributor motd, which is the legal notice again, so it prints twice.
+    # Remove the `noupdate` line and assert BOTH halves of the result: the duplicate is gone
+    # and the dynamic-motd line survived. A silent no-op here would leave the doubled notice
+    # in place, which is the failure mode the assertion is for.
+    sed -i '/pam_motd\.so[[:space:]]*noupdate/d' "$dir/etc/pam.d/login"
+    grep -q 'pam_motd\.so[[:space:]][[:space:]]*motd=/run/motd\.dynamic' "$dir/etc/pam.d/login" \
+        || { echo "$dir/etc/pam.d/login lost its dynamic-motd line" >&2; exit 1; }
+    if grep -q 'pam_motd\.so[[:space:]][[:space:]]*noupdate' "$dir/etc/pam.d/login"; then
+        echo "$dir/etc/pam.d/login still prints the default motd — the legal notice would print twice" >&2
+        exit 1
+    fi
     if [ "$HARDWARE" = 1 ]; then
         # No self-test driver: nothing here powers the machine off or walks a scenario. The
         # tools the person at the console needs instead, and an autologin so that a machine

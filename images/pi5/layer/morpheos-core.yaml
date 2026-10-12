@@ -21,5 +21,15 @@ mmdebstrap:
   customize-hooks:
     - test -x "${IGconf_morpheos_overlay}/usr/bin/morph-boot"
     - rsync -a "${IGconf_morpheos_overlay}/" "$1/"
+    # The base's /etc/pam.d/login carries `pam_motd.so noupdate` alongside the kept
+    # `pam_motd.so motd=/run/motd.dynamic` line. `noupdate` prints the DEFAULT motd, which —
+    # with no /etc/motd (the base-files postinst never ran) — falls back to the distributor
+    # motd, so the legal notice prints twice at login. Remove it and assert both halves: the
+    # duplicate is gone and the dynamic-motd line survived. The x86 build makes the same edit;
+    # the Pi rootfs is EROFS and cannot be read back in CI, so this hook is the only place
+    # the Pi fix is verified. The `if` guards a base that ships no login service at all
+    # (then there is no motd to double), so it does not fail a build for a file that was
+    # never there.
+    - if [ -f "$1/etc/pam.d/login" ]; then sed -i '/pam_motd\.so[[:space:]]*noupdate/d' "$1/etc/pam.d/login" && grep -q 'pam_motd\.so[[:space:]][[:space:]]*motd=/run/motd\.dynamic' "$1/etc/pam.d/login" && ! grep -q 'pam_motd\.so[[:space:]][[:space:]]*noupdate' "$1/etc/pam.d/login"; fi
     - mkdir -p "$1/etc/systemd/system/multi-user.target.wants"
     - ln -sf /usr/lib/systemd/system/morph-boot-check.service "$1/etc/systemd/system/multi-user.target.wants/morph-boot-check.service"

@@ -70,6 +70,14 @@ jobs:
           sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/img"
       - name: Boot the image a person can use
         run: sudo images/x86-qemu/test-boot.sh "$RUNNER_TEMP/img" 150
+      # The image a person logs into must not print the Ubuntu legal notice twice. The
+      # `noupdate` motd line was removed at build time (images/x86-qemu/build.sh); this is
+      # the behavioural half of the guard — the serial log shows the notice printing twice
+      # (`welcome=1 legal=2`) if the line comes back. It runs against the plain image's boot,
+      # before the ~17-minute scenarios, so the regression fails fast. The verifier's own
+      # negative test runs in the `ci` workflow, where it costs a second.
+      - name: Prove the legal notice is not doubled
+        run: node scripts/verify-motd.mjs "$RUNNER_TEMP/img/serial-plain.log"
       # The raw disk is ~4.5 GiB of mostly empty ext4; `xz` makes it a download rather than a
       # transfer. Level 3 with threads: this is a convenience, not an archive.
       #
