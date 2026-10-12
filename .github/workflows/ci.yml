@@ -64,6 +64,13 @@ jobs:
       # discovered by the one job that is too slow to run on every pull request.
       - name: Prove the Pi image verifier can fail
         run: node scripts/verify-pi-image.mjs --self-test
+      # The motd verifier's own negative test. The behavioural check runs against the x86
+      # serial log in the `images` workflow (too slow for every PR); its ASSERTIONS are plain
+      # counting over a log, so they run here in a second against the doubled-notice fixture
+      # and the fixed one. Without this, a verifier that stopped biting would only be found
+      # by the one job that boots an image.
+      - name: Prove the motd verifier can fail
+        run: node scripts/verify-motd.mjs --self-test
       # `apply` is the one command whose exit code IS the contract (0 applied, 1 REFUSED,
       # 2 a defect), and `cargo test` calls `apply()` directly — so nothing above covers the
       # argument handling, or the mapping from a refusal to exit 1. Each case here asserts
