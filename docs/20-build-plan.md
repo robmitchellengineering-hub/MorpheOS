@@ -99,7 +99,8 @@ driver). A `shell` image scenario runs it as a service, with a demonstration win
 `screendump`, and finds the shell's background over most of the screen and the window at its
 exact place and size; the boot is healthy and committed (`images/x86-qemu/test-shell.sh`).
 
-**Evidence:** `images/x86-qemu/test-shell.sh` (the background over 960000 of 1024000 pixels,
+**Evidence:** https://github.com/robmitchellengineering-hub/MorpheOS/pull/42 and
+`images/x86-qemu/test-shell.sh` (the background over 960000 of 1024000 pixels,
 the window at (16, 16), 320x200, the boot committed). It found two real faults first: the
 image lacked the compositor's libraries, and virtio-gpu shows nothing until DIRTYFB says the
 frame changed.
