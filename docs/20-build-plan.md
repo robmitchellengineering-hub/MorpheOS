@@ -255,7 +255,7 @@ Exit: N2 holds in full, and updates arrive and apply by themselves, safely.
 **Done when:** an ADR states that systemd is PID 1 for v1 and that `morphd` is a service,
 superseding doc 03's claim; doc 03 links it.
 
-### S10 · The whole bar on the builder's Windows laptop (WSL2) · open · parallel
+### S10 · The whole bar on the builder's Windows laptop (WSL2) · done · parallel
 
 **What:** from 2026-10-16 the builder works on Rob's Windows laptop (`win` in harness-mesh).
 Every M1 task is Linux work, and off Linux the bar silently skips the compositor's tests
@@ -267,6 +267,11 @@ command runs the `images` VM suite locally, with KVM when WSL2 provides it.
 partial run, and says why; the setup script, run on a fresh Ubuntu 24.04, leaves a machine
 on which `scripts/check.sh` and `images/x86-qemu/test-shell.sh` both pass (shown in CI by
 running it in the `ubuntu-24.04` runner).
+
+**Evidence:** `scripts/setup-linux.sh`, which CI's `rust` and `images` jobs now install
+through (so every pull request runs it on a fresh Ubuntu 24.04 runner, and the `images` job
+then passes `test-shell.sh`); `scripts/test-images.sh`; and the `ci` step "Prove check.sh
+refuses a partial bar off Linux".
 
 ### S9 · Pin the exact Rust version, locally and in CI · open · parallel
 
