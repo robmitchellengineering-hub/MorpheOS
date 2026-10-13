@@ -255,6 +255,16 @@ client whose content arrives in a later frame.
 asserts GTK keeps asking for frames), not only that its first picture is right. A frozen
 client and a finished one look the same in a single screenshot.
 
+**H18 — the firmware without the driver.** E12 put the laptop firmware sets on the image, and
+the hardware report was ready to say which firmware a machine asked for and did not find. No
+machine would have asked: the kernel package (`linux-image-virtual`) carries no laptop
+graphics, Wi-Fi or touchscreen drivers at all; they are in `linux-modules-extra`. Every VM test
+passed, because a VM needs none of them. A missing driver says nothing: no error, no missing
+firmware, just a device nobody claimed.
+**Rule:** what a real machine needs is asserted in the build, by name, because no VM test can
+see it go missing. `build.sh` refuses a hardware image without the drivers for the machines
+in MACHINES.md (graphics, Wi-Fi, touchscreen, wired network); a new machine adds its own.
+
 ## Writing code here
 
 - Match the existing style: doc comments that explain **why**, module headers that

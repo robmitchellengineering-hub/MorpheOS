@@ -66,17 +66,27 @@ mkdir -p "$WORK"
 # not just numbered), and the laptop firmware sets (E12): AMD,
 # Intel and MediaTek graphics and Wi-Fi, Realtek, Broadcom, and Intel audio (~250 MB), so a
 # first boot on a real machine shows what works, not only what is missing.
+# ⚠️ THE KERNEL'S DRIVERS ARE IN TWO PACKAGES. `linux-image-virtual` brings the kernel and
+# `linux-modules`, which is enough for a VM and has NO laptop graphics (amdgpu, i915, xe), NO
+# Wi-Fi (iwlwifi, MediaTek, Broadcom), no touchscreen and no Realtek ethernet: those are in
+# `linux-modules-extra-<version>`. `linux-image-generic` would pull it, and with it every
+# firmware set Ubuntu has (~600 MB). So the base takes the extra modules for the kernel it
+# installed, by name, in a hook; the firmware stays the chosen sets below. The extra modules
+# also carry mac80211_hwsim, the simulated Wi-Fi the E5 test connects through.
 BASE="$WORK/rootfs-base"
 BASE_PKGS=systemd-sysv,udev,kmod,linux-image-virtual,initramfs-tools,systemd-boot,dosfstools,libpixman-1-0,libxkbcommon0,libinput10,libseat1,seatd,pciutils,usbutils,pci.ids,usb.ids,linux-firmware-amd-graphics,linux-firmware-intel-graphics,linux-firmware-intel-wireless,linux-firmware-mediatek,linux-firmware-realtek,linux-firmware-broadcom-wireless,firmware-sof-signed
-if [ "$(cat "$BASE/.complete" 2>/dev/null)" != "$BASE_PKGS" ]; then
+MODULES_EXTRA_HOOK='chroot "$1" sh -c "apt-get install -y -q linux-modules-extra-\$(ls /usr/lib/modules | sort -V | tail -1)"'
+BASE_KEY="$BASE_PKGS,(linux-modules-extra)"
+if [ "$(cat "$BASE/.complete" 2>/dev/null)" != "$BASE_KEY" ]; then
     rm -rf "$BASE"
     mmdebstrap --variant=apt \
         --include="$BASE_PKGS" \
         --aptopt='APT::Install-Recommends "false"' \
+        --customize-hook="$MODULES_EXTRA_HOOK" \
         "$SUITE" "$BASE" \
         "deb $MIRROR $SUITE main universe" \
         "deb $MIRROR $SUITE-updates main universe"
-    echo "$BASE_PKGS" > "$BASE/.complete"
+    echo "$BASE_KEY" > "$BASE/.complete"
 fi
 
 # 1b. The browser base: the base plus Firefox from Mozilla's own APT repository (doc 20, E4),
@@ -96,9 +106,10 @@ MOZILLA_FPR=35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3
 # NetworkManager (A6) with what Wi-Fi needs (wpasupplicant, a "recommends" we would skip) and
 # systemd-resolved for DNS: the browser has to reach the network (E5).
 BROWSER_PKGS="$BASE_PKGS,firefox,fonts-dejavu-core,network-manager,wpasupplicant,systemd-resolved"
+BROWSER_KEY="$BROWSER_PKGS,(linux-modules-extra)"
 if [ "$SCENARIO" = browser ]; then
     BROWSER_BASE="$WORK/rootfs-browser"
-    if [ "$(cat "$BROWSER_BASE/.complete" 2>/dev/null)" != "$BROWSER_PKGS" ]; then
+    if [ "$(cat "$BROWSER_BASE/.complete" 2>/dev/null)" != "$BROWSER_KEY" ]; then
         rm -rf "$BROWSER_BASE"
         key="$WORK/packages.mozilla.org.asc"
         curl -fsSL "$MOZILLA_KEY_URL" -o "$key"
@@ -113,6 +124,7 @@ if [ "$SCENARIO" = browser ]; then
             --include="$BROWSER_PKGS" \
             --aptopt='APT::Install-Recommends "false"' \
             --customize-hook="mkdir -p \"\$1/etc/apt/keyrings\" && cp '$keyring' \"\$1/etc/apt/keyrings/packages.mozilla.org.gpg\" && sed -i 's|signed-by=$keyring|signed-by=/etc/apt/keyrings/packages.mozilla.org.gpg|' \"\$1/etc/apt/sources.list\"" \
+            --customize-hook="$MODULES_EXTRA_HOOK" \
             --setup-hook='mkdir -p "$1/etc/apt/preferences.d" && printf "Package: *\nPin: origin packages.mozilla.org\nPin-Priority: 1000\n" > "$1/etc/apt/preferences.d/mozilla"' \
             "$SUITE" "$BROWSER_BASE" \
             "deb $MIRROR $SUITE main universe" \
@@ -125,7 +137,7 @@ if [ "$SCENARIO" = browser ]; then
             exit 1
         }
         echo "browser base: firefox $version from packages.mozilla.org" >&2
-        echo "$BROWSER_PKGS" > "$BROWSER_BASE/.complete"
+        echo "$BROWSER_KEY" > "$BROWSER_BASE/.complete"
     fi
     BASE="$BROWSER_BASE"
 fi
@@ -232,7 +244,11 @@ EOF
         # is the check doing its job on the only input it could be wrong about.
         builtin=$(cat "$dir"/usr/lib/modules/*/modules.builtin 2>/dev/null || true)
         missing=""
-        for mod in usb-storage uas xhci-hcd ahci sd_mod ext4 vfat; do
+        # And what a laptop needs once booted: its graphics, its Wi-Fi (and the stack under
+        # it), its touchscreen, its wired network. Each of these was missing until the extra
+        # modules went in, with the firmware for them already on the image.
+        for mod in usb-storage uas xhci-hcd ahci sd_mod ext4 vfat \
+            amdgpu i915 xe cfg80211 mac80211 iwlwifi mt7921e brcmfmac hid-multitouch r8169; do
             found=$(find "$dir/usr/lib/modules" -name "$mod.ko*" -print -quit 2>/dev/null || true)
             if [ -z "$found" ] && ! printf '%s' "$builtin" | grep -q "/$mod\.ko"; then
                 missing="$missing $mod"

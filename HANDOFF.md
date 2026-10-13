@@ -71,12 +71,12 @@ From a DSH shell in PowerShell, run any of them as
 
 ## Open pull requests at handover
 
-#42 to #48 (E3, E10, the handover plan, S10, E12, E4's browser and popups) were merged on
-2026-10-13, as merge commits so the stack merged without conflicts. Open:
+#42 to #49 (E3, E10, the handover plan, S10, E12, E4's browser and popups, E5's network) were
+merged on 2026-10-13, as merge commits so the stack merged without conflicts. Open:
 
 | # | Branch | What |
 |---|---|---|
-| #49 | `feat/e5-networking` | E5 (1): NetworkManager in the browser image; Firefox loads a page the host serves |
+| (fix) | `fix/laptop-drivers` | the laptop drivers (graphics, Wi-Fi, touchscreen) were missing from every image |
 
 If CI goes red on it, it is yours to fix, on that branch. **When a pull request's base is
 another open branch** (a stack), and the base merges: if it was squash-merged, the next branch
@@ -211,3 +211,11 @@ One line per piece of work: date, who, what, what's next.
   gets QEMU's user network; the browser test's local page redirects to a page the host
   serves at 10.0.2.2, so one boot proves the browser (E4) and the network (E5). The Wi-Fi
   picker in the shell is next; Wi-Fi itself is proven on the laptops (E6).
+- 2026-10-13 · Claude Code · Rob's call: `plain` skips Firefox's Terms of Use dialog too
+  (`SkipTermsOfUse`, as the test image does), when it carries Firefox (E4).
+- 2026-10-13 · Claude Code · Found before any laptop boot: `linux-image-virtual` carries no
+  laptop drivers. amdgpu, i915, xe, iwlwifi, MediaTek and Broadcom Wi-Fi, the touchscreen and
+  Realtek ethernet are all in `linux-modules-extra-<version>`, which the images never
+  installed, so the firmware sets E12 added had nothing to load them. A stick would have
+  booted on the efifb console with no Wi-Fi. The base now installs the extra modules for its
+  kernel, and the hardware build check refuses an image without those drivers (H18).
