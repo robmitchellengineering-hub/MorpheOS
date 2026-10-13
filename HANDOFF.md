@@ -71,13 +71,12 @@ From a DSH shell in PowerShell, run any of them as
 
 ## Open pull requests at handover
 
-#42 to #49 (E3, E10, the handover plan, S10, E12, E4's browser and popups, E5's network) were
-merged on 2026-10-13, as merge commits so the stack merged without conflicts. Open:
+#42 to #50 (E3, E10, the handover plan, S10, E12, E4's browser and popups, E5's network, the
+laptop drivers) were merged on 2026-10-13, as merge commits so the stack merged without conflicts. Open:
 
 | # | Branch | What |
 |---|---|---|
-| #50 | `fix/laptop-drivers` | the laptop drivers (graphics, Wi-Fi, touchscreen) were missing from every image |
-| (E5) | `feat/e5-wifi-picker` | E5 (2): the Wi-Fi picker, over NetworkManager; stacked on #50 (its VM test needs `mac80211_hwsim`, from the extra modules) |
+| #51 | `feat/e5-wifi-picker` | E5 (2): the Wi-Fi picker, over NetworkManager; its VM test joins a simulated WPA2 network |
 
 If CI goes red on it, it is yours to fix, on that branch. **When a pull request's base is
 another open branch** (a stack), and the base merges: if it was squash-merged, the next branch
