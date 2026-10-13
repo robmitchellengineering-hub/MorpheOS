@@ -1,0 +1,20 @@
+[Unit]
+Description=The Wi-Fi picker, when the machine has no network (doc 20, E5)
+Requires=flow-shell.service
+Wants=NetworkManager.service
+After=flow-shell.service NetworkManager.service
+
+[Service]
+Environment=XDG_RUNTIME_DIR=/run/flow WAYLAND_DISPLAY=wayland-0
+# Only when there is no network: a machine on a cable, or one that rejoined a Wi-Fi network
+# it knows, needs no picker. (An ExecCondition that is not met skips the unit; it does not
+# fail it, so the health check is not affected.)
+ExecCondition=/bin/sh -c '! nm-online -q -t 30'
+# The socket appears when the compositor has bound it; wait for it rather than guessing.
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 300); do [ -S /run/flow/wayland-0 ] && exit 0; sleep 0.1; done; exit 1'
+ExecStart=/usr/bin/flow-wifi
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

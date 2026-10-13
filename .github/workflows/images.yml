@@ -102,12 +102,17 @@ jobs:
       # libraries came from setup-linux.sh above.
       - name: The Flow shell on a real display, with a keyboard and a mouse
         run: |
-          cargo build --release -p flow-compositor
+          cargo build --release -p flow-compositor -p flow-wifi
           sudo images/x86-qemu/test-shell.sh "$RUNNER_TEMP/img"
       # Doc 20, E4: Firefox (Mozilla's own build, from packages.mozilla.org) on the shell,
       # showing a local page; the verdict is the page's colours in a screendump.
       - name: A browser on the Flow shell
         run: sudo images/x86-qemu/test-browser.sh "$RUNNER_TEMP/img"
+      # Doc 20, E5: the Wi-Fi picker joins a WPA2 network (the kernel's simulated radios,
+      # mac80211_hwsim) through NetworkManager: a wrong password, then the right one, typed
+      # on the VM's keyboard; verdicts from screendumps and the network's own DHCP log.
+      - name: Joining Wi-Fi with the picker
+        run: sudo images/x86-qemu/test-wifi.sh "$RUNNER_TEMP/img"
       - name: Keep serial logs
         if: always()
         uses: actions/upload-artifact@v4

@@ -76,7 +76,8 @@ merged on 2026-10-13, as merge commits so the stack merged without conflicts. Op
 
 | # | Branch | What |
 |---|---|---|
-| (fix) | `fix/laptop-drivers` | the laptop drivers (graphics, Wi-Fi, touchscreen) were missing from every image |
+| #50 | `fix/laptop-drivers` | the laptop drivers (graphics, Wi-Fi, touchscreen) were missing from every image |
+| (E5) | `feat/e5-wifi-picker` | E5 (2): the Wi-Fi picker, over NetworkManager; stacked on #50 (its VM test needs `mac80211_hwsim`, from the extra modules) |
 
 If CI goes red on it, it is yours to fix, on that branch. **When a pull request's base is
 another open branch** (a stack), and the base merges: if it was squash-merged, the next branch
@@ -219,3 +220,10 @@ One line per piece of work: date, who, what, what's next.
   installed, so the firmware sets E12 added had nothing to load them. A stick would have
   booted on the efifb console with no Wi-Fi. The base now installs the extra modules for its
   kernel, and the hardware build check refuses an image without those drivers (H18).
+- 2026-10-13 · Claude Code · E5 (2), the Wi-Fi picker (`feat/e5-wifi-picker`): `flow-wifi`, a
+  window on the shell that lists networks, takes a password (drawn as marks, never printed)
+  and joins over NetworkManager's D-Bus API (zbus: pure Rust, no libdbus). Its model is
+  unit-tested; `tests/on_the_shell.rs` drives the real window on the compositor; the VM test
+  (`test-wifi.sh`) joins a simulated WPA2 network (`mac80211_hwsim`, hostapd, dnsmasq). Found
+  on the way: a Wayland read after `poll` can return EAGAIN (a `delete_id` alone, say), and
+  the picker took that for a lost connection and quit a second after it opened.

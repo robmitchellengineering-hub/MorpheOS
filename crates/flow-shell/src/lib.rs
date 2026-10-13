@@ -307,6 +307,25 @@ impl Frame {
         }
     }
 
+    /// Draw one line of text with the shell's bitmap font, each font pixel `scale` pixels
+    /// square, clipped to the frame. For the shell's own clients (the Wi-Fi picker), so
+    /// they draw text the way the shell does without a font engine.
+    pub fn text(&mut self, text: &str, x: u32, y: u32, scale: u32, colour: Colour) {
+        let scale = scale.max(1);
+        for (i, ch) in text.chars().enumerate() {
+            let cx = x.saturating_add(i as u32 * GLYPH_ADVANCE * scale);
+            for (col, byte) in font::glyph(ch).iter().enumerate() {
+                for row in 0..GLYPH_H {
+                    if byte & (1 << row) != 0 {
+                        let px = cx.saturating_add(col as u32 * scale);
+                        let py = y.saturating_add(row * scale);
+                        self.fill_rect(Rect::new(px, py, scale, scale), colour);
+                    }
+                }
+            }
+        }
+    }
+
     /// The colour at a pixel, or `None` when it is outside the frame.
     #[must_use]
     pub fn pixel(&self, x: u32, y: u32) -> Option<Colour> {

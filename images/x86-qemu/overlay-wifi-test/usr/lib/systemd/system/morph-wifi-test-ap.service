@@ -1,0 +1,11 @@
+[Unit]
+Description=A simulated WPA2 network for the Wi-Fi picker to join (test image only, doc 20 E5)
+Before=NetworkManager.service
+
+[Service]
+ExecStart=/usr/lib/morpheos/wifi-test-ap
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

@@ -178,6 +178,16 @@ the shell (list networks, enter a password) over NetworkManager's D-Bus API.
 **Done when:** in QEMU (user networking), the image gets an address and Firefox loads a page
 served by the CI host. Wi-Fi is proven in E6.
 
+**Progress:** part 1 (#49): NetworkManager in the browser image; `test-browser.sh` sends
+Firefox from its local page to one the CI host serves at 10.0.2.2. Part 2: the Wi-Fi picker
+(`crates/flow-wifi`), a window on the shell over NetworkManager's D-Bus API that opens by
+itself when the machine has no network. `tests/on_the_shell.rs` drives it on the compositor
+with a fake backend; `images/x86-qemu/test-wifi.sh` joins a WPA2 network carried by the
+kernel's simulated radios (`mac80211_hwsim`) in a VM, a wrong password and then the right one
+typed on the VM's keyboard, judged by screendumps and the network's own DHCP log. Still to
+do: Firefox and the picker together in `plain` (with E4), and a way to open the picker when
+the machine already has a network (from the shell's bar).
+
 ### E12 · A hardware report from every boot · done
 
 **What:** the `plain` and `shell` images write a report of the machine they booted on to the
