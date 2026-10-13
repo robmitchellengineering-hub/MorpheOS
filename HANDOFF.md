@@ -202,3 +202,8 @@ One line per piece of work: date, who, what, what's next.
   answered frame callbacks, so every client froze on its first frame (H17); Firefox's
   first-run Terms of Use dialog dimmed the page (`SkipTermsOfUse`, test image only: Rob's
   call for `plain`). E4 still needs popups (menus) and `plain` booting into the shell.
+- 2026-10-13 · Claude Code · E5 begun (`feat/e5-networking`): NetworkManager (with
+  wpasupplicant and systemd-resolved) in the browser image, managing wired and Wi-Fi; the VM
+  gets QEMU's user network; the browser test's local page redirects to a page the host
+  serves at 10.0.2.2, so one boot proves the browser (E4) and the network (E5). The Wi-Fi
+  picker in the shell is next; Wi-Fi itself is proven on the laptops (E6).
