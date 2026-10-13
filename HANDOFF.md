@@ -29,6 +29,7 @@ the widening backlog (ADR 0014, lane 2) and waits.
 | `flow-compositor`: real Wayland clients, Classic windows (E1, E2) | **tested headless** | `crates/flow-compositor/tests/` read pixels back from real clients |
 | The shell on a real display inside the image (E3) | **VM-proven** | `test-shell.sh`: a virtio-gpu screendump shows the shell and the window in place |
 | Real keyboard and mouse, root console on VT2 (E10) | **VM-proven** | `test-shell.sh`: a USB-tablet click and a PS/2 key change the window's colour; Ctrl+Alt+F2 and back |
+| Firefox on the shell, a local page read off the screen (E4, part) | **VM-proven** | `test-browser.sh`: the page's colours, inside the screen, boot committed. No menus yet |
 | Bootable x86 USB image for a person, with laptop firmware and a hardware report (E12) | **builds, boots in QEMU** | [HARDWARE.md](images/x86-qemu/HARDWARE.md); `test-boot.sh` reads the report back. **Never booted on real hardware** |
 | Pi 5 image | **builds and is read back** | `verify-pi-image.mjs`. **Never booted on a Pi** |
 
@@ -194,3 +195,10 @@ One line per piece of work: date, who, what, what's next.
   frame without one); placement by window geometry (GTK's shadow put the window ~40 px off);
   a window wider than the screen is asked to fit. Firefox is next, through CI only (Mozilla's
   hosts are unreachable from the Claude sandbox; GitHub's runners reach them).
+- 2026-10-13 · Claude Code · Firefox 158 (Mozilla's build) draws a local page on the Flow shell
+  in a VM, read off a screendump (#47, `test-browser.sh`). Found on the way, each from the CI
+  log: mmdebstrap reads `signed-by` on the BUILD machine and adds its own to lines without one
+  (the key now named at its build path, the image fixed up after); the compositor never
+  answered frame callbacks, so every client froze on its first frame (H17); Firefox's
+  first-run Terms of Use dialog dimmed the page (`SkipTermsOfUse`, test image only: Rob's
+  call for `plain`). E4 still needs popups (menus) and `plain` booting into the shell.
