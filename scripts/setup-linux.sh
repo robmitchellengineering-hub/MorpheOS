@@ -44,7 +44,7 @@ command -v node > /dev/null || PACKAGES+=(nodejs)
 # The images: a Debian bootstrapper, QEMU with UEFI firmware, and the filesystem tools the
 # image is assembled and read back with; python3 judges the screenshots.
 [ "$IMAGES" = 1 ] && PACKAGES+=(mmdebstrap qemu-system-x86 ovmf systemd-boot-efi dosfstools
-    mtools fdisk e2fsprogs python3)
+    mtools fdisk e2fsprogs python3 gnupg)
 
 missing=()
 for p in "${PACKAGES[@]}"; do

@@ -41,11 +41,12 @@ if [ -n "${VM_QMP:-}" ]; then
     MONITOR_ARGS+=(-qmp "unix:$VM_QMP,server,nowait" -device qemu-xhci -device usb-tablet)
 fi
 
+# VM_MEM=<MiB> for a scenario that needs more than 1 GiB (a browser, E4).
 ACCEL=tcg
 [ -w /dev/kvm ] && ACCEL=kvm
 
 exec timeout --foreground "$TIMEOUT" qemu-system-x86_64 \
-    -machine q35,accel="$ACCEL" -cpu max -smp 2 -m 1024 \
+    -machine q35,accel="$ACCEL" -cpu max -smp 2 -m "${VM_MEM:-1024}" \
     -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
     -drive if=pflash,format=raw,file="$VARS" \
     -drive file="$DISK",format=raw,if=virtio \

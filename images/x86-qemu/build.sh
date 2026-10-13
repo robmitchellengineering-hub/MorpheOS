@@ -24,14 +24,17 @@ set -euo pipefail
 
 WORK=${1:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
 SCENARIO=${2:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
-case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
+case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell|browser) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
 # `plain` is the one that leaves the CI harness behind and is meant to be booted by a person.
 # `shell` is `plain` with the Flow shell drawing the screen and taking the keyboard and mouse
 # (doc 20, E3 and E10), and the root console moved to VT2. It stays separate from `plain`
 # until there is something to do in the shell (a browser, E4): until then, the person
 # booting `plain` on a laptop is better served by the root console it opens on.
+# `browser` is `shell` with Firefox open on a test page instead of the demonstration window
+# (doc 20, E4).
 HARDWARE=0
-if [ "$SCENARIO" = plain ] || [ "$SCENARIO" = shell ]; then HARDWARE=1; fi
+SHELL_UI=0
+case "$SCENARIO" in plain) HARDWARE=1 ;; shell|browser) HARDWARE=1; SHELL_UI=1 ;; esac
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
@@ -44,7 +47,7 @@ MORPH_HEAL=${MORPH_HEAL:-$REPO/target/release/morph-heal}
 SDBOOT_EFI=${SDBOOT_EFI:-/usr/lib/systemd/boot/efi/systemd-bootx64.efi}
 FLOW_COMPOSITOR=${FLOW_COMPOSITOR:-$REPO/target/release/flow-compositor}
 SOLID_WINDOW=${SOLID_WINDOW:-$REPO/target/release/solid-window}
-if [ "$SCENARIO" = shell ]; then
+if [ "$SHELL_UI" = 1 ]; then
     for b in "$FLOW_COMPOSITOR" "$SOLID_WINDOW"; do
         [ -x "$b" ] || { echo "missing $b: run cargo build --release -p flow-compositor" >&2; exit 1; }
     done
@@ -74,6 +77,47 @@ if [ "$(cat "$BASE/.complete" 2>/dev/null)" != "$BASE_PKGS" ]; then
         "deb $MIRROR $SUITE main universe" \
         "deb $MIRROR $SUITE-updates main universe"
     echo "$BASE_PKGS" > "$BASE/.complete"
+fi
+
+# 1b. The browser base: the base plus Firefox from Mozilla's own APT repository (doc 20, E4),
+# cached on its own, so only the scenarios that carry a browser need Mozilla's servers.
+# ⚠️ Ubuntu's own `firefox` package is a stub that installs the snap, and it has an epoch
+# (1:...) that outranks Mozilla's version, so apt is pinned to prefer packages.mozilla.org.
+# The signing key is fetched at build time and MUST have the fingerprint Mozilla publishes:
+# a key that does not match stops the build rather than trusting whatever was served.
+MOZILLA_KEY_URL=https://packages.mozilla.org/apt/repo-signing-key.gpg
+MOZILLA_FPR=35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3
+BROWSER_PKGS="$BASE_PKGS,firefox,fonts-dejavu-core"
+if [ "$SCENARIO" = browser ]; then
+    BROWSER_BASE="$WORK/rootfs-browser"
+    if [ "$(cat "$BROWSER_BASE/.complete" 2>/dev/null)" != "$BROWSER_PKGS" ]; then
+        rm -rf "$BROWSER_BASE"
+        key="$WORK/packages.mozilla.org.asc"
+        curl -fsSL "$MOZILLA_KEY_URL" -o "$key"
+        fpr=$(gpg --show-keys --with-colons "$key" 2>/dev/null | awk -F: '$1 == "fpr" {print $10; exit}')
+        if [ "$fpr" != "$MOZILLA_FPR" ]; then
+            echo "Mozilla's signing key has fingerprint '$fpr', not $MOZILLA_FPR: refusing it" >&2
+            exit 1
+        fi
+        mmdebstrap --variant=apt \
+            --include="$BROWSER_PKGS" \
+            --aptopt='APT::Install-Recommends "false"' \
+            --setup-hook="mkdir -p \"\$1/etc/apt/keyrings\" && cp '$key' \"\$1/etc/apt/keyrings/packages.mozilla.org.asc\"" \
+            --setup-hook='mkdir -p "$1/etc/apt/preferences.d" && printf "Package: *\nPin: origin packages.mozilla.org\nPin-Priority: 1000\n" > "$1/etc/apt/preferences.d/mozilla"' \
+            "$SUITE" "$BROWSER_BASE" \
+            "deb $MIRROR $SUITE main universe" \
+            "deb $MIRROR $SUITE-updates main universe" \
+            "deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://packages.mozilla.org/apt mozilla main"
+        # Say which Firefox went in, and prove it is Mozilla's and not the snap stub.
+        version=$(chroot "$BROWSER_BASE" dpkg-query -W -f='${Version}' firefox)
+        [ -x "$BROWSER_BASE/usr/lib/firefox/firefox" ] || {
+            echo "firefox $version is not Mozilla's build (no /usr/lib/firefox/firefox): the snap stub?" >&2
+            exit 1
+        }
+        echo "browser base: firefox $version from packages.mozilla.org" >&2
+        echo "$BROWSER_PKGS" > "$BROWSER_BASE/.complete"
+    fi
+    BASE="$BROWSER_BASE"
 fi
 
 # 2. Slot root filesystems: base + MorpheOS overlay (+ test hook, + scenario damage for B).
@@ -129,11 +173,17 @@ EOF
         ln -sf "/usr/lib/systemd/system/$unit.service" \
             "$dir/etc/systemd/system/multi-user.target.wants/$unit.service"
     done
-    if [ "$SCENARIO" = shell ]; then
+    if [ "$SHELL_UI" = 1 ]; then
         cp -a "$HERE/overlay-shell/." "$dir/"
         install -m 0755 "$FLOW_COMPOSITOR" "$dir/usr/bin/flow-compositor"
         install -m 0755 "$SOLID_WINDOW" "$dir/usr/bin/solid-window"
-        for unit in seatd flow-shell flow-demo-window; do
+        # The shell scenario shows the demonstration window; the browser scenario, Firefox.
+        app=flow-demo-window
+        if [ "$SCENARIO" = browser ]; then
+            cp -a "$HERE/overlay-browser/." "$dir/"
+            app=flow-browser
+        fi
+        for unit in seatd flow-shell "$app"; do
             ln -sf "/usr/lib/systemd/system/$unit.service" \
                 "$dir/etc/systemd/system/multi-user.target.wants/$unit.service"
         done

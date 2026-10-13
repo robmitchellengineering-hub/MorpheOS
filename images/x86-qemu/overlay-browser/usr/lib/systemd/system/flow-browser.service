@@ -1,0 +1,19 @@
+[Unit]
+Description=Firefox on the Flow shell (browser test image, doc 20 E4)
+Requires=flow-shell.service
+After=flow-shell.service
+# Firefox keeps its profile in $HOME, which must be writable: the system root is read-only,
+# and /home is the data partition's (fstab binds /persist/home there).
+RequiresMountsFor=/home
+
+[Service]
+Environment=XDG_RUNTIME_DIR=/run/flow WAYLAND_DISPLAY=wayland-0 MOZ_ENABLE_WAYLAND=1
+Environment=HOME=/home/browser NO_AT_BRIDGE=1
+# The socket appears when the compositor has bound it; wait for it rather than guessing.
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 300); do [ -S /run/flow/wayland-0 ] && exit 0; sleep 0.1; done; exit 1'
+ExecStartPre=/bin/mkdir -p /home/browser
+ExecStart=/usr/bin/firefox --new-instance file:///usr/share/morpheos/test-page.html
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

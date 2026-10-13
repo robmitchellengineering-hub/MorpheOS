@@ -104,6 +104,10 @@ jobs:
         run: |
           cargo build --release -p flow-compositor
           sudo images/x86-qemu/test-shell.sh "$RUNNER_TEMP/img"
+      # Doc 20, E4: Firefox (Mozilla's own build, from packages.mozilla.org) on the shell,
+      # showing a local page; the verdict is the page's colours in a screendump.
+      - name: A browser on the Flow shell
+        run: sudo images/x86-qemu/test-browser.sh "$RUNNER_TEMP/img"
       - name: Keep serial logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -112,6 +116,7 @@ jobs:
           path: |
             ${{ runner.temp }}/img/serial-*.log
             ${{ runner.temp }}/img/screen-*.ppm
+            ${{ runner.temp }}/img/screen-browser*.ppm
           retention-days: 7
 
   pi5-image:
