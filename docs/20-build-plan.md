@@ -60,13 +60,15 @@ the ADR as the first task of the milestone named.
 Exit: a general user boots the laptop, gets online, browses, and cannot make it unbootable
 (ADR 0014).
 
-### E1 · The shell becomes a real Wayland compositor (headless) · in progress
+### E1 · The shell becomes a real Wayland compositor (headless) · done
 
 **What:** `crates/flow-compositor`: a Smithay compositor, headless with the pixman renderer,
 that hosts real clients' windows.
 
 **Done when:** a real client's window appears in the compositor's frame exactly where it was
 placed, two windows both appear, and with no client no frame is written (`tests/frame.rs`).
+
+**Evidence:** https://github.com/robmitchellengineering-hub/MorpheOS/pull/38 and `crates/flow-compositor/tests/frame.rs`
 
 ### E2 · Classic windows · done · needs E1
 
