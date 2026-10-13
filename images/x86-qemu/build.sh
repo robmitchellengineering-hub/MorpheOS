@@ -55,16 +55,19 @@ fi
 mkdir -p "$WORK"
 
 # 1. Base root filesystem (cached across scenarios).
+# The cache is keyed on the package list, so adding a package rebuilds it.
+# libpixman-1-0 and libxkbcommon0 are what flow-compositor links against.
 BASE="$WORK/rootfs-base"
-if [ ! -f "$BASE/.complete" ]; then
+BASE_PKGS=systemd-sysv,udev,kmod,linux-image-virtual,initramfs-tools,systemd-boot,dosfstools,libpixman-1-0,libxkbcommon0
+if [ "$(cat "$BASE/.complete" 2>/dev/null)" != "$BASE_PKGS" ]; then
     rm -rf "$BASE"
     mmdebstrap --variant=apt \
-        --include=systemd-sysv,udev,kmod,linux-image-virtual,initramfs-tools,systemd-boot,dosfstools \
+        --include="$BASE_PKGS" \
         --aptopt='APT::Install-Recommends "false"' \
         "$SUITE" "$BASE" \
         "deb $MIRROR $SUITE main universe" \
         "deb $MIRROR $SUITE-updates main universe"
-    touch "$BASE/.complete"
+    echo "$BASE_PKGS" > "$BASE/.complete"
 fi
 
 # 2. Slot root filesystems: base + MorpheOS overlay (+ test hook, + scenario damage for B).
