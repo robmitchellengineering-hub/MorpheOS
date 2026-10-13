@@ -56,6 +56,17 @@ else
     sleep 3 # a few frames after the window arrived
     monitor "screendump $shot"
 fi
+# ⚠️ THE WINDOW CAN BEAT THE HEALTH CHECK. With KVM (CI) the window is on screen before
+# morph-boot-check has decided and written the boot history; pulling the plug then left no
+# history, and the read below failed the run without a word. Wait for the decision (a
+# signal of WHEN only; the history on disk is still the verdict). boot-check writes and
+# fsyncs the history right after it logs the decision, so a moment later it is on disk.
+for _ in $(seq 1 300); do
+    grep -aq 'morph-boot-check: decision' "$log" 2>/dev/null && break
+    kill -0 "$vm" 2>/dev/null || break
+    sleep 1
+done
+sleep 3
 monitor "quit" 2>/dev/null || true
 wait "$vm" 2>/dev/null || true
 echo "    vm time: $(( $(date +%s) - start ))s"
@@ -102,7 +113,8 @@ check(f"the window is at (16, 16), 320x200, solid (got {box}, {len(hits)} px)",
 sys.exit(0 if ok else 1)
 PY
 
-boots=$(mtype -i "$disk@@1M" ::/morph-boot/history.jsonl 2>/dev/null |
+# Guarded: a missing history must be a reported FAIL, not a silent exit (AGENTS.md H11).
+boots=$({ mtype -i "$disk@@1M" ::/morph-boot/history.jsonl 2>/dev/null || true; } |
     sed -nE 's/.*"booted":"([ab])".*"phase":"([a-z]+)".*"action":"([a-z-]+)".*/\1\/\2\/\3/p' | head -1)
 if [ "$boots" = "a/committed/none" ]; then
     echo "    ok    the boot was healthy and committed with the shell running"
