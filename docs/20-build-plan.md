@@ -178,7 +178,7 @@ the shell (list networks, enter a password) over NetworkManager's D-Bus API.
 **Done when:** in QEMU (user networking), the image gets an address and Firefox loads a page
 served by the CI host. Wi-Fi is proven in E6.
 
-### E12 · A hardware report from every boot · open
+### E12 · A hardware report from every boot · done
 
 **What:** the `plain` and `shell` images write a report of the machine they booted on to the
 USB stick's FAT partition, which a Mac or Windows PC reads natively: the screens (connectors,
@@ -191,6 +191,12 @@ than only what is missing.
 **Done when:** the `plain` boot in the `images` workflow reads the report back off the disk
 and finds the VM's own facts in it (its virtio display connector, its virtio disk, its
 keyboard), and HARDWARE.md says how to send a report back.
+
+**Evidence:** `images/x86-qemu/test-boot.sh` (the `plain` boot reads
+`morpheos-report/001-…-a/` off the disk: a QEMU machine, a connected screen, the virtio disk
+with its driver, named devices, the PS/2 keyboard) and `scripts/verify-hwreport.sh` (the
+missing-firmware section names what a kernel log says is missing, and says none on a clean
+one).
 
 **Notes:** opened by Rob on 2026-10-13, to bring real hardware forward: the report is what
 makes one boot of a stick worth a whole debugging session. One folder per boot, so booting

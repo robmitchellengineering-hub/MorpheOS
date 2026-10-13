@@ -29,7 +29,7 @@ the widening backlog (ADR 0014, lane 2) and waits.
 | `flow-compositor`: real Wayland clients, Classic windows (E1, E2) | **tested headless** | `crates/flow-compositor/tests/` read pixels back from real clients |
 | The shell on a real display inside the image (E3) | **VM-proven** | `test-shell.sh`: a virtio-gpu screendump shows the shell and the window in place |
 | Real keyboard and mouse, root console on VT2 (E10) | **VM-proven** | `test-shell.sh`: a USB-tablet click and a PS/2 key change the window's colour; Ctrl+Alt+F2 and back |
-| Bootable x86 USB image for a person | **builds, boots in QEMU** | [HARDWARE.md](images/x86-qemu/HARDWARE.md). **Never booted on real hardware** |
+| Bootable x86 USB image for a person, with laptop firmware and a hardware report (E12) | **builds, boots in QEMU** | [HARDWARE.md](images/x86-qemu/HARDWARE.md); `test-boot.sh` reads the report back. **Never booted on real hardware** |
 | Pi 5 image | **builds and is read back** | `verify-pi-image.mjs`. **Never booted on a Pi** |
 
 "VM-proven" means a CI job boots it and reads the verdict off the disk. It does **not** mean
@@ -80,6 +80,7 @@ Never merge one out of order, and never rebase someone else's branch.
 | #43 | `feat/e10-real-input` | E10: keyboard, mouse, the root console on VT2 |
 | #44 | `plan/handover-hardware-first` | this file, E12, E6 brought forward, S10, hazards H13–H16 |
 | #45 | `feat/s10-wsl2-bar` | the bar on Windows: `setup-linux.sh`, `test-images.sh`, `check.sh` refuses off Linux |
+| (E12) | `feat/e12-hardware-report` | a hardware report from every boot, and laptop firmware in the image |
 
 If CI goes red on one of them after the handover, it is yours to fix, on that branch.
 
@@ -183,3 +184,8 @@ One line per piece of work: date, who, what, what's next.
   install through it, so the builder's setup is proven on every PR), `scripts/test-images.sh`
   (the x86 suite locally), and `check.sh` refuses a partial bar off Linux (proven in CI with a
   `uname` shim). Next: E12.
+- 2026-10-13 · Claude Code · E12: `morph-hwreport` writes a report of every boot to the stick
+  (screens, drivers, missing firmware, lspci/lsusb); laptop firmware sets in the images (root
+  450 of 1200 MB). Found: `mdir -b` lists folders with a trailing slash; the PCI name
+  database is a "recommends" we skip, so devices were numbers. Next: Rob boots the stick on
+  the three candidates (E6); the builder takes S9 or E4.

@@ -95,6 +95,11 @@ jobs:
       # the guard that replaces the next screenshot: it checks the files the machine prints
       # whole, and the printing LINES of the scripts it runs, and it proves it can fail -
       # including the false-positive control, because a guard that flags prose gets ignored.
+      # The hardware report (doc 20, E12) must name the firmware a machine is missing. A VM is
+      # never missing any, so the image boot cannot prove it; this feeds the report a kernel
+      # log that is, and a clean one.
+      - name: Prove the hardware report names missing firmware
+        run: bash scripts/verify-hwreport.sh
       - name: Prove the console can draw what the machine prints on it
         run: |
           node scripts/verify-console-text.mjs --self-test
