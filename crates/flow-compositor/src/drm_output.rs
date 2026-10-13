@@ -19,7 +19,7 @@ use std::path::Path;
 
 use drm::buffer::{Buffer, DrmFourcc};
 use drm::control::{
-    Device as ControlDevice, Mode, connector, crtc, dumbbuffer::DumbBuffer, framebuffer,
+    ClipRect, Device as ControlDevice, Mode, connector, crtc, dumbbuffer::DumbBuffer, framebuffer,
 };
 
 struct Card(File);
@@ -36,7 +36,7 @@ impl ControlDevice for Card {}
 pub struct Output {
     card: Card,
     buffer: DumbBuffer,
-    _fb: framebuffer::Handle,
+    fb: framebuffer::Handle,
     pub width: u32,
     pub height: u32,
 }
@@ -80,7 +80,7 @@ impl Output {
         Ok(Self {
             card,
             buffer,
-            _fb: fb,
+            fb,
             width,
             height,
         })
@@ -100,8 +100,24 @@ impl Output {
                 *d = p.to_le_bytes();
             }
         }
-        Ok(())
+        drop(map);
+        // Writing the buffer is not enough on drivers that copy it to the real scanout
+        // (virtio-gpu, udl, simpledrm on some firmware): they show nothing until told what
+        // changed. Drivers that scan the buffer out directly do not implement this call,
+        // which is fine.
+        let full = ClipRect::new(0, 0, clamp_u16(self.width), clamp_u16(self.height));
+        match self.card.dirty_framebuffer(self.fb, &[full]) {
+            // ENOSYS, which std reports as Unsupported.
+            Err(e) if e.kind() != std::io::ErrorKind::Unsupported => {
+                Err(format!("flushing the frame to the display: {e}"))
+            }
+            _ => Ok(()),
+        }
     }
+}
+
+fn clamp_u16(v: u32) -> u16 {
+    u16::try_from(v).unwrap_or(u16::MAX)
 }
 
 fn pick_crtc(
