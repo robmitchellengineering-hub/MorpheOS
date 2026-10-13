@@ -68,6 +68,7 @@ and constraints into execution across devices). See [doc 12](docs/12-radical-con
 | `crates/morph-graph` | The service graph: order a Manifest's services (start/stop/update), refuse cycles, missing dependencies and invariant breaks, and apply a change to them transactionally |
 | `crates/flow-session` | The session model: identity, what it is opening, and the inferred feel (Flow / Session + shelf / Classic) — data only, no Smithay ([ADR 0010](docs/adr/0010-flow-shell-first.md), [ADR 0013](docs/adr/0013-flow-shell-feels.md)) |
 | `crates/flow-shell` | The Flow shell's own frame: a session laid out and painted, with a check that asserts something was actually drawn rather than that a unit started; the Session + shelf feel draws a shelf of the session's openables and an intent bar whose query is a deterministic match ([ADR 0010](docs/adr/0010-flow-shell-first.md), [ADR 0013](docs/adr/0013-flow-shell-feels.md)) |
+| `crates/flow-compositor` | The Flow shell as a real Wayland compositor (Smithay): headless with software rendering for now, proven by real clients' windows appearing in its frame (HANDOFF.md E1) |
 | `manifest/` | Example machines and how to validate them ([README](manifest/README.md)) |
 | `images/x86-qemu` | A/B test disk for a UEFI VM, with Strata watching `/home`, and the "Try to Break It" update and ransomware tests ([README](images/README.md)) |
 | `images/pi5` | Raspberry Pi 5 immutable A/B image built with rpi-image-gen ([README](images/pi5/README.md)) |

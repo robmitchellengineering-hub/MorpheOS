@@ -13,6 +13,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      # flow-compositor (Smithay) links libxkbcommon and pixman. Both are small, and the
+      # crate's dependency on them is Linux-only, so a Mac build needs neither.
+      - name: Install the compositor's system libraries
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxkbcommon-dev libpixman-1-dev
       - run: cargo fmt --all --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test --all
@@ -40,6 +44,22 @@ jobs:
         with:
           name: flow-shell-frame
           path: frame.png
+          if-no-files-found: error
+      # THE COMPOSITOR'S FRAME (HANDOFF.md E1). `cargo test` already asserts the pixels; this
+      # keeps one frame with a real client's window in it, so it can be looked at.
+      - name: Render a real client's window through the compositor
+        run: |
+          export XDG_RUNTIME_DIR=$(mktemp -d)
+          cargo build -q -p flow-compositor
+          target/debug/flow-compositor --socket ci --out compositor-frame.png --timeout 30 &
+          until [ -S "$XDG_RUNTIME_DIR/ci" ]; do sleep 0.1; done
+          WAYLAND_DISPLAY=ci target/debug/solid-window --colour 00a0ff --size 320x200 || true
+          wait %1
+      - name: Keep the compositor's frame
+        uses: actions/upload-artifact@v4
+        with:
+          name: flow-compositor-frame
+          path: compositor-frame.png
           if-no-files-found: error
       # The docs ARE the deliverable so far, and nothing was checking that they still
       # point at things that exist: a renamed doc, an unlisted ADR, a crate the README
