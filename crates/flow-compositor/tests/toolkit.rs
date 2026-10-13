@@ -131,15 +131,29 @@ fn a_gtk_window_finds_the_screen_and_sits_inside_it_where_the_window_manager_put
         "the window's top edge is not at y = {MARGIN}"
     );
     // Too big: GTK asked for 1393 x 740 on a 1024 x 768 screen, so the compositor must ask
-    // it to fit (992 x 736). The widget factory cannot comply (it sets a MINIMUM size of
+    // it to fit. The widget factory cannot comply (it sets a MINIMUM size of
     // 1393 x 740 itself), so this asserts the request, read from GTK's own protocol log; a
     // browser's minimum is far smaller, and E4's VM scenario sees it fit.
     assert!(
         log.contains("configure_bounds(992, 736)"),
         "GTK was not told how big a window may be"
     );
+    // The exact size GTK asks for depends on the machine's fonts and theme (CI's differs from
+    // a desktop's), so assert the rule, not one instance: some configure asks for a size
+    // inside 992 x 736 that reaches the limit in a direction GTK overflowed.
+    let (max_w, max_h) = (W as i32 - 2 * MARGIN as i32, H as i32 - 2 * MARGIN as i32);
+    let fits: Vec<(i32, i32)> = log
+        .lines()
+        .filter(|l| l.contains("xdg_toplevel@") && l.contains(".configure("))
+        .filter_map(|l| {
+            let args = l.split(".configure(").nth(1)?;
+            let mut it = args.split(',').map(|v| v.trim().parse::<i32>().ok());
+            Some((it.next()??, it.next()??))
+        })
+        .filter(|&(w, h)| w > 0 && h > 0 && w <= max_w && h <= max_h && (w == max_w || h == max_h))
+        .collect();
     assert!(
-        log.contains("xdg_toplevel") && log.contains(".configure(992, 736,"),
-        "the compositor did not ask the too-big window to fit the screen"
+        !fits.is_empty(),
+        "the compositor did not ask the too-big window to fit inside {max_w} x {max_h}"
     );
 }
