@@ -1,0 +1,129 @@
+#!/bin/bash
+# The hardware report (doc 20, E12): what this machine is, and what worked on it, written to
+# the USB stick's FAT partition so the person who booted it can read it on any computer.
+#
+# One boot of a stick on a new machine should answer every first question: which screens are
+# there and which one is connected, which graphics, Wi-Fi and input devices the kernel found
+# and which driver took each, and above all WHICH FIRMWARE THE KERNEL ASKED FOR AND DID NOT
+# FIND (a Wi-Fi card without its firmware looks exactly like no Wi-Fi card at all).
+#
+#   /efi/morpheos-report/<NNN>-<machine>-<slot>/
+#       summary.txt     the answers, in plain words, first
+#       lspci.txt lsusb.txt dmesg.txt journal-errors.txt drm.txt input.txt net.txt dmi.txt
+#
+# ⚠️ IT MUST NEVER FAIL A BOOT. A failed unit is an unhealthy boot, and an unhealthy trial is
+# rolled back: a diagnostic that broke would undo an update. Every step is best effort (no
+# `set -e`), and the script exits 0 whatever happens.
+set -u
+
+ESP=${MORPH_ESP:-/efi}
+ROOT_DIR="$ESP/morpheos-report"
+KEEP=50          # reports kept on the stick; the oldest go first
+MIN_FREE_KB=20480
+
+say() { echo "morph-hwreport: $*"; }
+
+# Firmware loads late (a Wi-Fi driver asks when it probes), so let the devices settle first.
+udevadm settle -t 60 2>/dev/null || true
+sleep "${MORPH_HWREPORT_DELAY:-15}"
+
+# On the machine the ESP must really be mounted (or the report would land on the read-only
+# root); a test points MORPH_ESP at a directory of its own instead.
+if [ -z "${MORPH_ESP:-}" ] && ! mountpoint -q "$ESP" 2>/dev/null; then
+    say "no ESP at $ESP; no report written"
+    exit 0
+fi
+free_kb=$(df -Pk "$ESP" 2>/dev/null | awk 'NR==2 {print $4}')
+if [ -n "${free_kb:-}" ] && [ "$free_kb" -lt "$MIN_FREE_KB" ]; then
+    say "only ${free_kb} KB free on $ESP; no report written"
+    exit 0
+fi
+
+dmi() { tr -d '\n' 2>/dev/null < "/sys/class/dmi/id/$1"; }
+vendor=$(dmi sys_vendor); product=$(dmi product_name); version=$(dmi product_version)
+# A folder name that FAT and every OS accept: letters, digits, dashes.
+name=$(printf '%s' "${product:-unknown}" | tr -c 'A-Za-z0-9-' '-' | tr -s '-' | cut -c1-40)
+slot=$(sed -nE 's/.*morph.slot=([ab]).*/\1/p' /proc/cmdline 2>/dev/null)
+mkdir -p "$ROOT_DIR" 2>/dev/null || { say "cannot create $ROOT_DIR"; exit 0; }
+last=$(ls "$ROOT_DIR" 2>/dev/null | sed -nE 's/^([0-9]{3})-.*/\1/p' | sort -n | tail -1)
+n=$(printf '%03d' $(( 10#${last:-0} + 1 )))
+dir="$ROOT_DIR/$n-${name%-}-${slot:-x}"
+mkdir -p "$dir" 2>/dev/null || { say "cannot create $dir"; exit 0; }
+
+# The raw facts, each into its own file.
+lspci -nnk > "$dir/lspci.txt" 2>&1 || true
+lsusb > "$dir/lsusb.txt" 2>&1 || true
+dmesg > "$dir/dmesg.txt" 2>&1 || true
+journalctl -b -p err --no-pager > "$dir/journal-errors.txt" 2>&1 || true
+cat /proc/bus/input/devices > "$dir/input.txt" 2>&1 || true
+# Straight from sysfs, so it needs no tools: name, state, MAC, and the driver that took it.
+for i in /sys/class/net/*; do
+    [ -e "$i" ] || continue
+    drv=$(basename "$(readlink "$i/device/driver" 2>/dev/null)" 2>/dev/null)
+    printf '%-16s %-8s %-18s %s\n' "${i##*/}" "$(cat "$i/operstate" 2>/dev/null)" \
+        "$(cat "$i/address" 2>/dev/null)" "${drv:-(virtual)}"
+done > "$dir/net.txt" 2>/dev/null
+for f in sys_vendor product_name product_version board_vendor board_name bios_vendor \
+    bios_version bios_date chassis_type; do
+    printf '%-16s %s\n' "$f" "$(dmi "$f")"
+done > "$dir/dmi.txt"
+{
+    for c in /sys/class/drm/card*-*; do
+        [ -e "$c/status" ] || continue
+        printf '%s: %s, %s\n' "${c##*/}" "$(cat "$c/status" 2>/dev/null)" \
+            "$(cat "$c/enabled" 2>/dev/null)"
+        sed 's/^/    mode /' "$c/modes" 2>/dev/null | head -5
+    done
+} > "$dir/drm.txt"
+
+# The summary: the answers first, in words.
+{
+    echo "MorpheOS hardware report $n"
+    echo "written $(date -u '+%Y-%m-%d %H:%M UTC') by slot ${slot:-?}"
+    echo
+    echo "MACHINE   ${vendor:-?} ${product:-?} ${version:-}"
+    echo "CPU       $(sed -nE 's/^model name\s*:\s*//p' /proc/cpuinfo | head -1) ($(nproc 2>/dev/null) threads)"
+    echo "MEMORY    $(awk '/MemTotal/ {printf "%.1f GiB", $2/1048576}' /proc/meminfo)"
+    echo
+    echo "SCREENS (connected ones are where a picture can go)"
+    if [ -s "$dir/drm.txt" ]; then
+        grep -v '^    ' "$dir/drm.txt" | sed 's/^/  /'
+    else
+        echo "  none found: no DRM driver took the graphics"
+    fi
+    echo
+    echo "GRAPHICS, WI-FI, NETWORK AND AUDIO (and the driver that took each)"
+    # lspci -nnk: a device line, then indented "Kernel driver in use:" and "Kernel modules:".
+    awk '
+        /^[0-9a-f]/ { dev = $0; show = (dev ~ /VGA|3D|Display|Network|Ethernet|Wireless|Audio/) ; drv = "" ; if (show) print "  " dev ; next }
+        show && /Kernel driver in use/ { sub(/^[ \t]*/, ""); print "      " $0 }
+    ' "$dir/lspci.txt"
+    echo
+    echo "NETWORK INTERFACES"
+    sed 's/^/  /' "$dir/net.txt"
+    for w in /sys/class/net/*/wireless; do
+        [ -e "$w" ] && echo "  Wi-Fi interface: $(basename "$(dirname "$w")")"
+    done
+    echo
+    echo "INPUT DEVICES"
+    sed -nE 's/^N: Name="(.*)"/  \1/p' "$dir/input.txt"
+    echo
+    echo "FIRMWARE THE KERNEL ASKED FOR AND DID NOT FIND"
+    missing=$(grep -aoE 'Direct firmware load for [^ ]+ failed|firmware: failed to load [^ ]+|no suitable firmware found|[Ff]ailed to load firmware[^,]*' \
+        "$dir/dmesg.txt" | sort -u)
+    if [ -n "$missing" ]; then
+        printf '%s\n' "$missing" | sed 's/^/  /'
+    else
+        echo "  none"
+    fi
+    echo
+    echo "KERNEL AND SERVICE ERRORS THIS BOOT: $(grep -c . "$dir/journal-errors.txt" 2>/dev/null || echo 0) lines, in journal-errors.txt"
+} > "$dir/summary.txt" 2>&1
+
+# Keep the stick from filling up: the newest $KEEP reports stay.
+ls -d "$ROOT_DIR"/[0-9][0-9][0-9]-* 2>/dev/null | sort | head -n -"$KEEP" | while read -r old; do
+    rm -rf "$old"
+done
+sync "$dir/summary.txt" 2>/dev/null || sync
+say "wrote $dir"
+exit 0

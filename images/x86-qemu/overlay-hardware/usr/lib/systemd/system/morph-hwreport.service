@@ -1,0 +1,14 @@
+[Unit]
+Description=MorpheOS: write a hardware report to the USB stick (doc 20, E12)
+Documentation=https://github.com/robmitchellengineering-hub/MorpheOS/blob/main/images/x86-qemu/HARDWARE.md
+RequiresMountsFor=/efi
+
+[Service]
+# `exec`, not `oneshot`: the report waits for devices to settle, and a diagnostic must not
+# hold up the boot or its health check. The `-` means it can never be a failed unit: a failed
+# unit is an unhealthy boot, and an unhealthy trial is rolled back.
+Type=exec
+ExecStart=-/usr/lib/morpheos/hwreport
+
+[Install]
+WantedBy=multi-user.target

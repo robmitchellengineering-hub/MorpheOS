@@ -74,8 +74,43 @@ if mtype -i "$DISK@@1M" ::/MORPH-TEST-RESULT.TXT > /dev/null 2>&1; then
     fail=1
 fi
 
+# The hardware report (doc 20, E12), read off the stick's FAT partition the way a person reads
+# it on their own computer. The VM's own facts must be in it: it is a QEMU machine, it has a
+# screen connected, its disk is virtio with the virtio driver bound, and its keyboard is the
+# PS/2 one. A report that is there but empty would pass a check for the file alone.
+reports=$({ mdir -b -i "$DISK@@1M" ::/morpheos-report 2>/dev/null || true; } | sed 's|/$||; s|.*/||' | grep -E '^[0-9]{3}-' || true)
+echo "    reports: $(echo "$reports" | tr '\n' ' ')"
+if [ "$(echo "$reports" | grep -c .)" != 1 ]; then
+    echo "    FAIL: expected exactly one hardware report on the stick after one boot"
+    fail=1
+else
+    rdir="::/morpheos-report/$reports"
+    summary=$(mtype -i "$DISK@@1M" "$rdir/summary.txt" 2>/dev/null || true)
+    lspci=$(mtype -i "$DISK@@1M" "$rdir/lspci.txt" 2>/dev/null || true)
+    report_check() {
+        if [ "$2" = yes ]; then echo "    ok    report: $1"; else echo "    FAIL  report: $1"; fail=1; fi
+    }
+    yes_if() { if "$@" > /dev/null 2>&1; then echo yes; else echo no; fi; }
+    report_check "the folder is the first report, from slot A ($reports)" \
+        "$(yes_if grep -qE '^001-.*-a$' <<< "$reports")"
+    report_check "the machine is the QEMU VM" "$(yes_if grep -q '^MACHINE   QEMU' <<< "$summary")"
+    report_check "a screen is connected" "$(yes_if grep -qE '^  card[0-9]+-.*: connected' <<< "$summary")"
+    report_check "the virtio disk has its driver bound" \
+        "$(if grep -iE -A3 'virtio.*block' <<< "$lspci" | grep -q 'Kernel driver in use: virtio-pci'; then echo yes; else echo no; fi)"
+    report_check "devices are named, not just numbered (the PCI name database is there)" \
+        "$(yes_if grep -q 'Red Hat, Inc' <<< "$lspci")"
+    report_check "the PS/2 keyboard is an input device" \
+        "$(yes_if grep -q 'AT Translated Set 2 keyboard' <<< "$summary")"
+    report_check "it says what firmware is missing (a section, even if 'none')" \
+        "$(yes_if grep -q 'FIRMWARE THE KERNEL ASKED FOR AND DID NOT FIND' <<< "$summary")"
+    if [ "$fail" != 0 ]; then
+        echo "    the summary was:"
+        sed 's/^/      | /' <<< "$summary" | head -40
+    fi
+fi
+
 if [ "$fail" != 0 ]; then
     echo "plain image: FAILED" >&2
     exit 1
 fi
-echo "plain image: PASS — boots, reaches a login, commits slot A, and stays up"
+echo "plain image: PASS — boots, reaches a login, commits slot A, stays up, and reports its hardware"

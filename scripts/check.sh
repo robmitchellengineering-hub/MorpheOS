@@ -47,6 +47,7 @@ node scripts/verify-plan.mjs --branch "$(git rev-parse --abbrev-ref HEAD)" --bas
 step "console text"
 node scripts/verify-console-text.mjs --self-test
 node scripts/verify-console-text.mjs
+step "hardware report names missing firmware";  bash scripts/verify-hwreport.sh
 step "verifiers can fail"
 node scripts/verify-pi-image.mjs --self-test
 node scripts/verify-motd.mjs --self-test

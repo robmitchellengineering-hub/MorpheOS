@@ -83,14 +83,31 @@ then is the slot allowed to look ready to trial.
 
 ## 5. Send back what happened
 
-Put the USB stick back in your computer. **The first partition is FAT and mounts natively on
-macOS**, and the machine's own record is on it:
+**Leave it running for a minute after the banner**, then shut it down (`poweroff`) or just
+switch it off. About 15 seconds after boot it writes a **hardware report** to the stick.
+
+Put the USB stick back in your computer. **The first partition is FAT and opens natively on
+Windows and macOS**, and the machine's own record is on it:
 
 ```
+/morpheos-report/001-<machine>-a/    the hardware report: one folder per boot
+    summary.txt                      start here: screens, graphics, Wi-Fi, input, missing firmware
+    lspci.txt lsusb.txt dmesg.txt    the raw facts behind it
 /loader/loader.conf                  which slot is the default
 /morph-boot/history.jsonl            one line per boot: <slot>/<phase>/<action>
 /morpheos/a|b/vmlinuz                the kernels
 ```
+
+**Booting the same stick on several machines collects all of them**: each boot adds a
+numbered folder (`001-…`, `002-…`), named after the machine's model. That is how the reference
+laptop gets chosen (doc 20, E6): boot it on each candidate, then send the whole
+`morpheos-report` folder.
+
+In `summary.txt`, the two sections that matter most on a first boot:
+- **SCREENS**: which outputs the graphics found, and which is `connected`. A laptop whose
+  internal panel is broken still lists it; an external monitor should appear as connected.
+- **FIRMWARE THE KERNEL ASKED FOR AND DID NOT FIND**: anything here is a device that will not
+  work until its firmware is added. Wi-Fi is the usual one.
 
 `history.jsonl` is the verdict, and it is written by the machine rather than by a log:
 
@@ -100,13 +117,17 @@ macOS**, and the machine's own record is on it:
 | `b/trial/committed` | slot B booted as a trial and its health check passed, so it was committed |
 | `b/trial/fallback` | slot B booted as a trial, its health check failed, and the next boot went back to A |
 
-Send `history.jsonl`, plus a photo of the screen if anything looked wrong. If it does not reach
-a shell at all, the screen is the whole diagnosis.
+Send the `morpheos-report` folder and `history.jsonl`, plus a photo of the screen if anything
+looked wrong. If it does not reach a shell at all, there is no report: the screen is the whole
+diagnosis, so photograph the last lines.
 
 ## What this image is not
 
 - **Not hardened.** Root, no password, autologin on the console and the serial port, no network
   configured. It exists to be driven by hand.
+- **Not private.** The hardware report records the machine's model, its devices and their
+  MAC addresses on the stick. It records no files, no accounts and nothing from the machine's
+  own disk.
 - **Not a desktop.** There is no graphical session, no browser and no session model — this is the
   A/B update and self-heal behaviour, which is the part of MorpheOS that is built.
 - **Not installable.** It runs from the stick; it does not touch the machine's own disk.

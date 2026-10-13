@@ -59,8 +59,12 @@ mkdir -p "$WORK"
 # The cache is keyed on the package list, so adding a package rebuilds it.
 # libpixman-1-0 and libxkbcommon0 are what flow-compositor links against; libinput10 and
 # libseat1 its keyboard, mouse and seat session (E10), and seatd the seat manager it uses.
+# pciutils and usbutils for the hardware report (with pci.ids and usb.ids, so devices are named,
+# not just numbered), and the laptop firmware sets (E12): AMD,
+# Intel and MediaTek graphics and Wi-Fi, Realtek, Broadcom, and Intel audio (~250 MB), so a
+# first boot on a real machine shows what works, not only what is missing.
 BASE="$WORK/rootfs-base"
-BASE_PKGS=systemd-sysv,udev,kmod,linux-image-virtual,initramfs-tools,systemd-boot,dosfstools,libpixman-1-0,libxkbcommon0,libinput10,libseat1,seatd
+BASE_PKGS=systemd-sysv,udev,kmod,linux-image-virtual,initramfs-tools,systemd-boot,dosfstools,libpixman-1-0,libxkbcommon0,libinput10,libseat1,seatd,pciutils,usbutils,pci.ids,usb.ids,linux-firmware-amd-graphics,linux-firmware-intel-graphics,linux-firmware-intel-wireless,linux-firmware-mediatek,linux-firmware-realtek,linux-firmware-broadcom-wireless,firmware-sof-signed
 if [ "$(cat "$BASE/.complete" 2>/dev/null)" != "$BASE_PKGS" ]; then
     rm -rf "$BASE"
     mmdebstrap --variant=apt \
@@ -143,8 +147,10 @@ EOF
             || { echo "seatd is not installed in $dir: the shell could not take the seat" >&2; exit 1; }
     fi
     if [ "$HARDWARE" = 1 ]; then
-        ln -sf /usr/lib/systemd/system/morph-banner.service \
-            "$dir/etc/systemd/system/multi-user.target.wants/morph-banner.service"
+        for unit in morph-banner morph-hwreport; do
+            ln -sf "/usr/lib/systemd/system/$unit.service" \
+                "$dir/etc/systemd/system/multi-user.target.wants/$unit.service"
+        done
         # The overlay is what makes the console reachable at all. Assert it landed, because a
         # copy that silently did nothing would leave an image that looks right and cannot be
         # logged into — and the CI check would be looking for its own marker.

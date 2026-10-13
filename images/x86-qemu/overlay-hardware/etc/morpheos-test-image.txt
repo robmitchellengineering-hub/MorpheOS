@@ -33,6 +33,9 @@ Reading the result afterwards
 -----------------------------
 Put this disk back in your computer and open the FAT partition:
 
+  /morpheos-report/NNN-<machine>-<slot>/summary.txt
+                                    what this machine is and what worked on it:
+                                    screens, graphics, Wi-Fi, input, missing firmware
   /morph-boot/history.jsonl         one line per boot: slot/phase/action
   /MORPH-TEST-RESULT.TXT            written by the self-test image, not by this one
 
