@@ -189,8 +189,19 @@ tmpfs            /tmp             tmpfs  mode=1777          0  0
 PARTLABEL=data   /persist         ext4   defaults           0  2
 /persist/home    /home            none   bind,x-systemd.requires-mounts-for=/persist  0  0
 /persist/strata  /var/lib/strata  none   bind,x-systemd.requires-mounts-for=/persist  0  0
+# State systemd's own services keep in /var/lib/systemd (their StateDirectory), which the
+# read-only root cannot hold: logind (lingering users), the radio switches (rfkill) and the
+# screen brightness (backlight). Kept for the boot only.
+tmpfs            /var/lib/systemd/linger     tmpfs  mode=0755  0  0
+tmpfs            /var/lib/systemd/rfkill     tmpfs  mode=0755  0  0
+tmpfs            /var/lib/systemd/backlight  tmpfs  mode=0755  0  0
 EOF
-    mkdir -p "$dir/efi" "$dir/persist" "$dir/var/lib/strata"
+    # ⚠️ A SERVICE THAT WRITES TO THE READ-ONLY ROOT FAILS, AND A FAILED UNIT IS AN UNHEALTHY
+    # BOOT. systemd-rfkill and systemd-backlight start on any machine with a radio switch or
+    # a backlight (every laptop, and no VM until the Wi-Fi test's simulated radios), and logind
+    # wherever D-Bus is; each failed to create its state directory. Found by test-wifi.sh.
+    mkdir -p "$dir/efi" "$dir/persist" "$dir/var/lib/strata" \
+        "$dir/var/lib/systemd/linger" "$dir/var/lib/systemd/rfkill" "$dir/var/lib/systemd/backlight"
     for unit in morph-boot-check strata; do
         ln -sf "/usr/lib/systemd/system/$unit.service" \
             "$dir/etc/systemd/system/multi-user.target.wants/$unit.service"

@@ -219,3 +219,8 @@ One line per piece of work: date, who, what, what's next.
   installed, so the firmware sets E12 added had nothing to load them. A stick would have
   booted on the efifb console with no Wi-Fi. The base now installs the extra modules for its
   kernel, and the hardware build check refuses an image without those drivers (H18).
+- 2026-10-13 · Claude Code · Also before any laptop boot: systemd-rfkill, systemd-backlight and
+  logind each failed to create their state directory on the read-only root, and a failed
+  unit is an unhealthy boot. rfkill and backlight start on any machine with a radio switch
+  or a backlight (every laptop; no VM until test-wifi.sh's simulated radios showed it), so
+  `plain` on a laptop could have been judged unhealthy. Their directories are tmpfs now.
