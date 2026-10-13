@@ -84,6 +84,14 @@ Never merge one out of order, and never rebase someone else's branch.
 
 If CI goes red on one of them after the handover, it is yours to fix, on that branch.
 
+**After each merge, the next PR may show a conflict.** This repository squash-merges, so
+`main` gets the merged PR's changes as one new commit, and the next branch still carries the
+originals; where both touched the same lines (HANDOFF.md's tables and session log, every
+time) git cannot tell they agree. The fix is mechanical: on the next branch,
+`git fetch origin && git merge origin/main`, keep **both** sides' lines (they are the same
+lines plus the newer PR's additions), run `bash scripts/check.sh`, and push. Never rebase or
+force-push a branch that has a pull request open.
+
 ## How to work (every task, every time)
 
 1. `git fetch origin && git switch -c <type>/<slug> origin/main`. Never commit to `main`.
