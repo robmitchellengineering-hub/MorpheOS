@@ -10,7 +10,10 @@ description = "MorpheOS: the Flow shell as a real Wayland compositor (Smithay), 
 flow-shell = { path = "../flow-shell" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-smithay = { version = "0.7.0", default-features = false, features = ["wayland_frontend", "renderer_pixman"] }
+# E10: libinput for the keyboard and mouse, and a libseat session (seatd) that owns the VT
+# and hands over the display and input devices. Building needs libinput-dev, libseat-dev
+# and libudev-dev.
+smithay = { version = "0.7.0", default-features = false, features = ["wayland_frontend", "renderer_pixman", "backend_libinput", "backend_session_libseat", "backend_udev"] }
 # E3: show the frame on a real display through a DRM dumb buffer (no GPU stack needed).
 drm = "0.14.1"
 # The test client (src/bin/solid-window.rs): a real Wayland client, no toolkit.

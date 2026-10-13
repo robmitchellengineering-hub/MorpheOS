@@ -26,9 +26,10 @@ WORK=${1:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
 SCENARIO=${2:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
 case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
 # `plain` is the one that leaves the CI harness behind and is meant to be booted by a person.
-# `shell` is `plain` with the Flow shell drawing the screen (doc 20, E3). It stays separate
-# from `plain` until the shell takes keyboard and mouse input (E10): booting a person's
-# machine into a screen they cannot type into would lock them out of it.
+# `shell` is `plain` with the Flow shell drawing the screen and taking the keyboard and mouse
+# (doc 20, E3 and E10), and the root console moved to VT2. It stays separate from `plain`
+# until there is something to do in the shell (a browser, E4): until then, the person
+# booting `plain` on a laptop is better served by the root console it opens on.
 HARDWARE=0
 if [ "$SCENARIO" = plain ] || [ "$SCENARIO" = shell ]; then HARDWARE=1; fi
 
@@ -56,9 +57,10 @@ mkdir -p "$WORK"
 
 # 1. Base root filesystem (cached across scenarios).
 # The cache is keyed on the package list, so adding a package rebuilds it.
-# libpixman-1-0 and libxkbcommon0 are what flow-compositor links against.
+# libpixman-1-0 and libxkbcommon0 are what flow-compositor links against; libinput10 and
+# libseat1 its keyboard, mouse and seat session (E10), and seatd the seat manager it uses.
 BASE="$WORK/rootfs-base"
-BASE_PKGS=systemd-sysv,udev,kmod,linux-image-virtual,initramfs-tools,systemd-boot,dosfstools,libpixman-1-0,libxkbcommon0
+BASE_PKGS=systemd-sysv,udev,kmod,linux-image-virtual,initramfs-tools,systemd-boot,dosfstools,libpixman-1-0,libxkbcommon0,libinput10,libseat1,seatd
 if [ "$(cat "$BASE/.complete" 2>/dev/null)" != "$BASE_PKGS" ]; then
     rm -rf "$BASE"
     mmdebstrap --variant=apt \
@@ -127,10 +129,18 @@ EOF
         cp -a "$HERE/overlay-shell/." "$dir/"
         install -m 0755 "$FLOW_COMPOSITOR" "$dir/usr/bin/flow-compositor"
         install -m 0755 "$SOLID_WINDOW" "$dir/usr/bin/solid-window"
-        for unit in flow-shell flow-demo-window; do
+        for unit in seatd flow-shell flow-demo-window; do
             ln -sf "/usr/lib/systemd/system/$unit.service" \
                 "$dir/etc/systemd/system/multi-user.target.wants/$unit.service"
         done
+        # The root console lives on VT2 while the shell has VT1 (Ctrl+Alt+F2 reaches it).
+        # Started at boot under its own name, so its drop-in applies (logind's on-demand
+        # `autovt@tty2` would not pick up a `getty@tty2` drop-in).
+        mkdir -p "$dir/etc/systemd/system/getty.target.wants"
+        ln -sf /usr/lib/systemd/system/getty@.service \
+            "$dir/etc/systemd/system/getty.target.wants/getty@tty2.service"
+        [ -f "$dir/usr/lib/systemd/system/seatd.service" ] \
+            || { echo "seatd is not installed in $dir: the shell could not take the seat" >&2; exit 1; }
     fi
     if [ "$HARDWARE" = 1 ]; then
         ln -sf /usr/lib/systemd/system/morph-banner.service \

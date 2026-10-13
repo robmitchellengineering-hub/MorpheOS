@@ -8,6 +8,8 @@
 mod drm_output;
 #[cfg(target_os = "linux")]
 mod headless;
+#[cfg(target_os = "linux")]
+mod live;
 
 const USAGE: &str = "\
 usage: flow-compositor --socket NAME (--out FRAME.png | --script FILE | --drm DEVICE)
@@ -21,7 +23,8 @@ frame of the screen (.png, or .ppm for tests), and exit 0. Exit 1 if they have n
 (default 30 s), with no frame written.
 
 --script runs input commands once the windows have drawn, one per line:
-  click X Y   focus the window under the point
+  click X Y   move the pointer there and click (focus the window under it)
+  key C...    press keys by Linux code (KEY_A is 30), released in reverse
   cycle       focus the next window
   close       ask the focused window to close, and wait until it has
   frame PATH  write the screen (.png or .ppm)

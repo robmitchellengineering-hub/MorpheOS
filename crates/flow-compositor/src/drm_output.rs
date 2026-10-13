@@ -8,13 +8,15 @@
 //! When it becomes a measured bottleneck, a GPU renderer replaces the renderer, not this
 //! module's job of choosing an output and a mode. That is a later task with a measurement.
 //!
-//! What it does not do yet: hotplug, more than one output, page flipping (the frame is
-//! copied into the one buffer being scanned out, so a fast-changing screen can tear), and
-//! sharing the device through a seat (it needs DRM master, which root gets on an idle VT).
-//! The session work is a task in doc 20.
+//! The device comes from the seat session (live.rs), which hands over DRM master while
+//! this session's virtual terminal is showing and takes it back when a person switches
+//! away; [`Output::restore`] puts the picture back on their return.
+//!
+//! What it does not do yet: hotplug, more than one output, and page flipping (the frame is
+//! copied into the one buffer being scanned out, so a fast-changing screen can tear).
 
-use std::fs::{File, OpenOptions};
-use std::os::fd::{AsFd, BorrowedFd};
+use std::fs::File;
+use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use std::path::Path;
 
 use drm::buffer::{Buffer, DrmFourcc};
@@ -37,20 +39,18 @@ pub struct Output {
     card: Card,
     buffer: DumbBuffer,
     fb: framebuffer::Handle,
+    crtc: crtc::Handle,
+    connector: connector::Handle,
+    mode: Mode,
     pub width: u32,
     pub height: u32,
 }
 
 impl Output {
-    /// Open the device, pick the first connected connector and its preferred mode, and show
-    /// a buffer of that size on it.
-    pub fn open(path: &Path) -> Result<Self, String> {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(path)
-            .map_err(|e| format!("opening {}: {e}", path.display()))?;
-        let card = Card(file);
+    /// Take the opened device (`path` is for messages), pick the first connected connector
+    /// and its preferred mode, and show a buffer of that size on it.
+    pub fn open(fd: OwnedFd, path: &Path) -> Result<Self, String> {
+        let card = Card(File::from(fd));
         let res = card
             .resource_handles()
             .map_err(|e| format!("reading {}'s resources: {e}", path.display()))?;
@@ -81,9 +81,26 @@ impl Output {
             card,
             buffer,
             fb,
+            crtc,
+            connector: conn.handle(),
+            mode,
             width,
             height,
         })
+    }
+
+    /// Show the buffer again after the session comes back: while a person was on another
+    /// virtual terminal, the console set its own mode.
+    pub fn restore(&self) -> Result<(), String> {
+        self.card
+            .set_crtc(
+                self.crtc,
+                Some(self.fb),
+                (0, 0),
+                &[self.connector],
+                Some(self.mode),
+            )
+            .map_err(|e| format!("restoring the mode: {e}"))
     }
 
     /// Copy a frame (ARGB, row-major, `width` x `height`) to the screen.

@@ -32,6 +32,14 @@ DISPLAY_ARGS=()
 [ "${VM_GPU:-0}" = 1 ] && DISPLAY_ARGS=(-vga none -device virtio-gpu-pci)
 MONITOR_ARGS=(-monitor none)
 [ -n "${VM_MONITOR:-}" ] && MONITOR_ARGS=(-monitor "unix:$VM_MONITOR,server,nowait")
+# Keyboard and mouse (E10): VM_QMP=<path> opens a QMP socket a test drives input through
+# (`input-send-event`, `send-key`) and takes screendumps with. The keyboard is the q35
+# machine's own PS/2 one (i8042, built into the kernel, as on most laptops); the pointer is
+# a USB tablet behind xHCI, so the modules a real USB mouse needs (xhci-pci, usbhid,
+# hid-generic) load too, and its absolute positions let a test click an exact pixel.
+if [ -n "${VM_QMP:-}" ]; then
+    MONITOR_ARGS+=(-qmp "unix:$VM_QMP,server,nowait" -device qemu-xhci -device usb-tablet)
+fi
 
 ACCEL=tcg
 [ -w /dev/kvm ] && ACCEL=kvm

@@ -104,11 +104,12 @@ jobs:
         run: sudo images/x86-qemu/test-fallback.sh "$RUNNER_TEMP/img" good unhealthy crash update heal
       - name: Ransomware against Strata
         run: sudo images/x86-qemu/test-ransomware.sh "$RUNNER_TEMP/img"
-      # Doc 20, E3: the compositor drives a real (virtio-gpu) display, and the verdict is a
-      # screenshot's pixels. It needs the compositor's system libraries to build.
-      - name: The Flow shell on a real display
+      # Doc 20, E3 and E10: the compositor drives a real (virtio-gpu) display and the VM's
+      # own keyboard and mouse, and every verdict is a screenshot's pixels. It needs the
+      # compositor's system libraries to build.
+      - name: The Flow shell on a real display, with a keyboard and a mouse
         run: |
-          sudo apt-get install -y --no-install-recommends libxkbcommon-dev libpixman-1-dev xkb-data
+          sudo apt-get install -y --no-install-recommends libxkbcommon-dev libpixman-1-dev xkb-data libinput-dev libseat-dev libudev-dev
           cargo build --release -p flow-compositor
           sudo images/x86-qemu/test-shell.sh "$RUNNER_TEMP/img"
       - name: Keep serial logs
