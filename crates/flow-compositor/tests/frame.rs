@@ -74,10 +74,7 @@ fn read_ppm(path: &Path) -> (usize, usize, Vec<[u8; 3]>) {
     }
     assert_eq!(fields[0], "P6");
     let (w, h): (usize, usize) = (fields[1].parse().unwrap(), fields[2].parse().unwrap());
-    let px = bytes[i + 1..]
-        .chunks_exact(3)
-        .map(|c| [c[0], c[1], c[2]])
-        .collect::<Vec<_>>();
+    let px = bytes[i + 1..].as_chunks::<3>().0.to_vec();
     assert_eq!(px.len(), w * h);
     (w, h, px)
 }

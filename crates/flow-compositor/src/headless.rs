@@ -307,9 +307,10 @@ fn render(surfaces: &[WlSurface], width: u32, height: u32) -> Result<ShellFrame,
     let stride = bytes.len() / height as usize;
     let mut pixels = Vec::with_capacity((width * height) as usize);
     for row in bytes.chunks_exact(stride).take(height as usize) {
-        for px in row.chunks_exact(4).take(width as usize) {
+        let (row_px, _) = row.as_chunks::<4>();
+        for px in row_px.iter().take(width as usize) {
             // ARGB8888 is a little-endian u32: B, G, R, A in memory.
-            pixels.push(u32::from_le_bytes([px[0], px[1], px[2], px[3]]));
+            pixels.push(u32::from_le_bytes(*px));
         }
     }
     ShellFrame::from_pixels(width, height, pixels)
