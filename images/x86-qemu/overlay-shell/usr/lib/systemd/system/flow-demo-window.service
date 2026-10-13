@@ -1,0 +1,13 @@
+[Unit]
+Description=A demonstration window on the Flow shell (test image only, until apps exist)
+Requires=flow-shell.service
+After=flow-shell.service
+
+[Service]
+Environment=XDG_RUNTIME_DIR=/run/flow WAYLAND_DISPLAY=wayland-0
+# The socket appears when the compositor has bound it; wait for it rather than guessing.
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 300); do [ -S /run/flow/wayland-0 ] && exit 0; sleep 0.1; done; exit 1'
+ExecStart=/usr/bin/solid-window --colour 00a0ff --size 320x200
+
+[Install]
+WantedBy=multi-user.target

@@ -5,11 +5,16 @@
 //! still builds and tests on a Mac (AGENTS.md H9).
 
 #[cfg(target_os = "linux")]
+mod drm_output;
+#[cfg(target_os = "linux")]
 mod headless;
 
 const USAGE: &str = "\
-usage: flow-compositor --socket NAME (--out FRAME.png | --script FILE) [--wait-for N]
-                       [--timeout SECS] [--width N] [--height N]
+usage: flow-compositor --socket NAME (--out FRAME.png | --script FILE | --drm DEVICE)
+                       [--wait-for N] [--timeout SECS] [--width N] [--height N]
+
+--drm /dev/dri/card0 shows the screen on that display and runs until stopped (the service).
+Otherwise it is headless:
 
 Listen on $XDG_RUNTIME_DIR/NAME, wait until N windows (default 1) have drawn, write one
 frame of the screen (.png, or .ppm for tests), and exit 0. Exit 1 if they have not drawn within the timeout
@@ -48,6 +53,7 @@ fn main() -> std::process::ExitCode {
                 ),
                 None => None,
             },
+            drm: flag("--drm").map(Into::into),
             wait_for: num("--wait-for", 1)? as usize,
             timeout: std::time::Duration::from_secs(num("--timeout", 30)?),
             width: num("--width", 800)? as u32,

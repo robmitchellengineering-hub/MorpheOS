@@ -24,10 +24,13 @@ set -euo pipefail
 
 WORK=${1:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
 SCENARIO=${2:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
-case "$SCENARIO" in good|unhealthy|crash|ransomware|plain) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
+case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
 # `plain` is the one that leaves the CI harness behind and is meant to be booted by a person.
+# `shell` is `plain` with the Flow shell drawing the screen (doc 20, E3). It stays separate
+# from `plain` until the shell takes keyboard and mouse input (E10): booting a person's
+# machine into a screen they cannot type into would lock them out of it.
 HARDWARE=0
-if [ "$SCENARIO" = plain ]; then HARDWARE=1; fi
+if [ "$SCENARIO" = plain ] || [ "$SCENARIO" = shell ]; then HARDWARE=1; fi
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
@@ -38,6 +41,13 @@ STRATA=${STRATA:-$REPO/target/release/strata}
 MORPH_UPDATE=${MORPH_UPDATE:-$REPO/target/release/morph-update}
 MORPH_HEAL=${MORPH_HEAL:-$REPO/target/release/morph-heal}
 SDBOOT_EFI=${SDBOOT_EFI:-/usr/lib/systemd/boot/efi/systemd-bootx64.efi}
+FLOW_COMPOSITOR=${FLOW_COMPOSITOR:-$REPO/target/release/flow-compositor}
+SOLID_WINDOW=${SOLID_WINDOW:-$REPO/target/release/solid-window}
+if [ "$SCENARIO" = shell ]; then
+    for b in "$FLOW_COMPOSITOR" "$SOLID_WINDOW"; do
+        [ -x "$b" ] || { echo "missing $b: run cargo build --release -p flow-compositor" >&2; exit 1; }
+    done
+fi
 
 [ -x "$MORPH_BOOT" ] || { echo "missing $MORPH_BOOT: run cargo build --release -p morph-boot" >&2; exit 1; }
 [ -x "$STRATA" ] || { echo "missing $STRATA: run cargo build --release -p strata" >&2; exit 1; }
@@ -110,6 +120,15 @@ EOF
         ln -sf "/usr/lib/systemd/system/$unit.service" \
             "$dir/etc/systemd/system/multi-user.target.wants/$unit.service"
     done
+    if [ "$SCENARIO" = shell ]; then
+        cp -a "$HERE/overlay-shell/." "$dir/"
+        install -m 0755 "$FLOW_COMPOSITOR" "$dir/usr/bin/flow-compositor"
+        install -m 0755 "$SOLID_WINDOW" "$dir/usr/bin/solid-window"
+        for unit in flow-shell flow-demo-window; do
+            ln -sf "/usr/lib/systemd/system/$unit.service" \
+                "$dir/etc/systemd/system/multi-user.target.wants/$unit.service"
+        done
+    fi
     if [ "$HARDWARE" = 1 ]; then
         ln -sf /usr/lib/systemd/system/morph-banner.service \
             "$dir/etc/systemd/system/multi-user.target.wants/morph-banner.service"

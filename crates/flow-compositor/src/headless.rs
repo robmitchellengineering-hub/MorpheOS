@@ -71,6 +71,8 @@ pub struct Options {
     pub out: Option<PathBuf>,
     /// Input commands to run once the windows have drawn, one per line.
     pub script: Option<String>,
+    /// Show the screen on this DRM device and run until stopped (E3). Overrides the rest.
+    pub drm: Option<PathBuf>,
 }
 
 struct App {
@@ -371,6 +373,10 @@ pub fn run(opts: &Options) -> Result<(), String> {
         keyboard,
     };
 
+    if let Some(device) = &opts.drm {
+        return show_forever(&mut server, device);
+    }
+
     let deadline = Instant::now() + opts.timeout;
     let start = Instant::now();
     while server.state.drawn_toplevels().len() < opts.wait_for {
@@ -400,6 +406,26 @@ pub fn run(opts: &Options) -> Result<(), String> {
         (None, None) => return Err("nothing to do: give --out or --script".into()),
     }
     Ok(())
+}
+
+/// The service: serve clients and keep the display showing the screen, until stopped.
+fn show_forever(server: &mut Server, device: &Path) -> Result<(), String> {
+    let mut output = crate::drm_output::Output::open(device)?;
+    let mut shown = None;
+    loop {
+        let started = Instant::now();
+        server.turn()?;
+        let frame = render(&server.state, output.width, output.height)?;
+        output.show(frame.pixels())?;
+        // One line when the picture changes in kind, so a log (and a test) can follow it.
+        let count = server.state.wm.layout().len();
+        if shown != Some(count) {
+            eprintln!("flow-compositor: {count} window(s) on screen");
+            shown = Some(count);
+        }
+        // About 30 frames a second; the software path does not need more yet.
+        std::thread::sleep(Duration::from_millis(33).saturating_sub(started.elapsed()));
+    }
 }
 
 /// Render the windows where the window manager put them, over the shell's background,
