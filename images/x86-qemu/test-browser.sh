@@ -116,6 +116,13 @@ if box_a and box_b:
     check(f"the page is inside the screen, a margin from its edges (page at {x0},{y0} to {x1},{y1})",
           x0 >= MARGIN and y0 >= MARGIN and x1 <= w - MARGIN - 1 and y1 <= h - MARGIN - 1)
     check("the first colour is above the second, as the page lays them out", box_a[3] < box_b[1] + 2)
+if not ok:
+    # Say what WAS on the screen: the job log is often all there is to read.
+    from collections import Counter
+    top = Counter(px).most_common(8)
+    print("    the screen's commonest colours:")
+    for c, k in top:
+        print(f"      #{c[0]:02x}{c[1]:02x}{c[2]:02x}  {k} px")
 sys.exit(0 if ok else 1)
 PY
 fi
@@ -145,5 +152,9 @@ else
     fail=1
 fi
 
+if [ $fail != 0 ]; then
+    echo "    what the shell and Firefox said (serial console):"
+    grep -a -iE 'flow-compositor|flow-browser|firefox|gecko|crash|segfault' "$log" | grep -v 'libinput error' | tail -40 | sed 's/^/      /' || true
+fi
 if [ $fail = 0 ]; then echo "    PASS"; else echo "    see $log and $WORK/screen-browser.ppm"; fi
 exit $fail
