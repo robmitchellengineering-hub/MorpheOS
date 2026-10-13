@@ -46,17 +46,10 @@ jobs:
       # has no cargo, so a binary built inside them cannot find its own toolchain.
       - run: cargo build --release -p morph-update
       - run: cargo build --release -p morph-heal
-      - name: Install image and VM tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends mmdebstrap qemu-system-x86 ovmf \
-            systemd-boot-efi dosfstools mtools fdisk e2fsprogs
-      - name: Allow KVM if the runner has it
-        run: |
-          if [ -e /dev/kvm ]; then
-            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
-            sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
-          fi
+      # The SAME script the builder runs in WSL2 (doc 20, S10), with the image and VM tools,
+      # and KVM opened up if the runner has it.
+      - name: Install image and VM tools (scripts/setup-linux.sh --images)
+        run: bash scripts/setup-linux.sh --images
       # ⚠️ FIRST, AND BEFORE THE SCENARIOS. This is the image a PERSON boots — the one that
       # goes on real hardware — and it is built and published before any test that might fail,
       # so a red scenario cannot cost us the artefact somebody is waiting for. `if: always()`
@@ -105,11 +98,10 @@ jobs:
       - name: Ransomware against Strata
         run: sudo images/x86-qemu/test-ransomware.sh "$RUNNER_TEMP/img"
       # Doc 20, E3 and E10: the compositor drives a real (virtio-gpu) display and the VM's
-      # own keyboard and mouse, and every verdict is a screenshot's pixels. It needs the
-      # compositor's system libraries to build.
+      # own keyboard and mouse, and every verdict is a screenshot's pixels. Its system
+      # libraries came from setup-linux.sh above.
       - name: The Flow shell on a real display, with a keyboard and a mouse
         run: |
-          sudo apt-get install -y --no-install-recommends libxkbcommon-dev libpixman-1-dev xkb-data libinput-dev libseat-dev libudev-dev
           cargo build --release -p flow-compositor
           sudo images/x86-qemu/test-shell.sh "$RUNNER_TEMP/img"
       - name: Keep serial logs

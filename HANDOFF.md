@@ -48,10 +48,25 @@ wsl -d Ubuntu-24.04                  # a Linux shell; clone the repository INSID
                                      # not under /mnt/c, which is slow and breaks permissions
 ```
 
-Inside it, doc 20's **S10** sets up the rest: one script installs what CI installs, and
-`scripts/check.sh` refuses to call a partial bar a pass. If S10 is not merged yet when you
-start, it is the first thing to finish. From a DSH shell in PowerShell, run a Linux command
-as `wsl -d Ubuntu-24.04 -- bash -lc "cd ~/MorpheOS && bash scripts/check.sh"`.
+Then, inside Ubuntu:
+
+```bash
+git clone https://github.com/robmitchellengineering-hub/MorpheOS ~/MorpheOS && cd ~/MorpheOS
+bash scripts/setup-linux.sh --images   # what CI installs; CI runs this same script
+bash scripts/check.sh                  # the bar (the `rust` job); ends "all checks passed"
+bash scripts/test-images.sh ~/img shell   # one VM scenario; `all` runs the `images` suite
+```
+
+From a DSH shell in PowerShell, run any of them as
+`wsl -d Ubuntu-24.04 -- bash -lc "cd ~/MorpheOS && bash scripts/check.sh"`.
+
+- **KVM makes the VM suite minutes instead of an hour.** `setup-linux.sh` says whether
+  `/dev/kvm` exists. If not, put `nestedVirtualization=true` under `[wsl2]` in
+  `%UserProfile%\.wslconfig`, run `wsl --shutdown`, and start Ubuntu again (Windows 11 on a
+  CPU with virtualisation turned on in its firmware). Without KVM the suite still runs, slowly.
+- **Disk:** a full `images` run uses about 20 GB inside WSL's virtual disk.
+- `scripts/check.sh` on Windows or macOS **refuses**, and says why (AGENTS.md H16); with
+  `--partial` it runs what it can and ends with `PARTIAL`, never `all checks passed`.
 
 ## Open pull requests at handover
 
@@ -63,7 +78,8 @@ Never merge one out of order, and never rebase someone else's branch.
 |---|---|---|
 | #42 | `feat/e3-shell-on-screen` | E3: the shell on a real display |
 | #43 | `feat/e10-real-input` | E10: keyboard, mouse, the root console on VT2 |
-| (plan) | `plan/handover-hardware-first` | this file, E12, E6 brought forward, S10, hazards H13–H16 |
+| #44 | `plan/handover-hardware-first` | this file, E12, E6 brought forward, S10, hazards H13–H16 |
+| #45 | `feat/s10-wsl2-bar` | the bar on Windows: `setup-linux.sh`, `test-images.sh`, `check.sh` refuses off Linux |
 
 If CI goes red on one of them after the handover, it is yours to fix, on that branch.
 
@@ -163,3 +179,7 @@ One line per piece of work: date, who, what, what's next.
   hardware brought forward: E12 (a report from every boot, plus laptop firmware), then E6 on
   three candidate machines. Proposed E13 (the screen a person is looking at). Hazards
   H13–H15 from E3/E10. Next: S10, E12.
+- 2026-10-13 · Claude Code · S10: `scripts/setup-linux.sh` (CI's `rust` and `images` jobs now
+  install through it, so the builder's setup is proven on every PR), `scripts/test-images.sh`
+  (the x86 suite locally), and `check.sh` refuses a partial bar off Linux (proven in CI with a
+  `uname` shim). Next: E12.

@@ -13,11 +13,18 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      # flow-compositor (Smithay) links libxkbcommon and pixman, and its keyboard reads the
-      # keymap from xkb-data. Both are small, and the
-      # crate's dependency on them is Linux-only, so a Mac build needs neither.
-      - name: Install the compositor's system libraries
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxkbcommon-dev libpixman-1-dev xkb-data libinput-dev libseat-dev libudev-dev
+      # The SAME script the builder runs in WSL2 (doc 20, S10): if a package the build needs
+      # is missing from it, this job goes red, so the builder's setup cannot quietly rot.
+      - name: Install what the build needs (scripts/setup-linux.sh)
+        run: bash scripts/setup-linux.sh
+      # check.sh must refuse to call a partial bar a pass off Linux (AGENTS.md H16). Proven
+      # here by making `uname` say Darwin; the real run below is on Linux.
+      - name: Prove check.sh refuses a partial bar off Linux
+        run: |
+          shim=$(mktemp -d); printf '#!/bin/sh\necho Darwin\n' > "$shim/uname"; chmod +x "$shim/uname"
+          set +e; PATH="$shim:$PATH" bash scripts/check.sh > out.txt 2>&1; code=$?; set -e
+          cat out.txt
+          [ "$code" = 2 ] && grep -q 'H16' out.txt
       - run: cargo fmt --all --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test --all
