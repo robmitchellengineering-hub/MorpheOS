@@ -79,7 +79,7 @@ Never merge one out of order, and never rebase someone else's branch.
 | #42 | `feat/e3-shell-on-screen` | E3: the shell on a real display |
 | #43 | `feat/e10-real-input` | E10: keyboard, mouse, the root console on VT2 |
 | #44 | `plan/handover-hardware-first` | this file, E12, E6 brought forward, S10, hazards H13–H16 |
-| (S10) | `feat/s10-wsl2-bar` | the bar on Windows: `setup-linux.sh`, `test-images.sh`, `check.sh` refuses off Linux |
+| #45 | `feat/s10-wsl2-bar` | the bar on Windows: `setup-linux.sh`, `test-images.sh`, `check.sh` refuses off Linux |
 
 If CI goes red on one of them after the handover, it is yours to fix, on that branch.
 
