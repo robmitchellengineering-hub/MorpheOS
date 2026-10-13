@@ -89,7 +89,7 @@ tests take (AGENTS.md H3).
 `crates/flow-compositor/src/wm.rs` (the decisions, unit-tested). Move, fullscreen and the
 switch shortcut on real input are E9.
 
-### E3 · The shell on a real display, inside the image · in progress · needs E1
+### E3 · The shell on a real display, inside the image · done · needs E1
 
 **What:** `flow-compositor --drm /dev/dri/card0`: the same software renderer, its frame
 copied into a DRM dumb buffer on the first connected output (no GPU stack, works on any KMS
@@ -98,6 +98,11 @@ driver). A `shell` image scenario runs it as a service, with a demonstration win
 **Done when:** the `images` workflow boots the `shell` image in QEMU with virtio-gpu, takes a
 `screendump`, and finds the shell's background over most of the screen and the window at its
 exact place and size; the boot is healthy and committed (`images/x86-qemu/test-shell.sh`).
+
+**Evidence:** `images/x86-qemu/test-shell.sh` (the background over 960000 of 1024000 pixels,
+the window at (16, 16), 320x200, the boot committed). It found two real faults first: the
+image lacked the compositor's libraries, and virtio-gpu shows nothing until DIRTYFB says the
+frame changed.
 
 **Notes:** `plain` (the image for people) keeps its text console until E10, because a
 shell nobody can type into would lock a person out. The service runs as root for now (E11).
