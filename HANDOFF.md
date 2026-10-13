@@ -71,12 +71,12 @@ From a DSH shell in PowerShell, run any of them as
 
 ## Open pull requests at handover
 
-#42 to #46 (E3, E10, the handover plan, S10, E12) were merged on 2026-10-13, as merge commits
-so the stack merged without conflicts. Open:
+#42 to #48 (E3, E10, the handover plan, S10, E12, E4's browser and popups) were merged on
+2026-10-13, as merge commits so the stack merged without conflicts. Open:
 
 | # | Branch | What |
 |---|---|---|
-| (E4) | `feat/e4-browser` | the browser: GTK fixes (merged here) and Firefox from Mozilla's repository; its VM test has only run in CI |
+| #49 | `feat/e5-networking` | E5 (1): NetworkManager in the browser image; Firefox loads a page the host serves |
 
 If CI goes red on it, it is yours to fix, on that branch. **When a pull request's base is
 another open branch** (a stack), and the base merges: if it was squash-merged, the next branch
@@ -202,6 +202,10 @@ One line per piece of work: date, who, what, what's next.
   answered frame callbacks, so every client froze on its first frame (H17); Firefox's
   first-run Terms of Use dialog dimmed the page (`SkipTermsOfUse`, test image only: Rob's
   call for `plain`). E4 still needs popups (menus) and `plain` booting into the shell.
+- 2026-10-13 · Claude Code · Popups (`feat/e4-popups`, stacked on #47): menus and dropdowns are
+  placed by their positioner relative to their parent, kept on screen, drawn on top, take
+  clicks first, and close on a click outside (`tests/popups.rs`, with a real client's popup;
+  both sabotages caught). E4 still needs `plain` booting into the shell.
 - 2026-10-13 · Claude Code · E5 begun (`feat/e5-networking`): NetworkManager (with
   wpasupplicant and systemd-resolved) in the browser image, managing wired and Wi-Fi; the VM
   gets QEMU's user network; the browser test's local page redirects to a page the host
