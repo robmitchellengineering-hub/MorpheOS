@@ -26,7 +26,8 @@ cargo run -q -p flow-shell -- --out "${TMPDIR:-/tmp}/frame.png" --sessions 3
 step "docs";     node scripts/verify-docs.mjs
 step "plan"
 node scripts/verify-plan.mjs --self-test
-node scripts/verify-plan.mjs --branch "$(git rev-parse --abbrev-ref HEAD)"
+git show origin/main:docs/20-build-plan.md > "${TMPDIR:-/tmp}/base-plan.md"
+node scripts/verify-plan.mjs --branch "$(git rev-parse --abbrev-ref HEAD)" --base "${TMPDIR:-/tmp}/base-plan.md"
 step "console text"
 node scripts/verify-console-text.mjs --self-test
 node scripts/verify-console-text.mjs

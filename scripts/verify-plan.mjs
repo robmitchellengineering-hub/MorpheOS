@@ -10,10 +10,13 @@
 //   * IDs are unique, statuses are from the fixed set, and `needs` names real tasks;
 //   * every task has a **Done when:** line;
 //   * a `done` task has an **Evidence:** line naming a URL or a path that exists;
-//   * with --branch, the branch names an open or in-progress task, or is a fix/ or plan/
-//     branch. Work that serves no task cannot get through CI.
+//   * with --branch, the branch names a task that is open or in progress IN THE BASE PLAN
+//     (--base FILE, the plan on main), or is a fix/ or plan/ branch. Work that serves no
+//     task cannot get through CI. The base plan is what counts because the pull request
+//     that finishes a task marks it done: judged against its own copy, the branch would
+//     name a done task and be refused for doing the job.
 //
-// Run:  node scripts/verify-plan.mjs [--branch NAME]
+// Run:  node scripts/verify-plan.mjs [--branch NAME [--base FILE]]
 //       node scripts/verify-plan.mjs --self-test     (proves each rule can fail)
 
 import { readFileSync, existsSync } from 'node:fs';
@@ -86,16 +89,16 @@ export function check(text, exists = (p) => existsSync(join(REPO, p))) {
 }
 
 /** Why this branch may not merge, or null when it may. */
-export function checkBranch(branch, text) {
+export function checkBranch(branch, text, baseText = text) {
   if (/^(fix|plan)\//.test(branch)) return null;
-  const tasks = parse(text);
+  const tasks = parse(baseText);
   const named = [...branch.matchAll(/(?:^|[/_-])([a-z]\d+)(?=$|[/_-])/gi)].map((m) => m[1].toUpperCase());
   const live = tasks.filter((t) => named.includes(t.id) && (t.status === 'open' || t.status === 'in progress'));
   if (live.length > 0) return null;
   if (named.length === 0) {
     return `branch "${branch}" names no task. Name the task it serves (e.g. feat/e2-classic-windows), or use fix/ or plan/`;
   }
-  return `branch "${branch}" names ${named.join(', ')}, but none is an open or in-progress task in ${PLAN}`;
+  return `branch "${branch}" names ${named.join(', ')}, but none was an open or in-progress task in the base ${PLAN}`;
 }
 
 function selfTest() {
@@ -137,6 +140,11 @@ function selfTest() {
     if (!ok) failed++;
     console.log(`${ok ? 'ok  ' : 'FAIL'} branch ${b} ${want === null ? 'passes' : 'is refused'}`);
   }
+  // The PR that finishes E2 marks it done; it was open in the base, so it passes.
+  const finished = good.replace('### E2 · Second · open', '### E2 · Second · done');
+  const finishing = checkBranch('feat/e2-second', finished, good) === null;
+  if (!finishing) failed++;
+  console.log(`${finishing ? 'ok  ' : 'FAIL'} the branch that finishes a task passes`);
   if (failed) {
     console.error(`${failed} self-test case(s) failed`);
     process.exit(1);
@@ -153,7 +161,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const problems = check(text);
     const bi = args.indexOf('--branch');
     if (bi >= 0 && args[bi + 1]) {
-      const why = checkBranch(args[bi + 1], text);
+      const ba = args.indexOf('--base');
+      const base = ba >= 0 && args[ba + 1] ? readFileSync(args[ba + 1], 'utf8') : text;
+      const why = checkBranch(args[bi + 1], text, base);
       if (why) problems.push(why);
     }
     if (problems.length) {

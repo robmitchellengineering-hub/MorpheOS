@@ -13,10 +13,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      # flow-compositor (Smithay) links libxkbcommon and pixman. Both are small, and the
+      # flow-compositor (Smithay) links libxkbcommon and pixman, and its keyboard reads the
+      # keymap from xkb-data. Both are small, and the
       # crate's dependency on them is Linux-only, so a Mac build needs neither.
       - name: Install the compositor's system libraries
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxkbcommon-dev libpixman-1-dev
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxkbcommon-dev libpixman-1-dev xkb-data
       - run: cargo fmt --all --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test --all
@@ -74,7 +75,10 @@ jobs:
         run: |
           node scripts/verify-plan.mjs --self-test
           if [ -n "$GITHUB_HEAD_REF" ]; then
-            node scripts/verify-plan.mjs --branch "$GITHUB_HEAD_REF"
+            # Judge the branch against the plan it started from (see the script's header).
+            git fetch -q --depth=1 origin "$GITHUB_BASE_REF"
+            git show "origin/$GITHUB_BASE_REF:docs/20-build-plan.md" > "$RUNNER_TEMP/base-plan.md"
+            node scripts/verify-plan.mjs --branch "$GITHUB_HEAD_REF" --base "$RUNNER_TEMP/base-plan.md"
           else
             node scripts/verify-plan.mjs
           fi

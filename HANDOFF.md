@@ -98,3 +98,6 @@ One line per piece of work: date, who, what, what's next.
   command). Next: E1.
 - 2026-10-13 · Claude Code · Doc 20 (the build plan: north star, settled architecture, M1–M5
   tasks) and `verify-plan.mjs` (format and branch guard in CI). Next: E2.
+- 2026-10-13 · Claude Code · E2 done: `wm.rs` (window decisions, unit-tested anywhere),
+  `--script` input, focus border, keyboard focus, close. Found and fixed: Smithay's
+  `draw_solid` damage is relative to its rectangle. E9 holds the rest. Next: E3.

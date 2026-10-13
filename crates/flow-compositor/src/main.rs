@@ -8,12 +8,19 @@
 mod headless;
 
 const USAGE: &str = "\
-usage: flow-compositor --socket NAME --out FRAME.png [--wait-for N] [--timeout SECS]
-                       [--width N] [--height N]
+usage: flow-compositor --socket NAME (--out FRAME.png | --script FILE) [--wait-for N]
+                       [--timeout SECS] [--width N] [--height N]
 
 Listen on $XDG_RUNTIME_DIR/NAME, wait until N windows (default 1) have drawn, write one
 frame of the screen (.png, or .ppm for tests), and exit 0. Exit 1 if they have not drawn within the timeout
-(default 30 s), with no frame written.";
+(default 30 s), with no frame written.
+
+--script runs input commands once the windows have drawn, one per line:
+  click X Y   focus the window under the point
+  cycle       focus the next window
+  close       ask the focused window to close, and wait until it has
+  frame PATH  write the screen (.png or .ppm)
+  settle MS   keep clients moving for MS milliseconds";
 
 #[cfg(target_os = "linux")]
 fn main() -> std::process::ExitCode {
@@ -33,7 +40,14 @@ fn main() -> std::process::ExitCode {
     let parsed = (|| -> Result<headless::Options, String> {
         Ok(headless::Options {
             socket: flag("--socket").ok_or("--socket is required")?,
-            out: flag("--out").ok_or("--out is required")?.into(),
+            out: flag("--out").map(Into::into),
+            script: match flag("--script") {
+                Some(p) => Some(
+                    std::fs::read_to_string(&p)
+                        .map_err(|e| format!("reading --script {p}: {e}"))?,
+                ),
+                None => None,
+            },
             wait_for: num("--wait-for", 1)? as usize,
             timeout: std::time::Duration::from_secs(num("--timeout", 30)?),
             width: num("--width", 800)? as u32,
