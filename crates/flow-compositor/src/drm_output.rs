@@ -124,11 +124,15 @@ impl Output {
         // which is fine.
         let full = ClipRect::new(0, 0, clamp_u16(self.width), clamp_u16(self.height));
         match self.card.dirty_framebuffer(self.fb, &[full]) {
-            // ENOSYS, which std reports as Unsupported.
-            Err(e) if e.kind() != std::io::ErrorKind::Unsupported => {
-                Err(format!("flushing the frame to the display: {e}"))
-            }
-            _ => Ok(()),
+            Ok(()) => Ok(()),
+            // ENOSYS (std's Unsupported): the driver has nothing to flush.
+            Err(e) if e.kind() == std::io::ErrorKind::Unsupported => Ok(()),
+            // ⚠️ EACCES: a person switched to another virtual terminal and the seat took DRM
+            // master back before this frame was done. The screen is not ours until the session
+            // resumes; it is not a broken display. Treating it as fatal ended the shell on
+            // Ctrl+Alt+F2, so Ctrl+Alt+F1 had nothing to come back to (found by test-shell.sh).
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => Ok(()),
+            Err(e) => Err(format!("flushing the frame to the display: {e}")),
         }
     }
 }

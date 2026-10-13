@@ -48,23 +48,7 @@ struct Live {
 impl Live {
     fn input(&mut self, event: InputEvent<LibinputInputBackend>) {
         match event {
-            InputEvent::DeviceAdded { device } => {
-                let kinds: Vec<&str> = [
-                    (DeviceCapability::Keyboard, "keyboard"),
-                    (DeviceCapability::Pointer, "pointer"),
-                ]
-                .into_iter()
-                .filter(|(c, _)| device.has_capability(*c))
-                .map(|(_, n)| n)
-                .collect();
-                if !kinds.is_empty() {
-                    eprintln!(
-                        "flow-compositor: input: {} ({})",
-                        device.name(),
-                        kinds.join(", ")
-                    );
-                }
-            }
+            InputEvent::DeviceAdded { device } => announce(&device),
             InputEvent::Keyboard { event } => {
                 // libinput's codes are offset by 8 into xkb's; `key` takes the Linux code.
                 let code = event.key_code().raw().saturating_sub(8);
@@ -113,6 +97,25 @@ impl Live {
                 self.active = true;
             }
         }
+    }
+}
+
+/// Say which input devices the shell is using, so a log shows what it found.
+fn announce(device: &smithay::reexports::input::Device) {
+    let kinds: Vec<&str> = [
+        (DeviceCapability::Keyboard, "keyboard"),
+        (DeviceCapability::Pointer, "pointer"),
+    ]
+    .into_iter()
+    .filter(|(c, _)| device.has_capability(*c))
+    .map(|(_, n)| n)
+    .collect();
+    if !kinds.is_empty() {
+        eprintln!(
+            "flow-compositor: input: {} ({})",
+            device.name(),
+            kinds.join(", ")
+        );
     }
 }
 
@@ -170,6 +173,24 @@ pub fn run(server: Server, device: &Path) -> Result<(), String> {
     libinput
         .udev_assign_seat(&seat)
         .map_err(|()| format!("libinput could not use seat {seat}"))?;
+    // ⚠️ THE DEVICES FOUND HERE WAIT FOR A KEYPRESS. Assigning the seat queues one "added"
+    // event per device inside libinput without making its fd readable, and the event loop
+    // only drains libinput when the fd is readable, so nothing was announced until the first
+    // real key or mouse move (found by test-shell.sh, which waits for the devices). Drain the
+    // queue once here. It holds only those "added" events: nobody has touched anything yet.
+    libinput
+        .dispatch()
+        .map_err(|e| format!("reading input devices: {e}"))?;
+    for event in &mut libinput {
+        if let smithay::reexports::input::Event::Device(
+            smithay::reexports::input::event::DeviceEvent::Added(added),
+        ) = event
+        {
+            announce(&smithay::reexports::input::event::EventTrait::device(
+                &added,
+            ));
+        }
+    }
 
     let mut shown = None;
     loop {
