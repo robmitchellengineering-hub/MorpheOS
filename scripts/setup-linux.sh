@@ -34,9 +34,12 @@ SUDO=""
 [ "$(id -u)" = 0 ] || SUDO=sudo
 
 # The compositor links libxkbcommon and pixman, reads keymaps from xkb-data, and its live
-# backend links libinput, libseat and libudev (E3, E10). The docs and plan checks are Node.
+# backend links libinput, libseat and libudev (E3, E10). Its toolkit test runs GTK3's widget
+# factory (gtk-3-examples), the toolkit Firefox is built on (E4). The docs and plan checks
+# are Node.
 PACKAGES=(build-essential pkg-config curl ca-certificates git
-    libxkbcommon-dev libpixman-1-dev xkb-data libinput-dev libseat-dev libudev-dev)
+    libxkbcommon-dev libpixman-1-dev xkb-data libinput-dev libseat-dev libudev-dev
+    gtk-3-examples)
 command -v node > /dev/null || PACKAGES+=(nodejs)
 # The images: a Debian bootstrapper, QEMU with UEFI firmware, and the filesystem tools the
 # image is assembled and read back with; python3 judges the screenshots.

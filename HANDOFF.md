@@ -197,3 +197,9 @@ One line per piece of work: date, who, what, what's next.
   450 of 1200 MB). Found: `mdir -b` lists folders with a trailing slash; the PCI name
   database is a "recommends" we skip, so devices were numbers. Next: Rob boots the stick on
   the three candidates (E6); the builder takes S9 or E4.
+- 2026-10-13 · Claude Code · E4 begun (`feat/e4-browser`). Experiment first: GTK3, the toolkit
+  Firefox is built on, already rendered fully on the compositor. What it lacked, now fixed
+  and tested with a real GTK app (`tests/toolkit.rs`): `wl_output` (GTK logged criticals every
+  frame without one); placement by window geometry (GTK's shadow put the window ~40 px off);
+  a window wider than the screen is asked to fit. Firefox is next, through CI only (Mozilla's
+  hosts are unreachable from the Claude sandbox; GitHub's runners reach them).
