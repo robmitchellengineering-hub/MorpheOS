@@ -10,12 +10,15 @@
 //! goes, and `key N` and `button N` as keys and mouse buttons are pressed in it, so a test
 //! can see input from the client's side. With `--key-colour` and `--click-colour` it also
 //! turns that colour when a key is pressed or it is clicked, so a test that can only see
-//! the screen (a VM's screendump) can see the input arrive. It exits when the compositor asks
+//! the screen (a VM's screendump) can see the input arrive. With `--popup-colour` a click in
+//! it opens a 120 x 80 popup of that colour at (40, 40) inside the window (a menu, as far
+//! as the compositor can tell), prints `popup-shown`, and prints `popup-done` when the
+//! compositor closes it. It exits when the compositor asks
 //! it to close (`xdg_toplevel.close`), as a well-behaved app does, or when the compositor
 //! goes away.
 //!
 //!     WAYLAND_DISPLAY=<socket> solid-window --colour 00a0ff --size 320x200 \
-//!         [--key-colour 00c060] [--click-colour c000c0]
+//!         [--key-colour 00c060] [--click-colour c000c0] [--popup-colour ffcc00]
 
 #[cfg(target_os = "linux")]
 fn main() -> std::process::ExitCode {
@@ -44,7 +47,12 @@ mod client {
         wl_shm_pool, wl_surface,
     };
     use wayland_client::{Connection, Dispatch, QueueHandle, delegate_noop};
-    use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
+    use wayland_protocols::xdg::shell::client::{
+        xdg_popup, xdg_positioner, xdg_surface, xdg_toplevel, xdg_wm_base,
+    };
+
+    /// The popup's size and where it opens inside the window.
+    const POPUP: (i32, i32, i32, i32) = (40, 40, 120, 80);
 
     #[derive(Default)]
     struct State {
@@ -56,6 +64,9 @@ mod client {
         closed: bool,
         /// The buffer to show next, when input asked for a change of colour.
         show: Option<Look>,
+        /// A click asked for the popup to open; the compositor closed it.
+        want_popup: bool,
+        popup_done: bool,
     }
 
     /// Which of the window's colours it shows.
@@ -131,6 +142,23 @@ mod client {
     delegate_noop!(State: ignore wl_shm::WlShm);
     delegate_noop!(State: ignore wl_shm_pool::WlShmPool);
     delegate_noop!(State: ignore wl_buffer::WlBuffer);
+    delegate_noop!(State: ignore xdg_positioner::XdgPositioner);
+
+    impl Dispatch<xdg_popup::XdgPopup, ()> for State {
+        fn event(
+            state: &mut Self,
+            _: &xdg_popup::XdgPopup,
+            event: xdg_popup::Event,
+            _: &(),
+            _: &Connection,
+            _: &QueueHandle<Self>,
+        ) {
+            if let xdg_popup::Event::PopupDone = event {
+                say("popup-done");
+                state.popup_done = true;
+            }
+        }
+    }
     impl Dispatch<xdg_toplevel::XdgToplevel, ()> for State {
         fn event(
             state: &mut Self,
@@ -211,6 +239,7 @@ mod client {
             {
                 say(&format!("button {button}"));
                 state.show = Some(Look::Click);
+                state.want_popup = true;
             }
         }
     }
@@ -219,6 +248,7 @@ mod client {
         colour: u32,
         key_colour: Option<u32>,
         click_colour: Option<u32>,
+        popup_colour: Option<u32>,
         width: u32,
         height: u32,
     }
@@ -235,6 +265,7 @@ mod client {
         let colour = hex(flag("--colour").unwrap_or_else(|| "00a0ff".into()))?;
         let key_colour = flag("--key-colour").map(hex).transpose()?;
         let click_colour = flag("--click-colour").map(hex).transpose()?;
+        let popup_colour = flag("--popup-colour").map(hex).transpose()?;
         let size = flag("--size").unwrap_or_else(|| "320x200".into());
         let (w, h) = size
             .split_once('x')
@@ -244,6 +275,7 @@ mod client {
             colour,
             key_colour,
             click_colour,
+            popup_colour,
             width: w,
             height: h,
         })
@@ -254,6 +286,7 @@ mod client {
             colour,
             key_colour,
             click_colour,
+            popup_colour,
             width,
             height,
         } = args()?;
@@ -321,6 +354,26 @@ mod client {
         };
         show(&buffers[0]);
 
+        // The popup's buffer, if it has one: its own pool, its own size.
+        let popup_buffer = match popup_colour {
+            Some(c) => {
+                let (_, _, pw, ph) = POPUP;
+                let mut file = tempfile()?;
+                let pixel = (0xff00_0000 | c).to_le_bytes();
+                let data: Vec<u8> = (0..pw * ph).flat_map(|_| pixel).collect();
+                file.write_all(&data)
+                    .map_err(|e| format!("filling the popup: {e}"))?;
+                let pool = shm.create_pool(file.as_fd(), data.len() as i32, &qh, ());
+                Some(pool.create_buffer(0, pw, ph, pw * 4, wl_shm::Format::Argb8888, &qh, ()))
+            }
+            None => None,
+        };
+        let mut popup: Option<(
+            wl_surface::WlSurface,
+            xdg_surface::XdgSurface,
+            xdg_popup::XdgPopup,
+        )> = None;
+
         // Stay until asked to close, or until the compositor goes away.
         while !state.closed {
             if queue.blocking_dispatch(&mut state).is_err() {
@@ -330,6 +383,39 @@ mod client {
                 Some(Look::Key) if key_colour.is_some() => show(&buffers[1]),
                 Some(Look::Click) if click_colour.is_some() => show(&buffers[2]),
                 _ => {}
+            }
+            if state.popup_done {
+                state.popup_done = false;
+                if let Some((s, x, p)) = popup.take() {
+                    p.destroy();
+                    x.destroy();
+                    s.destroy();
+                }
+            }
+            if std::mem::take(&mut state.want_popup)
+                && popup.is_none()
+                && let Some(buffer) = &popup_buffer
+            {
+                let (px, py, pw, ph) = POPUP;
+                let positioner = wm_base.create_positioner(&qh, ());
+                positioner.set_size(pw, ph);
+                positioner.set_anchor_rect(px, py, 1, 1);
+                positioner.set_anchor(xdg_positioner::Anchor::TopLeft);
+                positioner.set_gravity(xdg_positioner::Gravity::BottomRight);
+                let psurface = compositor.create_surface(&qh, ());
+                let pxdg = wm_base.get_xdg_surface(&psurface, &qh, ());
+                let ppopup = pxdg.get_popup(Some(&xdg), &positioner, &qh, ());
+                positioner.destroy();
+                psurface.commit();
+                // Its configure arrives (and is acked by the xdg_surface handler); then draw.
+                queue
+                    .roundtrip(&mut state)
+                    .map_err(|e| format!("opening the popup: {e}"))?;
+                psurface.attach(Some(buffer), 0, 0);
+                psurface.damage_buffer(0, 0, pw, ph);
+                psurface.commit();
+                say("popup-shown");
+                popup = Some((psurface, pxdg, ppopup));
             }
         }
         toplevel.destroy();

@@ -20,6 +20,9 @@
 //! the pixman renderer cannot import dmabufs, and without it clients draw into `wl_shm`
 //! buffers, which it shows. Windows are placed by their window geometry, not their surface
 //! (a toolkit's shadow is inside the surface), and asked to fit the screen ([`wm::fit`]).
+//! Popups (menus, dropdowns) are placed by their positioner, kept on the screen, drawn on top
+//! and given the pointer first; a click outside them closes them. Every visible surface is
+//! told when its frame was shown (frame callbacks), or clients stop drawing (AGENTS.md H17).
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -106,6 +109,9 @@ struct App {
     /// visible part starts inside its surface (its window geometry; see `refresh`).
     ids: Vec<(WlSurface, u32)>,
     offsets: Vec<(u32, (i32, i32))>,
+    /// Open popups (menus, dropdowns, tooltips), oldest first, each with its place relative
+    /// to its parent's window geometry. A popup's parent is a window or another popup.
+    popups: Vec<(PopupSurface, Rectangle<i32, Logical>)>,
     /// The size each window was last asked to take, so a window is asked once, not on every
     /// turn while it gets round to it.
     asked: Vec<(u32, (i32, i32))>,
@@ -162,14 +168,36 @@ impl XdgShellHandler for App {
         surface.send_configure();
     }
 
-    fn new_popup(&mut self, _surface: PopupSurface, _positioner: PositionerState) {}
+    // POPUPS (menus, dropdowns, tooltips). A popup is placed by its positioner relative to its
+    // parent's window geometry, kept on the screen, drawn above everything, and given the
+    // pointer before any window. A click outside every popup closes them all, as every
+    // desktop does; that is the whole of what `grab` asks for here (E4).
+    fn new_popup(&mut self, surface: PopupSurface, positioner: PositionerState) {
+        let geometry = self.place_popup(&surface, positioner);
+        surface.with_pending_state(|state| state.geometry = geometry);
+        // A popup may not draw before its first configure.
+        let _ = surface.send_configure();
+        self.popups.push((surface, geometry));
+    }
     fn grab(&mut self, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {}
     fn reposition_request(
         &mut self,
-        _surface: PopupSurface,
-        _positioner: PositionerState,
-        _token: u32,
+        surface: PopupSurface,
+        positioner: PositionerState,
+        token: u32,
     ) {
+        let geometry = self.place_popup(&surface, positioner);
+        surface.with_pending_state(|state| {
+            state.geometry = geometry;
+            state.positioner = positioner;
+        });
+        surface.send_repositioned(token);
+        if let Some(entry) = self.popups.iter_mut().find(|(p, _)| *p == surface) {
+            entry.1 = geometry;
+        }
+    }
+    fn popup_destroyed(&mut self, surface: PopupSurface) {
+        self.popups.retain(|(p, _)| *p != surface);
     }
 }
 
@@ -282,7 +310,78 @@ impl App {
             .retain(|(i, _)| current.iter().any(|w| w.id == *i));
         self.asked
             .retain(|(i, _)| current.iter().any(|w| w.id == *i));
+        self.popups.retain(|(p, _)| p.alive());
         self.wm.sync(&current);
+    }
+
+    /// Where a surface's window geometry starts on the screen: a window's is where the window
+    /// manager placed it; a popup's is its parent's plus the popup's place in it.
+    fn window_origin(&self, surface: &WlSurface) -> Option<(i32, i32)> {
+        if let Some((_, id)) = self.ids.iter().find(|(s, _)| s == surface) {
+            let placed = self.wm.layout().into_iter().find(|p| p.id == *id)?;
+            return Some((placed.x, placed.y));
+        }
+        let (popup, geometry) = self
+            .popups
+            .iter()
+            .find(|(p, _)| p.wl_surface() == surface)?;
+        let parent = popup.get_parent_surface()?;
+        let (px, py) = self.window_origin(&parent)?;
+        Some((px + geometry.loc.x, py + geometry.loc.y))
+    }
+
+    /// Where a popup goes, inside its parent, kept on the screen where it can be.
+    fn place_popup(
+        &self,
+        surface: &PopupSurface,
+        positioner: PositionerState,
+    ) -> Rectangle<i32, Logical> {
+        match surface
+            .get_parent_surface()
+            .and_then(|p| self.window_origin(&p))
+        {
+            // The screen, in the parent's window-geometry coordinates.
+            Some((px, py)) => positioner
+                .get_unconstrained_geometry(Rectangle::new((-px, -py).into(), self.screen.into())),
+            None => positioner.get_geometry(),
+        }
+    }
+
+    /// Where a surface is drawn: its window geometry's origin, less where that geometry
+    /// starts inside the surface (a toolkit's shadow).
+    fn draw_origin(&self, surface: &WlSurface) -> Option<(i32, i32)> {
+        let (x, y) = self.window_origin(surface)?;
+        let (dx, dy) = with_states(surface, |states| {
+            states
+                .cached_state
+                .get::<SurfaceCachedState>()
+                .current()
+                .geometry
+        })
+        .map_or((0, 0), |g| (g.loc.x, g.loc.y));
+        Some((x - dx, y - dy))
+    }
+
+    /// The open popup under a point, topmost first, with where its surface is drawn.
+    fn popup_at(&self, x: i32, y: i32) -> Option<(WlSurface, (i32, i32))> {
+        self.popups.iter().rev().find_map(|(popup, geometry)| {
+            let surface = popup.wl_surface();
+            let (ox, oy) = self.window_origin(surface)?;
+            let inside = x >= ox && y >= oy && x < ox + geometry.size.w && y < oy + geometry.size.h;
+            inside.then(|| {
+                (
+                    surface.clone(),
+                    self.draw_origin(surface).unwrap_or((ox, oy)),
+                )
+            })
+        })
+    }
+
+    /// Close every open popup, newest first (a click landed outside them).
+    fn dismiss_popups(&mut self) {
+        for (popup, _) in self.popups.drain(..).rev() {
+            popup.send_popup_done();
+        }
     }
 
     /// Where a placed window's surface goes: up and left of its window geometry by the
@@ -367,10 +466,19 @@ impl Server {
     /// surface of every window on the screen, subsurfaces included.
     fn send_frames(&mut self) {
         let time = self.started.elapsed().as_millis() as u32;
-        for id in self.state.wm.layout().iter().map(|p| p.id) {
-            let Some(surface) = self.state.surface(id) else {
-                continue;
-            };
+        let windows = self
+            .state
+            .wm
+            .layout()
+            .iter()
+            .filter_map(|p| self.state.surface(p.id))
+            .collect::<Vec<_>>();
+        let popups = self
+            .state
+            .popups
+            .iter()
+            .map(|(p, _)| p.wl_surface().clone());
+        for surface in windows.into_iter().chain(popups) {
             with_surface_tree_downward(
                 &surface,
                 (),
@@ -430,11 +538,17 @@ impl Server {
         let y = y.clamp(0.0, f64::from(self.height) - 1.0);
         self.pointer_at = (x, y).into();
         self.pointer_moved = true;
-        let focus = self.state.wm.hit(x as i32, y as i32).and_then(|id| {
-            let placed = self.state.wm.layout().into_iter().find(|p| p.id == id)?;
-            let surface = self.state.surface(id)?;
-            let (x, y) = self.state.surface_origin(&placed);
-            Some((surface, Point::from((f64::from(x), f64::from(y)))))
+        let on_popup = self
+            .state
+            .popup_at(x as i32, y as i32)
+            .map(|(surface, (px, py))| (surface, Point::from((f64::from(px), f64::from(py)))));
+        let focus = on_popup.or_else(|| {
+            self.state.wm.hit(x as i32, y as i32).and_then(|id| {
+                let placed = self.state.wm.layout().into_iter().find(|p| p.id == id)?;
+                let surface = self.state.surface(id)?;
+                let (x, y) = self.state.surface_origin(&placed);
+                Some((surface, Point::from((f64::from(x), f64::from(y)))))
+            })
         });
         let serial = SERIAL_COUNTER.next_serial();
         self.pointer.motion(
@@ -461,8 +575,14 @@ impl Server {
     pub fn pointer_button(&mut self, button: u32, pressed: bool, time: u32) {
         if pressed {
             let at = self.pointer_at;
-            self.state.wm.click(at.x as i32, at.y as i32);
-            self.apply_focus();
+            if self.state.popup_at(at.x as i32, at.y as i32).is_none() {
+                // Outside every popup: they close, and the click does what it would have.
+                self.state.dismiss_popups();
+                self.state.wm.click(at.x as i32, at.y as i32);
+                self.apply_focus();
+                // The pointer may now be over what was under a popup.
+                self.pointer_to(at.x, at.y, time);
+            }
         }
         let serial = SERIAL_COUNTER.next_serial();
         let state = if pressed {
@@ -649,6 +769,7 @@ impl Server {
             wm: Manager::default(),
             ids: Vec::new(),
             offsets: Vec::new(),
+            popups: Vec::new(),
             asked: Vec::new(),
             screen: (width as i32, height as i32),
             next_id: 0,
@@ -761,6 +882,20 @@ fn render(
 
     let layout = state.wm.layout();
     let mut elements: Vec<WaylandSurfaceRenderElement<PixmanRenderer>> = Vec::new();
+    // The first element is drawn on top: the newest popup first, then the windows.
+    for (popup, _) in state.popups.iter().rev() {
+        let surface = popup.wl_surface();
+        if let Some(origin) = state.draw_origin(surface) {
+            elements.extend(render_elements_from_surface_tree(
+                &mut renderer,
+                surface,
+                origin,
+                1.0,
+                1.0,
+                Kind::Unspecified,
+            ));
+        }
+    }
     // The first element in the list is drawn on top, so the last-opened window goes first.
     for placed in layout.iter().rev() {
         if let Some(surface) = state.surface(placed.id) {

@@ -202,3 +202,7 @@ One line per piece of work: date, who, what, what's next.
   answered frame callbacks, so every client froze on its first frame (H17); Firefox's
   first-run Terms of Use dialog dimmed the page (`SkipTermsOfUse`, test image only: Rob's
   call for `plain`). E4 still needs popups (menus) and `plain` booting into the shell.
+- 2026-10-13 · Claude Code · Popups (`feat/e4-popups`, stacked on #47): menus and dropdowns are
+  placed by their positioner relative to their parent, kept on screen, drawn on top, take
+  clicks first, and close on a click outside (`tests/popups.rs`, with a real client's popup;
+  both sabotages caught). E4 still needs `plain` booting into the shell.
