@@ -70,27 +70,18 @@ From a DSH shell in PowerShell, run any of them as
 
 ## Open pull requests at handover
 
-They are **stacked**: each one's base is the one before it, so each diff shows only its own
-work. Rob merges them **in this order**; when one merges, GitHub retargets the next to `main`.
-Never merge one out of order, and never rebase someone else's branch.
+#42 to #46 (E3, E10, the handover plan, S10, E12) were merged on 2026-10-13, as merge commits
+so the stack merged without conflicts. Open:
 
 | # | Branch | What |
 |---|---|---|
-| #42 | `feat/e3-shell-on-screen` | E3: the shell on a real display |
-| #43 | `feat/e10-real-input` | E10: keyboard, mouse, the root console on VT2 |
-| #44 | `plan/handover-hardware-first` | this file, E12, E6 brought forward, S10, hazards H13–H16 |
-| #45 | `feat/s10-wsl2-bar` | the bar on Windows: `setup-linux.sh`, `test-images.sh`, `check.sh` refuses off Linux |
-| #46 | `feat/e12-hardware-report` | a hardware report from every boot, and laptop firmware in the image |
+| (E4) | `feat/e4-browser` | the browser: GTK fixes (merged here) and Firefox from Mozilla's repository; its VM test has only run in CI |
 
-If CI goes red on one of them after the handover, it is yours to fix, on that branch.
-
-**After each merge, the next PR may show a conflict.** This repository squash-merges, so
-`main` gets the merged PR's changes as one new commit, and the next branch still carries the
-originals; where both touched the same lines (HANDOFF.md's tables and session log, every
-time) git cannot tell they agree. The fix is mechanical: on the next branch,
-`git fetch origin && git merge origin/main`, keep **both** sides' lines (they are the same
-lines plus the newer PR's additions), run `bash scripts/check.sh`, and push. Never rebase or
-force-push a branch that has a pull request open.
+If CI goes red on it, it is yours to fix, on that branch. **When a pull request's base is
+another open branch** (a stack), and the base merges: if it was squash-merged, the next branch
+may conflict where both touched the same lines; `git fetch origin && git merge origin/main`,
+keep both sides' lines, run `bash scripts/check.sh`, and push. Never rebase or force-push a
+branch that has a pull request open.
 
 ## How to work (every task, every time)
 
