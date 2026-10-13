@@ -14,6 +14,7 @@
       "FeatureRecommendations": false,
       "MoreFromMozilla": false,
       "SkipOnboarding": true
-    }
+    },
+    "SkipTermsOfUse": true
   }
 }
