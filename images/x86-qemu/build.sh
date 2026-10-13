@@ -85,10 +85,12 @@ fi
 # (1:...) that outranks Mozilla's version, so apt is pinned to prefer packages.mozilla.org.
 # The signing key is fetched at build time and MUST have the fingerprint Mozilla publishes:
 # a key that does not match stops the build rather than trusting whatever was served.
-# The key goes in the image's trusted.gpg.d (mmdebstrap's documented way): mmdebstrap runs apt
-# from the build machine, where a `signed-by=` path names the BUILD machine's file, not the
-# image's ("NO_PUBKEY", found in CI). The image never runs apt again (its root is read-only
-# and replaced whole by updates), so the wider trust has nothing to apply to.
+# ⚠️ WHERE APT LOOKS FOR THE KEY. mmdebstrap runs apt from the BUILD machine, so a `signed-by=`
+# path is read there, not in the image; and a source line WITHOUT one gets a `signed-by` that
+# mmdebstrap picks itself (the Ubuntu keyring), so a key dropped into the image's
+# trusted.gpg.d is never consulted. Both failed in CI with NO_PUBKEY. So the line names the key
+# at its build-machine path, and a customize hook copies the key into the image and points
+# the image's own sources.list at that copy.
 MOZILLA_KEY_URL=https://packages.mozilla.org/apt/repo-signing-key.gpg
 MOZILLA_FPR=35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3
 BROWSER_PKGS="$BASE_PKGS,firefox,fonts-dejavu-core"
@@ -103,15 +105,17 @@ if [ "$SCENARIO" = browser ]; then
             echo "Mozilla's signing key has fingerprint '$fpr', not $MOZILLA_FPR: refusing it" >&2
             exit 1
         fi
+        keyring="$WORK/packages.mozilla.org.gpg"
+        gpg --dearmor < "$key" > "$keyring"
         mmdebstrap --variant=apt \
             --include="$BROWSER_PKGS" \
             --aptopt='APT::Install-Recommends "false"' \
-            --setup-hook="mkdir -p \"\$1/etc/apt/trusted.gpg.d\" && cp '$key' \"\$1/etc/apt/trusted.gpg.d/packages.mozilla.org.asc\"" \
+            --customize-hook="mkdir -p \"\$1/etc/apt/keyrings\" && cp '$keyring' \"\$1/etc/apt/keyrings/packages.mozilla.org.gpg\" && sed -i 's|signed-by=$keyring|signed-by=/etc/apt/keyrings/packages.mozilla.org.gpg|' \"\$1/etc/apt/sources.list\"" \
             --setup-hook='mkdir -p "$1/etc/apt/preferences.d" && printf "Package: *\nPin: origin packages.mozilla.org\nPin-Priority: 1000\n" > "$1/etc/apt/preferences.d/mozilla"' \
             "$SUITE" "$BROWSER_BASE" \
             "deb $MIRROR $SUITE main universe" \
             "deb $MIRROR $SUITE-updates main universe" \
-            "deb https://packages.mozilla.org/apt mozilla main"
+            "deb [signed-by=$keyring] https://packages.mozilla.org/apt mozilla main"
         # Say which Firefox went in, and prove it is Mozilla's and not the snap stub.
         version=$(chroot "$BROWSER_BASE" dpkg-query -W -f='${Version}' firefox)
         [ -x "$BROWSER_BASE/usr/lib/firefox/firefox" ] || {
