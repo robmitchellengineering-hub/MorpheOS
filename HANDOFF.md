@@ -98,3 +98,5 @@ One line per piece of work: date, who, what, what's next.
   command). Next: E1.
 - 2026-10-13 · Claude Code · Doc 20 (the build plan: north star, settled architecture, M1–M5
   tasks) and `verify-plan.mjs` (format and branch guard in CI). Next: E2.
+- 2026-10-13 · Claude Code · E1 done (#38): `flow-compositor` hosts real Wayland clients,
+  headless, proven by pixels. Doc 20 merged (#39). Next: E2, then E3.
