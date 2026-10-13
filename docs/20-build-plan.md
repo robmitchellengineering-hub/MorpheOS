@@ -192,7 +192,8 @@ than only what is missing.
 and finds the VM's own facts in it (its virtio display connector, its virtio disk, its
 keyboard), and HARDWARE.md says how to send a report back.
 
-**Evidence:** `images/x86-qemu/test-boot.sh` (the `plain` boot reads
+**Evidence:** https://github.com/robmitchellengineering-hub/MorpheOS/pull/46 and
+`images/x86-qemu/test-boot.sh` (the `plain` boot reads
 `morpheos-report/001-…-a/` off the disk: a QEMU machine, a connected screen, the virtio disk
 with its driver, named devices, the PS/2 keyboard) and `scripts/verify-hwreport.sh` (the
 missing-firmware section names what a kernel log says is missing, and says none on a clean
@@ -274,7 +275,8 @@ partial run, and says why; the setup script, run on a fresh Ubuntu 24.04, leaves
 on which `scripts/check.sh` and `images/x86-qemu/test-shell.sh` both pass (shown in CI by
 running it in the `ubuntu-24.04` runner).
 
-**Evidence:** `scripts/setup-linux.sh`, which CI's `rust` and `images` jobs now install
+**Evidence:** https://github.com/robmitchellengineering-hub/MorpheOS/pull/45 and
+`scripts/setup-linux.sh`, which CI's `rust` and `images` jobs now install
 through (so every pull request runs it on a fresh Ubuntu 24.04 runner, and the `images` job
 then passes `test-shell.sh`); `scripts/test-images.sh`; and the `ci` step "Prove check.sh
 refuses a partial bar off Linux".
