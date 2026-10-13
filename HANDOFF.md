@@ -1,7 +1,9 @@
 # HANDOFF
 
-From **2026-10-16** this repository is built by a DeepSeek agent on Rob's Mac. Until then it was
-built by Claude Code. This file is how the work continues without anyone who was here before.
+From **2026-10-16** this repository is built by a DeepSeek agent (DSH) on Rob's **Windows
+laptop at home** (host `win` in the harness-mesh repository's `MACHINES.md`), working inside
+**WSL2 Ubuntu 24.04**. Until then it was built by Claude Code. This file is how the work
+continues without anyone who was here before.
 
 **Read in this order:** [AGENTS.md](AGENTS.md) (the rules, and the hazards: mistakes already
 made here), this file, [doc 00](docs/00-strategy.md) (what wins arguments), then
@@ -34,6 +36,37 @@ the widening backlog (ADR 0014, lane 2) and waits.
 it has run on real hardware. Say "builds" or "VM-proven", never "works", until a person has
 run it on a machine (AGENTS.md, verification bar).
 
+## Your machine: Windows, and Linux inside it
+
+Everything left in M1 is Linux work: the compositor, the images, the VM tests. On Windows
+(or a Mac) `cargo test` compiles the compositor's tests **to nothing** and still says it
+passed (AGENTS.md H16). So the work happens in WSL2:
+
+```powershell
+wsl --install -d Ubuntu-24.04        # once, from an administrator PowerShell; then reboot
+wsl -d Ubuntu-24.04                  # a Linux shell; clone the repository INSIDE it (~/),
+                                     # not under /mnt/c, which is slow and breaks permissions
+```
+
+Inside it, doc 20's **S10** sets up the rest: one script installs what CI installs, and
+`scripts/check.sh` refuses to call a partial bar a pass. If S10 is not merged yet when you
+start, it is the first thing to finish. From a DSH shell in PowerShell, run a Linux command
+as `wsl -d Ubuntu-24.04 -- bash -lc "cd ~/MorpheOS && bash scripts/check.sh"`.
+
+## Open pull requests at handover
+
+They are **stacked**: each one's base is the one before it, so each diff shows only its own
+work. Rob merges them **in this order**; when one merges, GitHub retargets the next to `main`.
+Never merge one out of order, and never rebase someone else's branch.
+
+| # | Branch | What |
+|---|---|---|
+| #42 | `feat/e3-shell-on-screen` | E3: the shell on a real display |
+| #43 | `feat/e10-real-input` | E10: keyboard, mouse, the root console on VT2 |
+| (plan) | `plan/handover-hardware-first` | this file, E12, E6 brought forward, S10, hazards H13–H16 |
+
+If CI goes red on one of them after the handover, it is yours to fix, on that branch.
+
 ## How to work (every task, every time)
 
 1. `git fetch origin && git switch -c <type>/<slug> origin/main`. Never commit to `main`.
@@ -63,6 +96,14 @@ until Rob opens it.
 **When stuck for more than two attempts:** stop. Write what you tried and what you saw under
 **Open questions** below, push it, and ask Rob. A clear question beats a third guess.
 
+## Decisions waiting for Rob now
+
+- **The reference laptop.** Candidates: the Windows laptop at home, the Legion Go, the 2015
+  Mac at work. The E12 report from one boot on each decides it (E6).
+- **`plain` boots into the shell at E4, not E10.** Until the browser lands, the root console
+  serves a person on the laptop better than an empty shell (doc 20, E10's notes).
+- **The shell runs as root until E11**, which needs the account model (S5).
+
 ## Decisions that are Rob's, not yours
 
 Write the question up (options and a recommendation) and wait:
@@ -85,7 +126,9 @@ Write the question up (options and a recommendation) and wait:
 names no open task. Use `fix/…` for bugs in built things and `plan/…` for plan changes.
 
 **Current milestone: M1, the express road.** Take the lowest-numbered open task whose
-`needs` are done.
+`needs` are done, with two exceptions for the first days: finish **S10** first if it is not
+merged (without it you cannot run the bar), and **E12** before E4 if it is not merged (Rob
+needs the stick for E6).
 
 ## Open questions
 
@@ -115,3 +158,8 @@ One line per piece of work: date, who, what, what's next.
   owns VT1; the script and real devices share one set of input handlers. Found: libinput's
   startup devices waited for the first keypress; losing DRM master on Ctrl+Alt+F2 killed the
   shell. `plain` keeps its console until E4 (Rob to confirm). Next: the handover (plan PR).
+- 2026-10-13 · Claude Code · Handover review with Rob: the builder works on the Windows laptop
+  in WSL2, not a Mac, and off Linux the bar silently skipped the compositor (H16, S10). Real
+  hardware brought forward: E12 (a report from every boot, plus laptop firmware), then E6 on
+  three candidate machines. Proposed E13 (the screen a person is looking at). Hazards
+  H13–H15 from E3/E10. Next: S10, E12.

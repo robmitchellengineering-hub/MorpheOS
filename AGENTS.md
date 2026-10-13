@@ -55,11 +55,13 @@ for f in manifest/examples/*.toml; do cargo run -q -p morph-manifest -- validate
 
 That is what CI runs. It is not the whole bar:
 
-- **On a non-Linux machine, `cargo test --all` runs everything except the three
-  `strata` watcher tests, which report as `ignored`.** That is expected, not a
-  failure — the watcher is inotify. Linux (CI, and the deployment targets) runs all
-  of them. **If the ignored count ever grows, that is the thing to look at**: a
-  silently skipped test reads exactly like a passing one. See H9.
+- **The bar is run on Linux.** On macOS or Windows, `cargo test --all` skips the three
+  `strata` watcher tests (they report as `ignored`) and **compiles every
+  `flow-compositor` test to nothing** (`#![cfg(target_os = "linux")]`, so they do not
+  even appear as ignored). Most of M1 is compositor and image work, so off Linux the
+  bar proves nearly nothing about it. On Windows, run it in WSL2 Ubuntu 24.04 (doc 20,
+  S10). **If the ignored count ever grows, that is the thing to look at**: a silently
+  skipped test reads exactly like a passing one. See H9 and H16.
 - **Anything touching `images/`, `morph-boot`, `morph-update` or `strata` is additionally
   proven by the `images` workflow** (it runs on every pull request, H10) — the x86 job
   builds a disk image and boots it in QEMU through **good, unhealthy, crashing and
@@ -208,6 +210,40 @@ would not use.
 a max, a `next_number()` the owner exposes), never from the position of a pointer into it. Caught
 here by the tests written in the same change, which is the only reason it is a rule and not an
 incident: **if a store can roll back, `current + 1` is a different value from "the next one".**
+
+**H13 — the thing under test beat the thing the verdict reads.** `test-shell.sh` took its
+screenshot when the window appeared, then stopped the VM and read the boot history. Locally
+(TCG, slow) the health check had always written the history by then; in CI (KVM, fast) the
+window came first, the history did not exist yet, and the read under `set -euo pipefail` ended
+the run with exit 1 and **no message**. It looked like a flake and was a race.
+**Rule:** before reading a verdict, wait for the event that WRITES it (here, the
+`morph-boot-check: decision` line), and guard every read on a failure path so that a missing
+file is a reported FAIL, not a silent exit (H11). A test that only passes on a slow machine is
+measuring the machine.
+
+**H14 — an event source that never wakes.** The compositor found the keyboard and mouse at
+startup, and announced them only after the first keypress, 540 seconds later. libinput queues
+the devices it finds when the seat is assigned **without making its fd readable**, and the
+event loop only drains libinput when the fd is readable. Nothing failed; the input simply
+waited for a person to touch it. It was found because the VM test **waits for the devices to
+be announced** before it sends any input.
+**Rule:** after setting up a poll-driven source, drain it once by hand. And make a test wait
+for the "ready" signal it needs instead of sleeping past it: a sleep would have hidden this.
+
+**H15 — losing a shared resource is not a failure.** Ctrl+Alt+F2 made seatd take DRM master
+back while a frame was in flight; the flush failed with `EACCES`, the compositor treated every
+error as fatal, and **the shell exited**, so Ctrl+Alt+F1 had nothing to come back to.
+**Rule:** anything the seat lends (the display, input devices) can be taken back at any
+moment. An error from it while the session is paused, or about to be, means "not ours right
+now". Only a test that switches away and **comes back** finds this; switching away alone
+passed.
+
+**H16 — a green bar on the wrong operating system.** `scripts/check.sh` passed on a Mac
+while running none of the compositor's tests: they are `#![cfg(target_os = "linux")]`, so on
+macOS they compile to an empty test binary that reports `0 passed` and nothing ignored. H9
+had already shown this shape with three tests; with the compositor it is most of M1.
+**Rule:** the bar is run on Linux, and `check.sh` says so instead of passing quietly elsewhere
+(doc 20, S10). On Windows, that is WSL2.
 
 ## Writing code here
 
