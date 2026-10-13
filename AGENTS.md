@@ -2,6 +2,10 @@
 
 Operating rules for this repository. Read before changing anything.
 
+**What to work on next, and how, is in [HANDOFF.md](HANDOFF.md).** It holds the current
+state, the ordered task list with a machine-checked "Done when" for each task, and the
+session log. Update it in the same pull request as the work.
+
 **Read `docs/00-strategy.md` first.** It holds the strategic decisions, and it says
 of itself: *"Where another doc disagrees with this one, this one wins."* The docs
 describe an intended system; the code implements a small part of it. Both are
