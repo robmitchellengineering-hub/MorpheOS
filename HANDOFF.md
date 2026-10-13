@@ -80,7 +80,7 @@ Never merge one out of order, and never rebase someone else's branch.
 | #43 | `feat/e10-real-input` | E10: keyboard, mouse, the root console on VT2 |
 | #44 | `plan/handover-hardware-first` | this file, E12, E6 brought forward, S10, hazards H13–H16 |
 | #45 | `feat/s10-wsl2-bar` | the bar on Windows: `setup-linux.sh`, `test-images.sh`, `check.sh` refuses off Linux |
-| (E12) | `feat/e12-hardware-report` | a hardware report from every boot, and laptop firmware in the image |
+| #46 | `feat/e12-hardware-report` | a hardware report from every boot, and laptop firmware in the image |
 
 If CI goes red on one of them after the handover, it is yours to fix, on that branch.
 
