@@ -152,6 +152,24 @@ more protocols than E1 serves: `linux-dmabuf` (or it falls back to shm), `xdg-de
 and log which ones Firefox actually binds (`WAYLAND_DEBUG=1`). Fonts, a D-Bus session and a
 writable home on `/persist`. Raise `ROOT_MB` deliberately and record the new size.
 
+How to approach it (written at handover, from what E1–E10 taught):
+1. **Protocols first, headless, in `cargo test`.** Each one is a Smithay `delegate_*!` plus
+   its state in `App`. `wl_output` is the one GTK cannot start without: add one `Output`
+   with the screen's size. **Do not advertise `linux-dmabuf`:** the pixman renderer cannot
+   import dmabufs, and without it Firefox draws into `wl_shm` buffers in software (WebRender's
+   software backend), which is exactly what this renderer shows. Popups (`xdg_popup`) must be
+   drawn at their positioner's place, or menus and dropdowns are invisible; today
+   `new_popup` ignores them.
+2. **A real toolkit client before Firefox.** Add a test that runs a small GTK or terminal
+   client (`foot` is Wayland-only and small) against the headless compositor and asserts its
+   window in the frame. If that fails, Firefox will too, and the GTK one is faster to debug.
+3. **Then Firefox in the `shell` image.** Mozilla's APT repo, pinned, its signing key checked
+   in. The VM needs more memory for it (`-m 2048` for that scenario). It runs as root until
+   E11; if it refuses to, record it under **Open questions** in HANDOFF.md and ask Rob rather
+   than reaching for `--no-sandbox`-style switches, which change the security model.
+4. The verdict is a screendump of a `file://` page of large blocks of known colours, read the
+   way `test-shell.sh` reads the demo window.
+
 ### E5 · Networking · open · needs E3
 
 **What:** NetworkManager (A6) in the image, wired and Wi-Fi, and a minimal Wi-Fi picker in
@@ -160,14 +178,40 @@ the shell (list networks, enter a password) over NetworkManager's D-Bus API.
 **Done when:** in QEMU (user networking), the image gets an address and Firefox loads a page
 served by the CI host. Wi-Fi is proven in E6.
 
-### E6 · First boot on the reference laptop · open · needs E4
+### E12 · A hardware report from every boot · open
 
-**What:** Rob boots the USB image ([HARDWARE.md](../images/x86-qemu/HARDWARE.md)). The
-reference laptop is Rob's choice. Prefer Intel Wi-Fi and Intel graphics, which have the
-fewest firmware surprises on Linux.
+**What:** the `plain` and `shell` images write a report of the machine they booted on to the
+USB stick's FAT partition, which a Mac or Windows PC reads natively: the screens (connectors,
+connected or not, modes), the graphics, Wi-Fi and input devices, the kernel driver bound to
+each PCI device, every **firmware file the kernel asked for and did not find**, and
+`lspci`/`lsusb`. The images also carry the laptop firmware sets (AMD, Intel and MediaTek
+graphics and Wi-Fi, Realtek, Broadcom, Intel audio), so a first boot shows what works rather
+than only what is missing.
 
-**Done when:** `docs/hardware/<machine>.md` records what worked (display, keyboard, touchpad,
-Wi-Fi, sound, suspend) with `lspci`/`lsusb`. Every failure becomes a task.
+**Done when:** the `plain` boot in the `images` workflow reads the report back off the disk
+and finds the VM's own facts in it (its virtio display connector, its virtio disk, its
+keyboard), and HARDWARE.md says how to send a report back.
+
+**Notes:** opened by Rob on 2026-10-13, to bring real hardware forward: the report is what
+makes one boot of a stick worth a whole debugging session. One folder per boot, so booting
+the same stick on several machines collects all of them.
+
+### E6 · First boot on real machines, and the reference laptop · open · needs E12
+
+**What:** Rob boots the `plain` stick ([HARDWARE.md](../images/x86-qemu/HARDWARE.md)) on each
+candidate machine, from harness-mesh's `MACHINES.md`: the Windows laptop at home (`win`), the
+Lenovo Legion Go (`win-2`: AMD graphics, MediaTek Wi-Fi, a portrait panel) and the 2015 Mac
+at work (Broadcom Wi-Fi). He sends back the report folders. The reference laptop is Rob's
+choice, made with those reports in hand. Intel Wi-Fi and Intel graphics have the fewest
+firmware surprises on Linux.
+
+**Done when:** `docs/hardware/<machine>.md` exists for each machine booted, written from its
+report (display, keyboard, touchpad, Wi-Fi, sound, firmware missing), and the reference
+laptop is recorded here. Every failure becomes a task.
+
+**Notes:** moved ahead of E4 on 2026-10-13 (Rob): the riskiest unknown is the hardware, and
+finding it while the browser is being built costs nothing. Suspend and sound wait for M3;
+note what the report shows of them.
 
 ### E7 · Install to the internal disk · open · needs E6
 
@@ -176,6 +220,17 @@ writes the system with `morph-update`'s verified write.
 
 **Done when:** a QEMU scenario boots from a second disk, installs to the first, and then boots
 the first alone to a committed slot. It refuses to touch the disk it booted from.
+
+### E13 · The shell on the screen a person is looking at · proposed · needs E12
+
+**What:** the compositor shows the shell on the first connected output only. On a laptop
+that is the internal panel, even when it is broken and an external screen is plugged in (the
+hardware image's own notes say a reference candidate has no working internal screen), and
+on the Legion Go the panel is natively portrait. Show the shell on every connected output
+(mirrored, each at its own preferred mode) and honour the kernel's `panel orientation`.
+
+**Done when:** a QEMU scenario with two virtio-gpu heads (`max_outputs=2`) takes a
+screendump of each (`screendump` takes `head`) and finds the shell on both.
 
 ### E9 · Move, fullscreen, and the switch shortcut, on real input · open · needs E3
 
@@ -199,6 +254,19 @@ Exit: N2 holds in full, and updates arrive and apply by themselves, safely.
 
 **Done when:** an ADR states that systemd is PID 1 for v1 and that `morphd` is a service,
 superseding doc 03's claim; doc 03 links it.
+
+### S10 · The whole bar on the builder's Windows laptop (WSL2) · open · parallel
+
+**What:** from 2026-10-16 the builder works on Rob's Windows laptop (`win` in harness-mesh).
+Every M1 task is Linux work, and off Linux the bar silently skips the compositor's tests
+(AGENTS.md H16). A setup script for WSL2 Ubuntu 24.04 (the image's own base) installs what
+CI installs; `scripts/check.sh` refuses to report a partial bar as passing off Linux; and one
+command runs the `images` VM suite locally, with KVM when WSL2 provides it.
+
+**Done when:** `scripts/check.sh` exits non-zero on a non-Linux machine unless told it is a
+partial run, and says why; the setup script, run on a fresh Ubuntu 24.04, leaves a machine
+on which `scripts/check.sh` and `images/x86-qemu/test-shell.sh` both pass (shown in CI by
+running it in the `ubuntu-24.04` runner).
 
 ### S9 · Pin the exact Rust version, locally and in CI · open · parallel
 
