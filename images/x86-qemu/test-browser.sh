@@ -8,6 +8,9 @@
 # SCREENSHOT (AGENTS.md H8), not a log line:
 #   * both of the page's colours cover a large area, so Firefox rendered the page;
 #   * the page lies inside the screen, a margin from its edges, so the window was made to fit;
+#   * then the page sends Firefox to the NETWORK (E5): the host serves a page of two other
+#     colours at 10.0.2.2:8123 (QEMU's user network), and both must cover a large area, so
+#     NetworkManager got an address and a route and HTTP worked;
 #   * the boot was healthy and committed with Firefox running.
 set -euo pipefail
 
@@ -22,8 +25,21 @@ log="$WORK/serial-browser.log"
 qmp="$WORK/qmp-browser.sock"
 rm -f "$log" "$qmp" "$WORK"/screen-browser*.ppm
 
+# The page on the network: served from this host, which QEMU's user network shows the VM as
+# 10.0.2.2 (it reaches this host's loopback).
+web="$WORK/web"
+mkdir -p "$web"
+cat > "$web/index.html" <<'HTML'
+<!doctype html><html><head><meta charset="utf-8"><title>MorpheOS network test</title>
+<style>html,body{margin:0;height:100%}.a{height:50%;background:#3264c8}.b{height:50%;background:#c8a01e}</style>
+</head><body><div class="a"></div><div class="b"></div></body></html>
+HTML
+python3 -m http.server 8123 --bind 127.0.0.1 --directory "$web" > "$WORK/web.log" 2>&1 &
+web_pid=$!
+trap 'kill $web_pid 2>/dev/null || true' EXIT
+
 start=$(date +%s)
-VM_GPU=1 VM_QMP="$qmp" VM_MEM=2048 "$HERE/run-vm.sh" "$disk" "$log" "${VM_TIMEOUT:-900}" &
+VM_GPU=1 VM_QMP="$qmp" VM_MEM=2048 VM_NET=1 "$HERE/run-vm.sh" "$disk" "$log" "${VM_TIMEOUT:-900}" &
 vm=$!
 
 # When to look: the compositor reports a window on screen (Firefox's). The pixels decide.
@@ -45,6 +61,7 @@ import json, socket, sys, time
 
 qmp_path, work = sys.argv[1], sys.argv[2]
 PAGE_A, PAGE_B = (0xc8, 0x1e, 0x78), (0x1e, 0xc8, 0x78)
+NET_A, NET_B = (0x32, 0x64, 0xc8), (0xc8, 0xa0, 0x1e)
 MARGIN = 16
 
 class Qmp:
@@ -116,6 +133,17 @@ if box_a and box_b:
     check(f"the page is inside the screen, a margin from its edges (page at {x0},{y0} to {x1},{y1})",
           x0 >= MARGIN and y0 >= MARGIN and x1 <= w - MARGIN - 1 and y1 <= h - MARGIN - 1)
     check("the first colour is above the second, as the page lays them out", box_a[3] < box_b[1] + 2)
+
+# E5: the local page sends Firefox to the network after 10 s. Look for the network page.
+end = time.time() + 90
+while True:
+    w, h, px = shot(q, f"{work}/screen-browser-net.ppm")
+    (nbox_a, nn_a), (nbox_b, nn_b) = region(w, px, NET_A), region(w, px, NET_B)
+    if (nn_a >= 20000 and nn_b >= 20000) or time.time() > end:
+        break
+    time.sleep(2)
+check(f"the network page's first colour covers a large area ({nn_a} px): Firefox reached 10.0.2.2", nn_a >= 20000)
+check(f"the network page's second colour covers a large area ({nn_b} px)", nn_b >= 20000)
 if not ok:
     # Say what WAS on the screen: the job log is often all there is to read.
     from collections import Counter
@@ -154,7 +182,11 @@ fi
 
 if [ $fail != 0 ]; then
     echo "    what the shell and Firefox said (serial console):"
-    grep -a -iE 'flow-compositor|flow-browser|firefox|gecko|crash|segfault' "$log" | grep -v 'libinput error' | tail -40 | sed 's/^/      /' || true
+    grep -a -iE 'flow-compositor|flow-browser|firefox|gecko|crash|segfault|NetworkManager|dhcp' "$log" | grep -v 'libinput error' | tail -40 | sed 's/^/      /' || true
+fi
+if [ $fail != 0 ]; then
+    echo "    what the host's web server saw (requests from the VM):"
+    sed 's/^/      /' "$WORK/web.log" | tail -5
 fi
 if [ $fail = 0 ]; then echo "    PASS"; else echo "    see $log and $WORK/screen-browser.ppm"; fi
 exit $fail

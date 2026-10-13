@@ -5,6 +5,10 @@
 <head>
 <meta charset="utf-8">
 <title>MorpheOS browser test</title>
+<!-- After the local page has been seen, go to the network (E5): the host serves a page of
+     two other colours at 10.0.2.2 (QEMU's user network). Seeing those proves an address,
+     a route and HTTP; still seeing these means the network never came up. -->
+<meta http-equiv="refresh" content="10;url=http://10.0.2.2:8123/">
 <style>
   html, body { margin: 0; height: 100%; }
   .a { height: 50%; background: #c81e78; }
