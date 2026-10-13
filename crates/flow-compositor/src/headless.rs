@@ -4,14 +4,15 @@
 //! picture of a desktop and starts hosting other programs' windows. It runs **headless with
 //! Smithay's pixman (software) renderer** because CI runners have no GPU, and because a frame
 //! a test can read back is the evidence this repository asks for (ADR 0010: "CI proves a
-//! frame, not a unit"). The bare-metal backend (DRM/KMS, libinput) is E3. It reuses
-//! everything here and swaps only where the frame goes.
+//! frame, not a unit"). The live service (`live.rs`: a real display, keyboard and mouse,
+//! E3 and E10) reuses everything here and swaps only where the frame goes and where input
+//! comes from.
 //!
 //! The flow: listen on a socket, accept clients, answer the protocols a window needs, and
 //! once `wait_for` toplevels have each committed a buffer, either write one frame, or run a
-//! **script** of input commands (`click X Y`, `cycle`, `close`, `frame PATH`, `settle MS`).
-//! The script drives the same window-management code real input will (`wm.rs`), so a test
-//! proves focus and close without a keyboard or a mouse.
+//! **script** of input commands (`click X Y`, `key C...`, `cycle`, `close`, `frame PATH`,
+//! `settle MS`). The script goes through the same input handlers real devices do, so a test
+//! proves focus, clicks, keys and close without a keyboard or a mouse.
 //!
 //! Protocols served: `wl_compositor`, `wl_subcompositor`, `wl_shm`, `xdg_wm_base`,
 //! `wl_seat` and `wl_data_device`. A browser needs more (`linux-dmabuf`, `xdg-decoration`,
@@ -22,6 +23,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use smithay::backend::allocator::Fourcc;
+use smithay::backend::input::{ButtonState, KeyState};
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::element::surface::{
     WaylandSurfaceRenderElement, render_elements_from_surface_tree,
@@ -31,13 +33,16 @@ use smithay::backend::renderer::utils::{
     draw_render_elements, on_commit_buffer_handler, with_renderer_surface_state,
 };
 use smithay::backend::renderer::{Bind, Color32F, ExportMem, Frame, Offscreen, Renderer};
-use smithay::input::keyboard::{KeyboardHandle, XkbConfig};
+use smithay::input::keyboard::{FilterResult, KeyboardHandle, Keycode, Keysym, XkbConfig};
+use smithay::input::pointer::{ButtonEvent, MotionEvent, PointerHandle};
 use smithay::input::{Seat, SeatHandler, SeatState};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
 use smithay::reexports::wayland_server::protocol::{wl_buffer, wl_seat, wl_surface::WlSurface};
 use smithay::reexports::wayland_server::{Client, Display, ListeningSocket};
-use smithay::utils::{Buffer, Physical, Rectangle, SERIAL_COUNTER, Serial, Size, Transform};
+use smithay::utils::{
+    Buffer, Logical, Physical, Point, Rectangle, SERIAL_COUNTER, Serial, Size, Transform,
+};
 use smithay::wayland::buffer::BufferHandler;
 use smithay::wayland::compositor::{CompositorClientState, CompositorHandler, CompositorState};
 use smithay::wayland::selection::SelectionHandler;
@@ -223,17 +228,33 @@ impl App {
     }
 }
 
+/// The pointer's size on screen, in pixels.
+pub const CURSOR: i32 = 12;
+
+/// The left mouse button's code (linux/input-event-codes.h `BTN_LEFT`).
+pub const BTN_LEFT: u32 = 0x110;
+
 /// Everything the event loop needs to keep clients moving.
-struct Server {
+pub struct Server {
     display: Display<App>,
     listener: ListeningSocket,
     state: App,
     keyboard: KeyboardHandle<App>,
+    pointer: PointerHandle<App>,
+    /// Where the pointer is on the screen, and whether anything has moved it yet.
+    pointer_at: Point<f64, Logical>,
+    pointer_moved: bool,
+    /// The window the keyboard was last given to, so focus follows the window manager
+    /// when a window goes away on its own.
+    keyboard_on: Option<u32>,
+    /// The screen's size, which the pointer stays inside.
+    width: u32,
+    height: u32,
 }
 
 impl Server {
     /// Accept, dispatch and flush once, and refresh the window list.
-    fn turn(&mut self) -> Result<(), String> {
+    pub fn turn(&mut self) -> Result<(), String> {
         if let Some(stream) = self.listener.accept().map_err(|e| format!("accept: {e}"))? {
             self.display
                 .handle()
@@ -247,7 +268,28 @@ impl Server {
             .flush_clients()
             .map_err(|e| format!("flushing: {e}"))?;
         self.state.refresh();
+        if self.state.wm.focused() != self.keyboard_on {
+            self.apply_focus();
+        }
         Ok(())
+    }
+
+    /// The screen's size.
+    pub fn size(&self) -> (u32, u32) {
+        (self.width, self.height)
+    }
+
+    /// How many windows are on the screen.
+    pub fn windows(&self) -> usize {
+        self.state.wm.layout().len()
+    }
+
+    /// Render the screen. `cursor` draws the pointer, once something has moved it: the
+    /// live display shows it, while the headless frames tests read leave it out.
+    pub fn render(&self, width: u32, height: u32, cursor: bool) -> Result<ShellFrame, String> {
+        let at = (cursor && self.pointer_moved)
+            .then_some((self.pointer_at.x as i32, self.pointer_at.y as i32));
+        render(&self.state, width, height, at)
     }
 
     /// Keep clients moving for a while, so they see what was just sent.
@@ -260,6 +302,104 @@ impl Server {
         Ok(())
     }
 
+    // INPUT. Real devices (live.rs, through libinput) and the script's commands come in
+    // through these three and nothing else, so a test of the script is a test of what a
+    // person's mouse and keyboard do (AGENTS.md H3).
+
+    /// Move the pointer to a point on the screen, kept inside it, and tell the window under
+    /// it where the pointer is in its own coordinates.
+    pub fn pointer_to(&mut self, x: f64, y: f64, time: u32) {
+        let x = x.clamp(0.0, f64::from(self.width) - 1.0);
+        let y = y.clamp(0.0, f64::from(self.height) - 1.0);
+        self.pointer_at = (x, y).into();
+        self.pointer_moved = true;
+        let focus = self.state.wm.hit(x as i32, y as i32).and_then(|id| {
+            let placed = self.state.wm.layout().into_iter().find(|p| p.id == id)?;
+            let surface = self.state.surface(id)?;
+            Some((
+                surface,
+                Point::from((f64::from(placed.x), f64::from(placed.y))),
+            ))
+        });
+        let serial = SERIAL_COUNTER.next_serial();
+        self.pointer.motion(
+            &mut self.state,
+            focus,
+            &MotionEvent {
+                location: self.pointer_at,
+                serial,
+                time,
+            },
+        );
+        self.pointer.frame(&mut self.state);
+    }
+
+    /// Move the pointer by an amount (a mouse, as opposed to a tablet or a touchpad
+    /// in absolute mode).
+    pub fn pointer_by(&mut self, dx: f64, dy: f64, time: u32) {
+        let (x, y) = (self.pointer_at.x + dx, self.pointer_at.y + dy);
+        self.pointer_to(x, y, time);
+    }
+
+    /// A mouse button. Pressing focuses the window under the pointer (the Classic feel:
+    /// click to focus), and the window gets the button either way.
+    pub fn pointer_button(&mut self, button: u32, pressed: bool, time: u32) {
+        if pressed {
+            let at = self.pointer_at;
+            self.state.wm.click(at.x as i32, at.y as i32);
+            self.apply_focus();
+        }
+        let serial = SERIAL_COUNTER.next_serial();
+        let state = if pressed {
+            ButtonState::Pressed
+        } else {
+            ButtonState::Released
+        };
+        self.pointer.button(
+            &mut self.state,
+            &ButtonEvent {
+                serial,
+                time,
+                button,
+                state,
+            },
+        );
+        self.pointer.frame(&mut self.state);
+    }
+
+    /// A key, by its Linux input code (`KEY_A` is 30). The focused window gets it, except
+    /// Ctrl+Alt+F1..F12, which the shell keeps: it returns the virtual terminal to switch
+    /// to, so a person can always reach the root console on VT2.
+    pub fn key(&mut self, code: u32, pressed: bool, time: u32) -> Option<i32> {
+        let state = if pressed {
+            KeyState::Pressed
+        } else {
+            KeyState::Released
+        };
+        let serial = SERIAL_COUNTER.next_serial();
+        self.keyboard
+            .input(
+                &mut self.state,
+                Keycode::new(code + 8),
+                state,
+                serial,
+                time,
+                |_, _, keysym| {
+                    let sym = keysym.modified_sym().raw();
+                    let (first, last) = (
+                        Keysym::XF86_Switch_VT_1.raw(),
+                        Keysym::XF86_Switch_VT_12.raw(),
+                    );
+                    if pressed && (first..=last).contains(&sym) {
+                        FilterResult::Intercept(Some((sym - first + 1) as i32))
+                    } else {
+                        FilterResult::Forward
+                    }
+                },
+            )
+            .flatten()
+    }
+
     /// Give keyboard focus to the window the window manager says has it.
     fn apply_focus(&mut self) {
         let surface = self
@@ -269,10 +409,11 @@ impl Server {
             .and_then(|id| self.state.surface(id));
         let serial = SERIAL_COUNTER.next_serial();
         self.keyboard.set_focus(&mut self.state, surface, serial);
+        self.keyboard_on = self.state.wm.focused();
     }
 
     fn write_frame(&self, path: &Path, width: u32, height: u32) -> Result<(), String> {
-        let frame = render(&self.state, width, height)?;
+        let frame = self.render(width, height, false)?;
         // PNG to look at; PPM for a test to read without a decoder.
         let bytes = if path.extension().is_some_and(|e| e == "ppm") {
             frame.to_ppm()
@@ -293,8 +434,26 @@ impl Server {
         };
         match words.as_slice() {
             ["click", ..] => {
-                self.state.wm.click(num(1)?, num(2)?);
-                self.apply_focus();
+                self.pointer_to(f64::from(num(1)?), f64::from(num(2)?), 0);
+                self.pointer_button(BTN_LEFT, true, 0);
+                self.pointer_button(BTN_LEFT, false, 0);
+            }
+            ["key", codes @ ..] if !codes.is_empty() => {
+                // A chord: press each in order, release in reverse, the way hands do it.
+                let codes = codes
+                    .iter()
+                    .map(|c| c.parse::<u32>())
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|_| format!("script: `{line}` needs key codes"))?;
+                for &code in &codes {
+                    if let Some(vt) = self.key(code, true, 0) {
+                        // Headless has no virtual terminals; say what a person would get.
+                        eprintln!("flow-compositor: switch to VT{vt} requested");
+                    }
+                }
+                for &code in codes.iter().rev() {
+                    self.key(code, false, 0);
+                }
             }
             ["cycle"] => {
                 self.state.wm.cycle();
@@ -342,39 +501,62 @@ impl Server {
     }
 }
 
+impl Server {
+    /// Listen on `$XDG_RUNTIME_DIR/<socket>` with a seat that has a keyboard and a pointer,
+    /// for a screen of `width` x `height`.
+    pub fn new(socket: &str, width: u32, height: u32) -> Result<Self, String> {
+        let display: Display<App> = Display::new().map_err(|e| format!("display: {e}"))?;
+        let dh = display.handle();
+        let mut seat_state = SeatState::new();
+        let mut seat: Seat<App> = seat_state.new_wl_seat(&dh, "seat0");
+        // The keymap comes from xkeyboard-config's data files (the `xkb-data` package).
+        let keyboard = seat
+            .add_keyboard(XkbConfig::default(), 200, 25)
+            .map_err(|e| format!("creating the keyboard (is xkb-data installed?): {e}"))?;
+        let pointer = seat.add_pointer();
+        let state = App {
+            compositor_state: CompositorState::new::<App>(&dh),
+            xdg_shell_state: XdgShellState::new::<App>(&dh),
+            shm_state: ShmState::new::<App>(&dh, vec![]),
+            seat_state,
+            data_device_state: DataDeviceState::new::<App>(&dh),
+            wm: Manager::default(),
+            ids: Vec::new(),
+            next_id: 0,
+        };
+        let listener =
+            ListeningSocket::bind(socket).map_err(|e| format!("binding socket {socket}: {e}"))?;
+        eprintln!("flow-compositor: listening on {socket}");
+        Ok(Self {
+            display,
+            listener,
+            state,
+            keyboard,
+            pointer,
+            // The pointer starts in the middle of the screen, as people expect.
+            pointer_at: (f64::from(width) / 2.0, f64::from(height) / 2.0).into(),
+            pointer_moved: false,
+            keyboard_on: None,
+            width,
+            height,
+        })
+    }
+
+    /// The screen changed size (the live display's mode is known only once it is open).
+    pub fn resize(&mut self, width: u32, height: u32) {
+        self.width = width;
+        self.height = height;
+        self.pointer_at = (f64::from(width) / 2.0, f64::from(height) / 2.0).into();
+    }
+}
+
 /// Run until `wait_for` windows are drawn, then write the frame or run the script. An
 /// error means the run did not do what it was asked.
 pub fn run(opts: &Options) -> Result<(), String> {
-    let display: Display<App> = Display::new().map_err(|e| format!("display: {e}"))?;
-    let dh = display.handle();
-    let mut seat_state = SeatState::new();
-    let mut seat: Seat<App> = seat_state.new_wl_seat(&dh, "seat0");
-    // The keymap comes from xkeyboard-config's data files (the `xkb-data` package).
-    let keyboard = seat
-        .add_keyboard(XkbConfig::default(), 200, 25)
-        .map_err(|e| format!("creating the keyboard (is xkb-data installed?): {e}"))?;
-    let state = App {
-        compositor_state: CompositorState::new::<App>(&dh),
-        xdg_shell_state: XdgShellState::new::<App>(&dh),
-        shm_state: ShmState::new::<App>(&dh, vec![]),
-        seat_state,
-        data_device_state: DataDeviceState::new::<App>(&dh),
-        wm: Manager::default(),
-        ids: Vec::new(),
-        next_id: 0,
-    };
-    let listener = ListeningSocket::bind(opts.socket.as_str())
-        .map_err(|e| format!("binding socket {}: {e}", opts.socket))?;
-    eprintln!("flow-compositor: listening on {}", opts.socket);
-    let mut server = Server {
-        display,
-        listener,
-        state,
-        keyboard,
-    };
+    let mut server = Server::new(&opts.socket, opts.width, opts.height)?;
 
     if let Some(device) = &opts.drm {
-        return show_forever(&mut server, device);
+        return crate::live::run(server, device);
     }
 
     let deadline = Instant::now() + opts.timeout;
@@ -408,29 +590,14 @@ pub fn run(opts: &Options) -> Result<(), String> {
     Ok(())
 }
 
-/// The service: serve clients and keep the display showing the screen, until stopped.
-fn show_forever(server: &mut Server, device: &Path) -> Result<(), String> {
-    let mut output = crate::drm_output::Output::open(device)?;
-    let mut shown = None;
-    loop {
-        let started = Instant::now();
-        server.turn()?;
-        let frame = render(&server.state, output.width, output.height)?;
-        output.show(frame.pixels())?;
-        // One line when the picture changes in kind, so a log (and a test) can follow it.
-        let count = server.state.wm.layout().len();
-        if shown != Some(count) {
-            eprintln!("flow-compositor: {count} window(s) on screen");
-            shown = Some(count);
-        }
-        // About 30 frames a second; the software path does not need more yet.
-        std::thread::sleep(Duration::from_millis(33).saturating_sub(started.elapsed()));
-    }
-}
-
 /// Render the windows where the window manager put them, over the shell's background,
-/// with a border round the focused one, and read the pixels back.
-fn render(state: &App, width: u32, height: u32) -> Result<ShellFrame, String> {
+/// with a border round the focused one and the pointer on top, and read the pixels back.
+fn render(
+    state: &App,
+    width: u32,
+    height: u32,
+    cursor: Option<(i32, i32)>,
+) -> Result<ShellFrame, String> {
     let err = |what: &'static str| {
         move |e: smithay::backend::renderer::pixman::PixmanError| format!("{what}: {e}")
     };
@@ -500,6 +667,25 @@ fn render(state: &App, width: u32, height: u32) -> Result<ShellFrame, String> {
         }
         draw_render_elements(&mut frame, 1.0, &elements, &[full])
             .map_err(err("drawing the windows"))?;
+        if let Some((x, y)) = cursor {
+            // The pointer: a white square with a dark edge, its top-left corner on the
+            // point. Plain, but a person can see where they are. A themed cursor (and
+            // clients setting their own) comes with the work that needs it.
+            let (_, r, g, b) = palette::TEXT.channels();
+            let fill = Color32F::new(
+                f32::from(r) / 255.0,
+                f32::from(g) / 255.0,
+                f32::from(b) / 255.0,
+                1.0,
+            );
+            for (inset, c) in [(0, Color32F::new(0.0, 0.0, 0.0, 1.0)), (1, fill)] {
+                let size = CURSOR - 2 * inset;
+                let rect = Rectangle::new((x + inset, y + inset).into(), (size, size).into());
+                frame
+                    .draw_solid(rect, &[Rectangle::from_size(rect.size)], c)
+                    .map_err(err("drawing the pointer"))?;
+            }
+        }
         // Software rendering finishes synchronously; the sync point has nothing to wait on.
         let _sync = frame.finish().map_err(err("finishing the frame"))?;
     }

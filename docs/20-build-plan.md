@@ -105,18 +105,27 @@ the window at (16, 16), 320x200, the boot committed). It found two real faults f
 image lacked the compositor's libraries, and virtio-gpu shows nothing until DIRTYFB says the
 frame changed.
 
-**Notes:** `plain` (the image for people) keeps its text console until E10, because a
-shell nobody can type into would lock a person out. The service runs as root for now (E11).
+**Notes:** `plain` (the image for people) keeps its text console until E4, because a
+shell with nothing to run in it serves a person worse than the console. The service runs as
+root for now (E11).
 
-### E10 · Real keyboard and mouse (libinput) · open · needs E3
+### E10 · Real keyboard and mouse (libinput) · done · needs E3
 
-**What:** libinput through Smithay (`backend_libinput`, needs `libudev` and `libinput`)
-feeding the same handlers the `--script` commands use (E2); the root console stays on VT2.
-Then `plain` boots into the shell.
+**What:** libinput through Smithay feeding the same handlers the `--script` commands use
+(E2), in a seat session from `seatd` (libseat): it owns VT1 for the shell, so keys reach
+windows and not the console underneath, and Ctrl+Alt+F2 reaches the root console on VT2.
 
-**Done when:** a QEMU scenario types into a test client through the VM's virtual keyboard
-(QEMU monitor `sendkey`) and clicks with its virtual tablet, and the client reports both;
-`plain` boots into the shell.
+**Done when:** a QEMU scenario clicks a test client with the VM's USB tablet and types into
+it with its PS/2 keyboard, and the screendump shows both arrive; Ctrl+Alt+F2 shows the
+console and Ctrl+Alt+F1 brings the shell back.
+
+**Evidence:** https://github.com/robmitchellengineering-hub/MorpheOS/pull/43 and
+`images/x86-qemu/test-shell.sh` (click, pointer, key, VT2 and back, all read
+off screendumps) and `crates/flow-compositor/tests/input.rs` (the same handlers headless:
+the client gets `button 272` and `key 30`, and Ctrl+Alt+F2 never reaches it).
+
+**Notes:** `plain` keeps its text console until E4: a shell with nothing to run in it serves
+a person on the laptop worse than the root console it opens on.
 
 ### E11 · The shell as an ordinary user, and a broken shell falls back · open · needs E3
 
@@ -130,10 +139,12 @@ broken-shell update is trialled once and falls back, like `unhealthy`.
 ### E4 · A browser · open · needs E10
 
 **What:** Firefox from Mozilla's own APT repository (packages.mozilla.org, pinned), running on
-Wayland (`MOZ_ENABLE_WAYLAND=1`).
+Wayland (`MOZ_ENABLE_WAYLAND=1`). Then `plain` boots into the shell, with the browser in it
+and the root console on VT2 (moved here from E10: until there is something to run, the
+console serves a person better), and `images/x86-qemu/HARDWARE.md` says how to reach both.
 
 **Done when:** in QEMU, Firefox shows a local `file://` page of large known colours, and the
-screendump contains them.
+screendump contains them; `plain` boots into the shell.
 
 **Notes:** ⚠️ Ubuntu 24.04's `firefox` and `chromium` packages are snap stubs. Firefox needs
 more protocols than E1 serves: `linux-dmabuf` (or it falls back to shm), `xdg-decoration`,

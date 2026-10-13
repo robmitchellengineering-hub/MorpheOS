@@ -7,7 +7,9 @@ After=flow-shell.service
 Environment=XDG_RUNTIME_DIR=/run/flow WAYLAND_DISPLAY=wayland-0
 # The socket appears when the compositor has bound it; wait for it rather than guessing.
 ExecStartPre=/bin/sh -c 'for i in $(seq 1 300); do [ -S /run/flow/wayland-0 ] && exit 0; sleep 0.1; done; exit 1'
-ExecStart=/usr/bin/solid-window --colour 00a0ff --size 320x200
+# It turns green when a key reaches it and purple when it is clicked, so the test can see
+# input arrive on the screen (E10).
+ExecStart=/usr/bin/solid-window --colour 00a0ff --size 320x200 --key-colour 00c060 --click-colour c000c0
 
 [Install]
 WantedBy=multi-user.target

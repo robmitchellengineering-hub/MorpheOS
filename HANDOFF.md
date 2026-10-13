@@ -26,6 +26,7 @@ the widening backlog (ADR 0014, lane 2) and waits.
 | Flow shell: frame, input, session model, two feels | **software-rendered only** | CI renders `frame.png` and fails if blank |
 | `flow-compositor`: real Wayland clients, Classic windows (E1, E2) | **tested headless** | `crates/flow-compositor/tests/` read pixels back from real clients |
 | The shell on a real display inside the image (E3) | **VM-proven** | `test-shell.sh`: a virtio-gpu screendump shows the shell and the window in place |
+| Real keyboard and mouse, root console on VT2 (E10) | **VM-proven** | `test-shell.sh`: a USB-tablet click and a PS/2 key change the window's colour; Ctrl+Alt+F2 and back |
 | Bootable x86 USB image for a person | **builds, boots in QEMU** | [HARDWARE.md](images/x86-qemu/HARDWARE.md). **Never booted on real hardware** |
 | Pi 5 image | **builds and is read back** | `verify-pi-image.mjs`. **Never booted on a Pi** |
 
@@ -110,3 +111,7 @@ One line per piece of work: date, who, what, what's next.
   compositor's libraries; virtio-gpu shows nothing without DIRTYFB; with KVM the window beat
   the health check, and the harness then exited silently (fixed, H11). Split the old E3 into
   E3 (display), E10 (input) and E11 (non-root, broken-shell fallback). Next: E10.
+- 2026-10-13 · Claude Code · E10 (#43, stacked on #42): libinput through a seatd session that
+  owns VT1; the script and real devices share one set of input handlers. Found: libinput's
+  startup devices waited for the first keypress; losing DRM master on Ctrl+Alt+F2 killed the
+  shell. `plain` keeps its console until E4 (Rob to confirm). Next: the handover (plan PR).

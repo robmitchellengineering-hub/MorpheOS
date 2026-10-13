@@ -2,15 +2,22 @@
 Description=The Flow shell: the compositor that draws the screen
 Documentation=https://github.com/robmitchellengineering-hub/MorpheOS/blob/main/docs/20-build-plan.md
 # A broken shell must be a failed unit, so a bad update fails the boot health check and
-# falls back (doc 20, E3). No `Restart=` that would hide a crash loop from it.
-After=systemd-udev-settle.service systemd-logind.service
+# falls back (doc 20, E11). No `Restart=` that would hide a crash loop from it.
+#
+# seatd owns the seat: it gives the shell VT1 in graphics mode with the kernel's keyboard
+# handling off, so keys reach windows and not the console underneath, and Ctrl+Alt+F2
+# reaches the root console on VT2 (doc 20, E10). The login prompt that would sit on VT1
+# under the shell is stopped.
+Requires=seatd.service
+After=seatd.service systemd-udev-settle.service systemd-logind.service getty@tty1.service
+Conflicts=getty@tty1.service
 
 [Service]
-# ⚠️ ROOT FOR NOW. Taking DRM master without a seat manager needs root; running as an
-# ordinary user through a seat is doc 20's E10, and Rob decides the account model (S5).
+# ⚠️ ROOT FOR NOW. Running as an ordinary user through a seat session is doc 20's E11, and
+# Rob decides the account model (S5).
 RuntimeDirectory=flow
 RuntimeDirectoryMode=0755
-Environment=XDG_RUNTIME_DIR=/run/flow
+Environment=XDG_RUNTIME_DIR=/run/flow LIBSEAT_BACKEND=seatd
 ExecStart=/usr/bin/flow-compositor --socket wayland-0 --drm /dev/dri/card0
 StandardError=journal+console
 
