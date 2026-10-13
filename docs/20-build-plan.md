@@ -136,7 +136,7 @@ whose update ships a compositor that fails to start.
 **Done when:** the shell scenario passes with the compositor not running as root, and the
 broken-shell update is trialled once and falls back, like `unhealthy`.
 
-### E4 · A browser · open · needs E10
+### E4 · A browser · in progress · needs E10
 
 **What:** Firefox from Mozilla's own APT repository (packages.mozilla.org, pinned), running on
 Wayland (`MOZ_ENABLE_WAYLAND=1`). Then `plain` boots into the shell, with the browser in it

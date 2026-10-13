@@ -245,6 +245,16 @@ had already shown this shape with three tests; with the compositor it is most of
 **Rule:** the bar is run on Linux, and `check.sh` says so instead of passing quietly elsewhere
 (doc 20, S10). On Windows, that is WSL2.
 
+**H17 — a protocol duty nothing tested.** Firefox put its window on screen and never painted
+the page, and every test passed. A Wayland client asks to be told when its frame was shown
+(`wl_surface.frame`) and draws its next frame only then; the compositor never answered, so
+every client froze on its FIRST frame. The tests all looked at the first frame: `solid-window`
+draws once, and GTK's widget factory drew everything in one go. It was found by the first
+client whose content arrives in a later frame.
+**Rule:** a test of a long-running client checks that it keeps going (here, `tests/toolkit.rs`
+asserts GTK keeps asking for frames), not only that its first picture is right. A frozen
+client and a finished one look the same in a single screenshot.
+
 ## Writing code here
 
 - Match the existing style: doc comments that explain **why**, module headers that

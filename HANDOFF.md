@@ -29,6 +29,7 @@ the widening backlog (ADR 0014, lane 2) and waits.
 | `flow-compositor`: real Wayland clients, Classic windows (E1, E2) | **tested headless** | `crates/flow-compositor/tests/` read pixels back from real clients |
 | The shell on a real display inside the image (E3) | **VM-proven** | `test-shell.sh`: a virtio-gpu screendump shows the shell and the window in place |
 | Real keyboard and mouse, root console on VT2 (E10) | **VM-proven** | `test-shell.sh`: a USB-tablet click and a PS/2 key change the window's colour; Ctrl+Alt+F2 and back |
+| Firefox on the shell, a local page read off the screen (E4, part) | **VM-proven** | `test-browser.sh`: the page's colours, inside the screen, boot committed. No menus yet |
 | Bootable x86 USB image for a person, with laptop firmware and a hardware report (E12) | **builds, boots in QEMU** | [HARDWARE.md](images/x86-qemu/HARDWARE.md); `test-boot.sh` reads the report back. **Never booted on real hardware** |
 | Pi 5 image | **builds and is read back** | `verify-pi-image.mjs`. **Never booted on a Pi** |
 
@@ -70,27 +71,18 @@ From a DSH shell in PowerShell, run any of them as
 
 ## Open pull requests at handover
 
-They are **stacked**: each one's base is the one before it, so each diff shows only its own
-work. Rob merges them **in this order**; when one merges, GitHub retargets the next to `main`.
-Never merge one out of order, and never rebase someone else's branch.
+#42 to #46 (E3, E10, the handover plan, S10, E12) were merged on 2026-10-13, as merge commits
+so the stack merged without conflicts. Open:
 
 | # | Branch | What |
 |---|---|---|
-| #42 | `feat/e3-shell-on-screen` | E3: the shell on a real display |
-| #43 | `feat/e10-real-input` | E10: keyboard, mouse, the root console on VT2 |
-| #44 | `plan/handover-hardware-first` | this file, E12, E6 brought forward, S10, hazards H13–H16 |
-| #45 | `feat/s10-wsl2-bar` | the bar on Windows: `setup-linux.sh`, `test-images.sh`, `check.sh` refuses off Linux |
-| #46 | `feat/e12-hardware-report` | a hardware report from every boot, and laptop firmware in the image |
+| (E4) | `feat/e4-browser` | the browser: GTK fixes (merged here) and Firefox from Mozilla's repository; its VM test has only run in CI |
 
-If CI goes red on one of them after the handover, it is yours to fix, on that branch.
-
-**After each merge, the next PR may show a conflict.** This repository squash-merges, so
-`main` gets the merged PR's changes as one new commit, and the next branch still carries the
-originals; where both touched the same lines (HANDOFF.md's tables and session log, every
-time) git cannot tell they agree. The fix is mechanical: on the next branch,
-`git fetch origin && git merge origin/main`, keep **both** sides' lines (they are the same
-lines plus the newer PR's additions), run `bash scripts/check.sh`, and push. Never rebase or
-force-push a branch that has a pull request open.
+If CI goes red on it, it is yours to fix, on that branch. **When a pull request's base is
+another open branch** (a stack), and the base merges: if it was squash-merged, the next branch
+may conflict where both touched the same lines; `git fetch origin && git merge origin/main`,
+keep both sides' lines, run `bash scripts/check.sh`, and push. Never rebase or force-push a
+branch that has a pull request open.
 
 ## How to work (every task, every time)
 
@@ -197,3 +189,16 @@ One line per piece of work: date, who, what, what's next.
   450 of 1200 MB). Found: `mdir -b` lists folders with a trailing slash; the PCI name
   database is a "recommends" we skip, so devices were numbers. Next: Rob boots the stick on
   the three candidates (E6); the builder takes S9 or E4.
+- 2026-10-13 · Claude Code · E4 begun (`feat/e4-browser`). Experiment first: GTK3, the toolkit
+  Firefox is built on, already rendered fully on the compositor. What it lacked, now fixed
+  and tested with a real GTK app (`tests/toolkit.rs`): `wl_output` (GTK logged criticals every
+  frame without one); placement by window geometry (GTK's shadow put the window ~40 px off);
+  a window wider than the screen is asked to fit. Firefox is next, through CI only (Mozilla's
+  hosts are unreachable from the Claude sandbox; GitHub's runners reach them).
+- 2026-10-13 · Claude Code · Firefox 158 (Mozilla's build) draws a local page on the Flow shell
+  in a VM, read off a screendump (#47, `test-browser.sh`). Found on the way, each from the CI
+  log: mmdebstrap reads `signed-by` on the BUILD machine and adds its own to lines without one
+  (the key now named at its build path, the image fixed up after); the compositor never
+  answered frame callbacks, so every client froze on its first frame (H17); Firefox's
+  first-run Terms of Use dialog dimmed the page (`SkipTermsOfUse`, test image only: Rob's
+  call for `plain`). E4 still needs popups (menus) and `plain` booting into the shell.

@@ -8,12 +8,32 @@
 //! this module and its tests first.
 //!
 //! Layout today: windows are stacked down the screen in the order they opened, `MARGIN`
-//! apart, at their own size. The focused window is drawn with a border of `BORDER` pixels.
+//! apart, at their own size, but never larger than the screen ([`fit`]). The focused window
+//! is drawn with a border of `BORDER` pixels.
 
 /// Gap between windows and the screen edges, in pixels.
 pub const MARGIN: i32 = 16;
 /// Width of the focus border drawn around the focused window, in pixels.
 pub const BORDER: i32 = 3;
+
+/// The largest a window may be on a screen of `screen_w` x `screen_h`: the screen less a
+/// margin all round. A toolkit picks its own window size, and GTK (so Firefox) picks one
+/// wider than a small screen; such a window is asked to shrink to this.
+#[must_use]
+pub fn max_size(screen_w: i32, screen_h: i32) -> (i32, i32) {
+    (
+        (screen_w - 2 * MARGIN).max(1),
+        (screen_h - 2 * MARGIN).max(1),
+    )
+}
+
+/// The size a `w` x `h` window should be asked to take on that screen, if it is too big in
+/// either direction; `None` if it fits as it is. Only the direction that overflows shrinks.
+#[must_use]
+pub fn fit(w: i32, h: i32, screen_w: i32, screen_h: i32) -> Option<(i32, i32)> {
+    let (max_w, max_h) = max_size(screen_w, screen_h);
+    (w > max_w || h > max_h).then(|| (w.min(max_w), h.min(max_h)))
+}
 
 /// A window as the manager sees it: an ID the compositor chose, and its size.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -131,6 +151,16 @@ mod tests {
 
     fn win(id: u32, w: i32, h: i32) -> Window {
         Window { id, w, h }
+    }
+
+    #[test]
+    fn a_window_too_big_for_the_screen_is_asked_to_fit_and_one_that_fits_is_left_alone() {
+        // GTK's widget factory asked for 1393 x 740 on a 1024 x 768 screen: both overflow.
+        assert_eq!(fit(1393, 740, 1024, 768), Some((1024 - 32, 768 - 32)));
+        assert_eq!(fit(1393, 600, 1024, 768), Some((1024 - 32, 600)));
+        assert_eq!(fit(500, 2000, 1024, 768), Some((500, 768 - 32)));
+        assert_eq!(fit(992, 736, 1024, 768), None, "exactly the limit fits");
+        assert_eq!(fit(320, 200, 1024, 768), None);
     }
 
     #[test]
