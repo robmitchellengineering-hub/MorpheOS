@@ -119,7 +119,8 @@ windows and not the console underneath, and Ctrl+Alt+F2 reaches the root console
 it with its PS/2 keyboard, and the screendump shows both arrive; Ctrl+Alt+F2 shows the
 console and Ctrl+Alt+F1 brings the shell back.
 
-**Evidence:** `images/x86-qemu/test-shell.sh` (click, pointer, key, VT2 and back, all read
+**Evidence:** https://github.com/robmitchellengineering-hub/MorpheOS/pull/43 and
+`images/x86-qemu/test-shell.sh` (click, pointer, key, VT2 and back, all read
 off screendumps) and `crates/flow-compositor/tests/input.rs` (the same handlers headless:
 the client gets `button 272` and `key 30`, and Ctrl+Alt+F2 never reaches it).
 
