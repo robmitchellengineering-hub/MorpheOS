@@ -4,8 +4,12 @@
 //! known colour is the smallest thing whose appearance in the compositor's frame proves the
 //! whole path: protocol handshake, `xdg_toplevel` configure, an `shm` buffer, commit,
 //! import, render. No toolkit, so nothing between the protocol and the pixels can hide a
-//! fault. It waits for the compositor to close the connection, which it does after writing
-//! its frame.
+//! fault.
+//!
+//! It prints `keyboard-enter` and `keyboard-leave` on stdout as keyboard focus arrives and
+//! goes, so a test can see focus from the client's side. It exits when the compositor asks
+//! it to close (`xdg_toplevel.close`), as a well-behaved app does, or when the compositor
+//! goes away.
 //!
 //!     WAYLAND_DISPLAY=<socket> solid-window --colour 00a0ff --size 320x200
 
@@ -32,7 +36,8 @@ mod client {
     use std::os::fd::AsFd;
 
     use wayland_client::protocol::{
-        wl_buffer, wl_compositor, wl_registry, wl_shm, wl_shm_pool, wl_surface,
+        wl_buffer, wl_compositor, wl_keyboard, wl_registry, wl_seat, wl_shm, wl_shm_pool,
+        wl_surface,
     };
     use wayland_client::{Connection, Dispatch, QueueHandle, delegate_noop};
     use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
@@ -42,7 +47,9 @@ mod client {
         compositor: Option<wl_compositor::WlCompositor>,
         shm: Option<wl_shm::WlShm>,
         wm_base: Option<xdg_wm_base::XdgWmBase>,
+        seat: Option<wl_seat::WlSeat>,
         configured: bool,
+        closed: bool,
     }
 
     impl Dispatch<wl_registry::WlRegistry, ()> for State {
@@ -62,6 +69,7 @@ mod client {
                     "wl_compositor" => state.compositor = Some(registry.bind(name, 4, qh, ())),
                     "wl_shm" => state.shm = Some(registry.bind(name, 1, qh, ())),
                     "xdg_wm_base" => state.wm_base = Some(registry.bind(name, 1, qh, ())),
+                    "wl_seat" => state.seat = Some(registry.bind(name, 1, qh, ())),
                     _ => {}
                 }
             }
@@ -104,7 +112,59 @@ mod client {
     delegate_noop!(State: ignore wl_shm::WlShm);
     delegate_noop!(State: ignore wl_shm_pool::WlShmPool);
     delegate_noop!(State: ignore wl_buffer::WlBuffer);
-    delegate_noop!(State: ignore xdg_toplevel::XdgToplevel);
+    impl Dispatch<xdg_toplevel::XdgToplevel, ()> for State {
+        fn event(
+            state: &mut Self,
+            _: &xdg_toplevel::XdgToplevel,
+            event: xdg_toplevel::Event,
+            _: &(),
+            _: &Connection,
+            _: &QueueHandle<Self>,
+        ) {
+            if let xdg_toplevel::Event::Close = event {
+                state.closed = true;
+            }
+        }
+    }
+
+    impl Dispatch<wl_seat::WlSeat, ()> for State {
+        fn event(
+            _: &mut Self,
+            seat: &wl_seat::WlSeat,
+            event: wl_seat::Event,
+            _: &(),
+            _: &Connection,
+            qh: &QueueHandle<Self>,
+        ) {
+            if let wl_seat::Event::Capabilities {
+                capabilities: wayland_client::WEnum::Value(caps),
+            } = event
+                && caps.contains(wl_seat::Capability::Keyboard)
+            {
+                seat.get_keyboard(qh, ());
+            }
+        }
+    }
+
+    impl Dispatch<wl_keyboard::WlKeyboard, ()> for State {
+        fn event(
+            _: &mut Self,
+            _: &wl_keyboard::WlKeyboard,
+            event: wl_keyboard::Event,
+            _: &(),
+            _: &Connection,
+            _: &QueueHandle<Self>,
+        ) {
+            let line = match event {
+                wl_keyboard::Event::Enter { .. } => "keyboard-enter",
+                wl_keyboard::Event::Leave { .. } => "keyboard-leave",
+                _ => return,
+            };
+            let mut out = std::io::stdout();
+            let _ = writeln!(out, "{line}");
+            let _ = out.flush();
+        }
+    }
 
     fn args() -> Result<(u32, u32, u32), String> {
         let args: Vec<String> = std::env::args().skip(1).collect();
@@ -176,12 +236,17 @@ mod client {
         surface.damage_buffer(0, 0, width as i32, height as i32);
         surface.commit();
 
-        // Stay connected until the compositor has written its frame and gone away.
-        loop {
+        // Stay until asked to close, or until the compositor goes away.
+        while !state.closed {
             if queue.blocking_dispatch(&mut state).is_err() {
                 return Ok(());
             }
         }
+        toplevel.destroy();
+        xdg.destroy();
+        surface.destroy();
+        let _ = conn.flush();
+        Ok(())
     }
 
     /// An unlinked file in `$XDG_RUNTIME_DIR` to back the buffer.

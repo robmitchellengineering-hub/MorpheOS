@@ -70,7 +70,7 @@ placed, two windows both appear, and with no client no frame is written (`tests/
 
 **Evidence:** https://github.com/robmitchellengineering-hub/MorpheOS/pull/38 and `crates/flow-compositor/tests/frame.rs`
 
-### E2 · Classic windows · open · needs E1
+### E2 · Classic windows · done · needs E1
 
 **What:** the Classic feel (ADR 0013, item 3) manages windows: click to focus, move, close,
 fullscreen, and a keyboard shortcut to switch windows. Focus decides who gets the keyboard
@@ -83,6 +83,11 @@ frame. Frames are asserted after each step.
 **Notes:** drive input through a test-only control (a command on stdin or a socket) that
 injects events into the same code path real input uses. Never a separate path that only
 tests take (AGENTS.md H3).
+
+**Evidence:** `crates/flow-compositor/tests/windows.rs` (click focuses B: border and
+`keyboard-enter`; close: B's client exits, B leaves the frame, focus moves to A) and
+`crates/flow-compositor/src/wm.rs` (the decisions, unit-tested). Move, fullscreen and the
+switch shortcut on real input are E9.
 
 ### E3 · The compositor on bare metal, inside the image · open · needs E1
 
@@ -134,6 +139,14 @@ writes the system with `morph-update`'s verified write.
 
 **Done when:** a QEMU scenario boots from a second disk, installs to the first, and then boots
 the first alone to a committed slot. It refuses to touch the disk it booted from.
+
+### E9 · Move, fullscreen, and the switch shortcut, on real input · open · needs E3
+
+**What:** what E2 left for real input: drag a window by its edge, fullscreen and back, and
+Alt+Tab running `wm::Manager::cycle`. Decisions go in `wm.rs` with unit tests first.
+
+**Done when:** the headless script gains `drag`, `fullscreen` and `key` commands through
+the same handlers real input uses, and a test asserts each in the frame.
 
 ### E8 · Try to break it, on the laptop · open · needs E7
 

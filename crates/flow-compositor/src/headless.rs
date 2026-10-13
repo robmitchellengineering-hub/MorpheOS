@@ -8,15 +8,16 @@
 //! everything here and swaps only where the frame goes.
 //!
 //! The flow: listen on a socket, accept clients, answer the protocols a window needs, and
-//! once `wait_for` toplevels have each committed a buffer, render them over the shell's
-//! background and write the frame. Windows are stacked down the content area in the order
-//! they appeared. Window management (focus, move, close) is E2.
+//! once `wait_for` toplevels have each committed a buffer, either write one frame, or run a
+//! **script** of input commands (`click X Y`, `cycle`, `close`, `frame PATH`, `settle MS`).
+//! The script drives the same window-management code real input will (`wm.rs`), so a test
+//! proves focus and close without a keyboard or a mouse.
 //!
 //! Protocols served: `wl_compositor`, `wl_subcompositor`, `wl_shm`, `xdg_wm_base`,
 //! `wl_seat` and `wl_data_device`. A browser needs more (`linux-dmabuf`, `xdg-decoration`,
 //! `wl_output`, `viewporter`), and those arrive with the tasks that need them (E4).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -30,12 +31,13 @@ use smithay::backend::renderer::utils::{
     draw_render_elements, on_commit_buffer_handler, with_renderer_surface_state,
 };
 use smithay::backend::renderer::{Bind, Color32F, ExportMem, Frame, Offscreen, Renderer};
+use smithay::input::keyboard::{KeyboardHandle, XkbConfig};
 use smithay::input::{Seat, SeatHandler, SeatState};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
 use smithay::reexports::wayland_server::protocol::{wl_buffer, wl_seat, wl_surface::WlSurface};
 use smithay::reexports::wayland_server::{Client, Display, ListeningSocket};
-use smithay::utils::{Buffer, Physical, Rectangle, Serial, Size, Transform};
+use smithay::utils::{Buffer, Physical, Rectangle, SERIAL_COUNTER, Serial, Size, Transform};
 use smithay::wayland::buffer::BufferHandler;
 use smithay::wayland::compositor::{CompositorClientState, CompositorHandler, CompositorState};
 use smithay::wayland::selection::SelectionHandler;
@@ -53,6 +55,8 @@ use smithay::{
 use flow_shell::Frame as ShellFrame;
 use flow_shell::palette;
 
+use flow_compositor::wm::{self, Manager, Window};
+
 /// What to run, from the command line.
 pub struct Options {
     /// Socket name, created in `$XDG_RUNTIME_DIR` (what clients put in `WAYLAND_DISPLAY`).
@@ -63,11 +67,11 @@ pub struct Options {
     pub wait_for: usize,
     /// Give up, with an error, if they have not by then.
     pub timeout: Duration,
-    pub out: PathBuf,
+    /// Where to write the frame when there is no script.
+    pub out: Option<PathBuf>,
+    /// Input commands to run once the windows have drawn, one per line.
+    pub script: Option<String>,
 }
-
-/// Gap between stacked windows and the edges, in pixels.
-const MARGIN: i32 = 16;
 
 struct App {
     compositor_state: CompositorState,
@@ -75,6 +79,10 @@ struct App {
     shm_state: ShmState,
     seat_state: SeatState<Self>,
     data_device_state: DataDeviceState,
+    wm: Manager,
+    /// Surfaces and the IDs the window manager knows them by.
+    ids: Vec<(WlSurface, u32)>,
+    next_id: u32,
 }
 
 #[derive(Default)]
@@ -178,74 +186,225 @@ impl App {
             .filter(|s| with_renderer_surface_state(s, |st| st.buffer().is_some()) == Some(true))
             .collect()
     }
+
+    /// Bring the window manager in line with the windows that exist now.
+    fn refresh(&mut self) {
+        let drawn = self.drawn_toplevels();
+        self.ids.retain(|(s, _)| drawn.contains(s));
+        let mut current = Vec::new();
+        for s in drawn {
+            let id = match self.ids.iter().find(|(x, _)| *x == s) {
+                Some((_, id)) => *id,
+                None => {
+                    self.next_id += 1;
+                    self.ids.push((s.clone(), self.next_id));
+                    self.next_id
+                }
+            };
+            let size = with_renderer_surface_state(&s, |st| st.surface_size())
+                .flatten()
+                .unwrap_or_default();
+            current.push(Window {
+                id,
+                w: size.w,
+                h: size.h,
+            });
+        }
+        self.wm.sync(&current);
+    }
+
+    fn surface(&self, id: u32) -> Option<WlSurface> {
+        self.ids
+            .iter()
+            .find(|(_, i)| *i == id)
+            .map(|(s, _)| s.clone())
+    }
 }
 
-/// Run until `wait_for` windows are drawn, write the frame, and return. An error means no
-/// frame was written.
+/// Everything the event loop needs to keep clients moving.
+struct Server {
+    display: Display<App>,
+    listener: ListeningSocket,
+    state: App,
+    keyboard: KeyboardHandle<App>,
+}
+
+impl Server {
+    /// Accept, dispatch and flush once, and refresh the window list.
+    fn turn(&mut self) -> Result<(), String> {
+        if let Some(stream) = self.listener.accept().map_err(|e| format!("accept: {e}"))? {
+            self.display
+                .handle()
+                .insert_client(stream, Arc::new(ClientState::default()))
+                .map_err(|e| format!("adding a client: {e}"))?;
+        }
+        self.display
+            .dispatch_clients(&mut self.state)
+            .map_err(|e| format!("dispatching: {e}"))?;
+        self.display
+            .flush_clients()
+            .map_err(|e| format!("flushing: {e}"))?;
+        self.state.refresh();
+        Ok(())
+    }
+
+    /// Keep clients moving for a while, so they see what was just sent.
+    fn settle(&mut self, d: Duration) -> Result<(), String> {
+        let end = Instant::now() + d;
+        while Instant::now() < end {
+            self.turn()?;
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        Ok(())
+    }
+
+    /// Give keyboard focus to the window the window manager says has it.
+    fn apply_focus(&mut self) {
+        let surface = self
+            .state
+            .wm
+            .focused()
+            .and_then(|id| self.state.surface(id));
+        let serial = SERIAL_COUNTER.next_serial();
+        self.keyboard.set_focus(&mut self.state, surface, serial);
+    }
+
+    fn write_frame(&self, path: &Path, width: u32, height: u32) -> Result<(), String> {
+        let frame = render(&self.state, width, height)?;
+        // PNG to look at; PPM for a test to read without a decoder.
+        let bytes = if path.extension().is_some_and(|e| e == "ppm") {
+            frame.to_ppm()
+        } else {
+            frame.to_png()
+        };
+        std::fs::write(path, bytes).map_err(|e| format!("writing {}: {e}", path.display()))
+    }
+
+    /// Run one script command.
+    fn command(&mut self, line: &str, opts: &Options) -> Result<(), String> {
+        let words: Vec<&str> = line.split_whitespace().collect();
+        let num = |i: usize| -> Result<i32, String> {
+            words
+                .get(i)
+                .and_then(|w| w.parse().ok())
+                .ok_or_else(|| format!("script: `{line}` needs a number at word {}", i + 1))
+        };
+        match words.as_slice() {
+            ["click", ..] => {
+                self.state.wm.click(num(1)?, num(2)?);
+                self.apply_focus();
+            }
+            ["cycle"] => {
+                self.state.wm.cycle();
+                self.apply_focus();
+            }
+            ["close"] => {
+                let id = self
+                    .state
+                    .wm
+                    .focused()
+                    .ok_or("script: `close` with no focused window")?;
+                let surface = self
+                    .state
+                    .surface(id)
+                    .ok_or("script: the focused window is gone")?;
+                let toplevel = self
+                    .state
+                    .xdg_shell_state
+                    .toplevel_surfaces()
+                    .iter()
+                    .find(|t| *t.wl_surface() == surface)
+                    .cloned()
+                    .ok_or("script: the focused window has no toplevel")?;
+                // Ask, the way a close button does; the client decides to go.
+                toplevel.send_close();
+                let end = Instant::now() + opts.timeout;
+                while self.state.surface(id).is_some() {
+                    if Instant::now() > end {
+                        return Err(format!(
+                            "window {id} did not close within {:?}",
+                            opts.timeout
+                        ));
+                    }
+                    self.settle(Duration::from_millis(20))?;
+                }
+                self.apply_focus();
+            }
+            ["frame", path] => self.write_frame(Path::new(path), opts.width, opts.height)?,
+            ["settle", _] => self.settle(Duration::from_millis(num(1)?.max(0) as u64))?,
+            [] => {}
+            _ => return Err(format!("script: unknown command `{line}`")),
+        }
+        // Let clients see the result before the next command.
+        self.settle(Duration::from_millis(50))
+    }
+}
+
+/// Run until `wait_for` windows are drawn, then write the frame or run the script. An
+/// error means the run did not do what it was asked.
 pub fn run(opts: &Options) -> Result<(), String> {
-    let mut display: Display<App> = Display::new().map_err(|e| format!("display: {e}"))?;
+    let display: Display<App> = Display::new().map_err(|e| format!("display: {e}"))?;
     let dh = display.handle();
     let mut seat_state = SeatState::new();
-    let _seat: Seat<App> = seat_state.new_wl_seat(&dh, "seat0");
-    let mut state = App {
+    let mut seat: Seat<App> = seat_state.new_wl_seat(&dh, "seat0");
+    // The keymap comes from xkeyboard-config's data files (the `xkb-data` package).
+    let keyboard = seat
+        .add_keyboard(XkbConfig::default(), 200, 25)
+        .map_err(|e| format!("creating the keyboard (is xkb-data installed?): {e}"))?;
+    let state = App {
         compositor_state: CompositorState::new::<App>(&dh),
         xdg_shell_state: XdgShellState::new::<App>(&dh),
         shm_state: ShmState::new::<App>(&dh, vec![]),
         seat_state,
         data_device_state: DataDeviceState::new::<App>(&dh),
+        wm: Manager::default(),
+        ids: Vec::new(),
+        next_id: 0,
     };
     let listener = ListeningSocket::bind(opts.socket.as_str())
         .map_err(|e| format!("binding socket {}: {e}", opts.socket))?;
     eprintln!("flow-compositor: listening on {}", opts.socket);
+    let mut server = Server {
+        display,
+        listener,
+        state,
+        keyboard,
+    };
 
     let deadline = Instant::now() + opts.timeout;
     let start = Instant::now();
-    loop {
-        if let Some(stream) = listener.accept().map_err(|e| format!("accept: {e}"))? {
-            dh.clone()
-                .insert_client(stream, Arc::new(ClientState::default()))
-                .map_err(|e| format!("adding a client: {e}"))?;
-        }
-        display
-            .dispatch_clients(&mut state)
-            .map_err(|e| format!("dispatching: {e}"))?;
-        display
-            .flush_clients()
-            .map_err(|e| format!("flushing: {e}"))?;
-
-        let drawn = state.drawn_toplevels();
-        if drawn.len() >= opts.wait_for {
-            let frame = render(&drawn, opts.width, opts.height)?;
-            // PNG to look at; PPM for a test to read without a decoder.
-            let bytes = if opts.out.extension().is_some_and(|e| e == "ppm") {
-                frame.to_ppm()
-            } else {
-                frame.to_png()
-            };
-            std::fs::write(&opts.out, bytes)
-                .map_err(|e| format!("writing {}: {e}", opts.out.display()))?;
-            eprintln!(
-                "flow-compositor: {} window(s) drawn; frame written to {} after {:?}",
-                drawn.len(),
-                opts.out.display(),
-                start.elapsed()
-            );
-            return Ok(());
-        }
+    while server.state.drawn_toplevels().len() < opts.wait_for {
         if Instant::now() > deadline {
             return Err(format!(
                 "{} of {} window(s) drew a buffer within {:?}; no frame written",
-                drawn.len(),
+                server.state.drawn_toplevels().len(),
                 opts.wait_for,
                 opts.timeout
             ));
         }
+        server.turn()?;
         std::thread::sleep(Duration::from_millis(5));
     }
+    eprintln!(
+        "flow-compositor: {} window(s) drawn after {:?}",
+        opts.wait_for,
+        start.elapsed()
+    );
+    match (&opts.script, &opts.out) {
+        (Some(script), _) => {
+            for line in script.lines() {
+                server.command(line.trim(), opts)?;
+            }
+        }
+        (None, Some(out)) => server.write_frame(out, opts.width, opts.height)?,
+        (None, None) => return Err("nothing to do: give --out or --script".into()),
+    }
+    Ok(())
 }
 
-/// Render the windows over the shell's background, and read the pixels back.
-fn render(surfaces: &[WlSurface], width: u32, height: u32) -> Result<ShellFrame, String> {
+/// Render the windows where the window manager put them, over the shell's background,
+/// with a border round the focused one, and read the pixels back.
+fn render(state: &App, width: u32, height: u32) -> Result<ShellFrame, String> {
     let err = |what: &'static str| {
         move |e: smithay::backend::renderer::pixman::PixmanError| format!("{what}: {e}")
     };
@@ -257,24 +416,31 @@ fn render(surfaces: &[WlSurface], width: u32, height: u32) -> Result<ShellFrame,
         .map_err(err("creating the frame"))?;
     let full = Rectangle::from_size(size);
 
-    // Stack the windows down the screen; each element list is built before the frame
-    // borrows the renderer.
+    let layout = state.wm.layout();
     let mut elements: Vec<WaylandSurfaceRenderElement<PixmanRenderer>> = Vec::new();
-    let mut y = MARGIN;
-    for surface in surfaces {
-        let h = with_renderer_surface_state(surface, |s| s.surface_size().map(|s| s.h))
-            .flatten()
-            .unwrap_or(0);
-        elements.extend(render_elements_from_surface_tree(
-            &mut renderer,
-            surface,
-            (MARGIN, y),
-            1.0,
-            1.0,
-            Kind::Unspecified,
-        ));
-        y += h + MARGIN;
+    // The first element in the list is drawn on top, so the last-opened window goes first.
+    for placed in layout.iter().rev() {
+        if let Some(surface) = state.surface(placed.id) {
+            elements.extend(render_elements_from_surface_tree(
+                &mut renderer,
+                &surface,
+                (placed.x, placed.y),
+                1.0,
+                1.0,
+                Kind::Unspecified,
+            ));
+        }
     }
+    let focus_border = state
+        .wm
+        .focused()
+        .and_then(|id| layout.iter().find(|p| p.id == id))
+        .map(|p| {
+            Rectangle::new(
+                (p.x - wm::BORDER, p.y - wm::BORDER).into(),
+                (p.w + 2 * wm::BORDER, p.h + 2 * wm::BORDER).into(),
+            )
+        });
 
     {
         let mut target = renderer
@@ -291,6 +457,21 @@ fn render(surfaces: &[WlSurface], width: u32, height: u32) -> Result<ShellFrame,
             1.0,
         );
         frame.clear(bg, &[full]).map_err(err("clearing"))?;
+        if let Some(border) = focus_border {
+            let (_, r, g, b) = palette::ACCENT.channels();
+            let accent = Color32F::new(
+                f32::from(r) / 255.0,
+                f32::from(g) / 255.0,
+                f32::from(b) / 255.0,
+                1.0,
+            );
+            // ⚠️ draw_solid's damage is RELATIVE TO `dst` (smithay adds dst.loc to it), unlike
+            // clear's. Passing the whole screen here filled everything below and right of
+            // the border's corner. Found by tests/windows.rs.
+            frame
+                .draw_solid(border, &[Rectangle::from_size(border.size)], accent)
+                .map_err(err("drawing the focus border"))?;
+        }
         draw_render_elements(&mut frame, 1.0, &elements, &[full])
             .map_err(err("drawing the windows"))?;
         // Software rendering finishes synchronously; the sync point has nothing to wait on.
