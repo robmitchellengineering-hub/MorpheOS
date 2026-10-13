@@ -48,8 +48,10 @@ use smithay::utils::{
     Buffer, Logical, Physical, Point, Rectangle, SERIAL_COUNTER, Serial, Size, Transform,
 };
 use smithay::wayland::buffer::BufferHandler;
-use smithay::wayland::compositor::with_states;
 use smithay::wayland::compositor::{CompositorClientState, CompositorHandler, CompositorState};
+use smithay::wayland::compositor::{
+    SurfaceAttributes, TraversalAction, with_states, with_surface_tree_downward,
+};
 use smithay::wayland::output::{OutputHandler, OutputManagerState};
 use smithay::wayland::selection::SelectionHandler;
 use smithay::wayland::selection::data_device::{
@@ -321,6 +323,10 @@ pub struct Server {
     /// The window the keyboard was last given to, so focus follows the window manager
     /// when a window goes away on its own.
     keyboard_on: Option<u32>,
+    /// When the server started (frame-callback timestamps count from it), and when the
+    /// visible surfaces were last told their frame was shown.
+    started: Instant,
+    last_frames: Instant,
     /// The screen's size, which the pointer stays inside.
     width: u32,
     height: u32,
@@ -338,14 +344,51 @@ impl Server {
         self.display
             .dispatch_clients(&mut self.state)
             .map_err(|e| format!("dispatching: {e}"))?;
-        self.display
-            .flush_clients()
-            .map_err(|e| format!("flushing: {e}"))?;
         self.state.refresh();
         if self.state.wm.focused() != self.keyboard_on {
             self.apply_focus();
         }
+        // About 60 times a second, tell every visible surface its frame was shown.
+        if self.last_frames.elapsed() >= Duration::from_millis(16) {
+            self.send_frames();
+            self.last_frames = Instant::now();
+        }
+        self.display
+            .flush_clients()
+            .map_err(|e| format!("flushing: {e}"))?;
         Ok(())
+    }
+
+    /// ⚠️ A CLIENT DRAWS ITS NEXT FRAME ONLY WHEN TOLD THE LAST ONE WAS SHOWN. Each commit can
+    /// ask for a frame callback (`wl_surface.frame`), and a toolkit waits for its `done` before
+    /// drawing again. Nothing answered them, so every client froze on its first frame: GTK's
+    /// widget factory looked right (one frame was all its test needed), and Firefox put up its
+    /// window and never painted the page (found by `test-browser.sh`). Answer them for every
+    /// surface of every window on the screen, subsurfaces included.
+    fn send_frames(&mut self) {
+        let time = self.started.elapsed().as_millis() as u32;
+        for id in self.state.wm.layout().iter().map(|p| p.id) {
+            let Some(surface) = self.state.surface(id) else {
+                continue;
+            };
+            with_surface_tree_downward(
+                &surface,
+                (),
+                |_, _, ()| TraversalAction::DoChildren(()),
+                |_, states, ()| {
+                    let callbacks: Vec<_> = states
+                        .cached_state
+                        .get::<SurfaceAttributes>()
+                        .current()
+                        .frame_callbacks
+                        .split_off(0);
+                    for callback in callbacks {
+                        callback.done(time);
+                    }
+                },
+                |_, _, ()| true,
+            );
+        }
     }
 
     /// The screen's size.
@@ -625,6 +668,8 @@ impl Server {
             pointer_at: (f64::from(width) / 2.0, f64::from(height) / 2.0).into(),
             pointer_moved: false,
             keyboard_on: None,
+            started: Instant::now(),
+            last_frames: Instant::now(),
             width,
             height,
         })

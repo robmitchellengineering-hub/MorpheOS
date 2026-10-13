@@ -4,6 +4,7 @@
 //! compositor serves what a toolkit expects. GTK3's widget factory is a large, ordinary GTK
 //! window. If it cannot start here, or draws in the wrong place, Firefox will too, and GTK is
 //! far quicker to run and to read than a browser. Asserted:
+//!   * GTK keeps drawing after its first frame (its frame callbacks are answered);
 //!   * GTK found a screen (`wl_output`) and logged no critical error (without one it logs
 //!     `GDK_IS_MONITOR` criticals on every frame);
 //!   * the VISIBLE window, not its shadow, starts exactly at the window manager's margin
@@ -112,6 +113,17 @@ fn a_gtk_window_finds_the_screen_and_sits_inside_it_where_the_window_manager_put
     assert!(
         log.contains("\"wl_output\""),
         "GTK never bound wl_output: there is no screen for it"
+    );
+    // A client draws its next frame only when told the last one was shown (frame
+    // callbacks). Unanswered, GTK asked once and froze on its first frame, and Firefox never
+    // painted its page. Answered, GTK keeps drawing.
+    let frame_requests = log
+        .lines()
+        .filter(|l| l.contains("-> wl_surface@") && l.contains(".frame("))
+        .count();
+    assert!(
+        frame_requests >= 5,
+        "GTK asked for {frame_requests} frame(s) in 2.5 s: its frame callbacks are not answered"
     );
     let criticals: Vec<&str> = log.lines().filter(|l| l.contains("-CRITICAL")).collect();
     assert!(
