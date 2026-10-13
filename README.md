@@ -44,6 +44,7 @@ needs, then gets out of the way.
 17. [The Morpheus Family](docs/17-morpheus-family.md): how MorpheOS and Morpheus fit together
 18. [Flow Learning](docs/18-flow-learning.md): learning how you work, so the next step is ready before you ask
 19. [Any Hardware](docs/19-any-hardware.md): adapting existing drivers or building new ones, without risking the machine
+20. [Build Plan](docs/20-build-plan.md): **the only task list.** What "finished" means, the settled architecture, and every task to get there
 
 ## The big reframe
 

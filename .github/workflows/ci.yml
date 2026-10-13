@@ -47,6 +47,17 @@ jobs:
       # Dependency-free, so it needs no install step.
       - name: Verify the documentation against the repository
         run: node scripts/verify-docs.mjs
+      # THE PLAN IS THE ONLY TASK LIST (docs/20-build-plan.md), and this keeps it honest: every
+      # task has a check, "done" has evidence, and a pull request's branch names the task it
+      # serves. It is how the work stays on the plan after the handover.
+      - name: Verify the build plan, and that this branch serves a task in it
+        run: |
+          node scripts/verify-plan.mjs --self-test
+          if [ -n "$GITHUB_HEAD_REF" ]; then
+            node scripts/verify-plan.mjs --branch "$GITHUB_HEAD_REF"
+          else
+            node scripts/verify-plan.mjs
+          fi
       # A CONSOLE FONT CANNOT DRAW EVERYTHING, AND A LOG CANNOT SHOW YOU THAT. A screenshot
       # of the booted image showed `MorpheOS ■ "never breaks, and heals itself"` on a real
       # screen, while the serial log had carried the same bytes and read as text. This is
