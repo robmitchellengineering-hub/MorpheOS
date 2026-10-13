@@ -1,0 +1,16 @@
+[package]
+name = "flow-compositor"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "MorpheOS: the Flow shell as a real Wayland compositor (Smithay), headless for CI first"
+
+[dependencies]
+flow-shell = { path = "../flow-shell" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+smithay = { version = "0.7.0", default-features = false, features = ["wayland_frontend", "renderer_pixman"] }
+# The test client (src/bin/solid-window.rs): a real Wayland client, no toolkit.
+wayland-client = "0.31.11"
+wayland-protocols = { version = "0.32.9", features = ["client"] }

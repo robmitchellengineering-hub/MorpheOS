@@ -243,6 +243,21 @@ impl Frame {
         }
     }
 
+    /// A frame from pixels painted elsewhere: ARGB, row-major, top left first. `None` when
+    /// the count does not match the size.
+    ///
+    /// The compositor (`crates/flow-compositor`) renders with Smithay and hands its output
+    /// here, so its frames go through the same PNG writer and evidence check as this crate's.
+    #[must_use]
+    pub fn from_pixels(width: u32, height: u32, pixels: Vec<u32>) -> Option<Self> {
+        let count = (width as usize).checked_mul(height as usize)?;
+        (pixels.len() == count).then_some(Self {
+            width,
+            height,
+            pixels,
+        })
+    }
+
     /// The frame's width in pixels.
     #[must_use]
     pub const fn width(&self) -> u32 {
