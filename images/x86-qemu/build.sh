@@ -93,7 +93,9 @@ fi
 # the image's own sources.list at that copy.
 MOZILLA_KEY_URL=https://packages.mozilla.org/apt/repo-signing-key.gpg
 MOZILLA_FPR=35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3
-BROWSER_PKGS="$BASE_PKGS,firefox,fonts-dejavu-core"
+# NetworkManager (A6) with what Wi-Fi needs (wpasupplicant, a "recommends" we would skip) and
+# systemd-resolved for DNS: the browser has to reach the network (E5).
+BROWSER_PKGS="$BASE_PKGS,firefox,fonts-dejavu-core,network-manager,wpasupplicant,systemd-resolved"
 if [ "$SCENARIO" = browser ]; then
     BROWSER_BASE="$WORK/rootfs-browser"
     if [ "$(cat "$BROWSER_BASE/.complete" 2>/dev/null)" != "$BROWSER_PKGS" ]; then
@@ -190,6 +192,10 @@ EOF
         if [ "$SCENARIO" = browser ]; then
             cp -a "$HERE/overlay-browser/." "$dir/"
             app=flow-browser
+        fi
+        if [ "$SCENARIO" = browser ]; then
+            ln -sf /usr/lib/systemd/system/NetworkManager.service \
+                "$dir/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
         fi
         for unit in seatd flow-shell "$app"; do
             ln -sf "/usr/lib/systemd/system/$unit.service" \

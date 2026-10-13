@@ -42,6 +42,11 @@ if [ -n "${VM_QMP:-}" ]; then
 fi
 
 # VM_MEM=<MiB> for a scenario that needs more than 1 GiB (a browser, E4).
+# A network (E5): VM_NET=1 attaches a virtio NIC on QEMU's user-mode network, where the host
+# is 10.0.2.2 and DHCP hands out 10.0.2.15. Otherwise the VM has no network at all.
+NET_ARGS=(-nic none)
+[ "${VM_NET:-0}" = 1 ] && NET_ARGS=(-nic user,model=virtio-net-pci)
+
 ACCEL=tcg
 [ -w /dev/kvm ] && ACCEL=kvm
 
@@ -53,5 +58,5 @@ exec timeout --foreground "$TIMEOUT" qemu-system-x86_64 \
     "${PAYLOAD_ARGS[@]}" \
     -device i6300esb -action watchdog=reset \
     "${DISPLAY_ARGS[@]}" "${MONITOR_ARGS[@]}" \
-    -nic none -display none \
+    "${NET_ARGS[@]}" -display none \
     -serial file:"$LOG"

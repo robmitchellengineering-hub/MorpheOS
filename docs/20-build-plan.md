@@ -170,7 +170,7 @@ How to approach it (written at handover, from what E1–E10 taught):
 4. The verdict is a screendump of a `file://` page of large blocks of known colours, read the
    way `test-shell.sh` reads the demo window.
 
-### E5 · Networking · open · needs E3
+### E5 · Networking · in progress · needs E3
 
 **What:** NetworkManager (A6) in the image, wired and Wi-Fi, and a minimal Wi-Fi picker in
 the shell (list networks, enter a password) over NetworkManager's D-Bus API.
