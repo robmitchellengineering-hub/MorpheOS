@@ -89,19 +89,45 @@ tests take (AGENTS.md H3).
 `crates/flow-compositor/src/wm.rs` (the decisions, unit-tested). Move, fullscreen and the
 switch shortcut on real input are E9.
 
-### E3 · The compositor on bare metal, inside the image · open · needs E1
+### E3 · The shell on a real display, inside the image · done · needs E1
 
-**What:** the udev backend (DRM/KMS output, libinput, `libseat`) and a systemd unit that starts
-the compositor on tty1 at boot, as the ordinary user (A9).
+**What:** `flow-compositor --drm /dev/dri/card0`: the same software renderer, its frame
+copied into a DRM dumb buffer on the first connected output (no GPU stack, works on any KMS
+driver). A `shell` image scenario runs it as a service, with a demonstration window.
 
-**Done when:** the `images` workflow boots the image in QEMU with `-device virtio-gpu-pci`,
-takes a QEMU `screendump`, and finds the shell's frame in it; and a scenario where the
-compositor fails to start makes the trial fall back, like `unhealthy`.
+**Done when:** the `images` workflow boots the `shell` image in QEMU with virtio-gpu, takes a
+`screendump`, and finds the shell's background over most of the screen and the window at its
+exact place and size; the boot is healthy and committed (`images/x86-qemu/test-shell.sh`).
 
-**Notes:** a broken shell must be an unhealthy boot, so a bad update falls back. Keep a root
-console on VT2 for recovery. Smithay's `anvil` example shows the udev backend.
+**Evidence:** https://github.com/robmitchellengineering-hub/MorpheOS/pull/42 and
+`images/x86-qemu/test-shell.sh` (the background over 960000 of 1024000 pixels,
+the window at (16, 16), 320x200, the boot committed). It found two real faults first: the
+image lacked the compositor's libraries, and virtio-gpu shows nothing until DIRTYFB says the
+frame changed.
 
-### E4 · A browser · open · needs E3
+**Notes:** `plain` (the image for people) keeps its text console until E10, because a
+shell nobody can type into would lock a person out. The service runs as root for now (E11).
+
+### E10 · Real keyboard and mouse (libinput) · open · needs E3
+
+**What:** libinput through Smithay (`backend_libinput`, needs `libudev` and `libinput`)
+feeding the same handlers the `--script` commands use (E2); the root console stays on VT2.
+Then `plain` boots into the shell.
+
+**Done when:** a QEMU scenario types into a test client through the VM's virtual keyboard
+(QEMU monitor `sendkey`) and clicks with its virtual tablet, and the client reports both;
+`plain` boots into the shell.
+
+### E11 · The shell as an ordinary user, and a broken shell falls back · open · needs E3
+
+**What:** start the compositor in a seat session (`libseat` with `seatd` or logind) as the
+ordinary user (A9; Rob decides the account model in S5), not root. Add an image scenario
+whose update ships a compositor that fails to start.
+
+**Done when:** the shell scenario passes with the compositor not running as root, and the
+broken-shell update is trialled once and falls back, like `unhealthy`.
+
+### E4 · A browser · open · needs E10
 
 **What:** Firefox from Mozilla's own APT repository (packages.mozilla.org, pinned), running on
 Wayland (`MOZ_ENABLE_WAYLAND=1`).

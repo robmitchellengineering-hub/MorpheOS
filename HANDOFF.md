@@ -23,7 +23,9 @@ the widening backlog (ADR 0014, lane 2) and waits.
 | Transactions that roll themselves back (`morph-transaction`, `morph-graph`) | **tested, CLI-proven** | `scripts/verify-transaction-cli.sh`, `verify-apply-cli.sh` |
 | Manifest, invariants, risk tiers, signed generations (`.rob`) | **tested** | `morph-manifest` tests; ADRs 0005, 0011, 0012 |
 | Strata: versions, rewind, ransomware detection, in the x86 image | **VM-proven** | `test-ransomware.sh`: 24 files back byte-for-byte |
-| Flow shell: frame, input, session model, two feels | **software-rendered only** | CI renders `frame.png` and fails if blank. **No Wayland yet** |
+| Flow shell: frame, input, session model, two feels | **software-rendered only** | CI renders `frame.png` and fails if blank |
+| `flow-compositor`: real Wayland clients, Classic windows (E1, E2) | **tested headless** | `crates/flow-compositor/tests/` read pixels back from real clients |
+| The shell on a real display inside the image (E3) | **VM-proven** | `test-shell.sh`: a virtio-gpu screendump shows the shell and the window in place |
 | Bootable x86 USB image for a person | **builds, boots in QEMU** | [HARDWARE.md](images/x86-qemu/HARDWARE.md). **Never booted on real hardware** |
 | Pi 5 image | **builds and is read back** | `verify-pi-image.mjs`. **Never booted on a Pi** |
 
@@ -103,3 +105,8 @@ One line per piece of work: date, who, what, what's next.
 - 2026-10-13 · Claude Code · E2 done: `wm.rs` (window decisions, unit-tested anywhere),
   `--script` input, focus border, keyboard focus, close. Found and fixed: Smithay's
   `draw_solid` damage is relative to its rectangle. E9 holds the rest. Next: E3.
+- 2026-10-13 · Claude Code · E3 (#42): `flow-compositor --drm` shows the frame through a DRM
+  dumb buffer; the `shell` scenario's screendump is the verdict. Found: the image lacked the
+  compositor's libraries; virtio-gpu shows nothing without DIRTYFB; with KVM the window beat
+  the health check, and the harness then exited silently (fixed, H11). Split the old E3 into
+  E3 (display), E10 (input) and E11 (non-root, broken-shell fallback). Next: E10.

@@ -25,6 +25,14 @@ PAYLOAD=${4:-}
 PAYLOAD_ARGS=()
 [ -n "$PAYLOAD" ] && PAYLOAD_ARGS=(-drive "file=$PAYLOAD,format=raw,if=virtio,readonly=on")
 
+# A real display (doc 20, E3): VM_GPU=1 swaps the default VGA for virtio-gpu, a KMS device
+# the compositor can drive, and VM_MONITOR=<path> opens a monitor socket so a test can take
+# a `screendump` of what is on the screen.
+DISPLAY_ARGS=()
+[ "${VM_GPU:-0}" = 1 ] && DISPLAY_ARGS=(-vga none -device virtio-gpu-pci)
+MONITOR_ARGS=(-monitor none)
+[ -n "${VM_MONITOR:-}" ] && MONITOR_ARGS=(-monitor "unix:$VM_MONITOR,server,nowait")
+
 ACCEL=tcg
 [ -w /dev/kvm ] && ACCEL=kvm
 
@@ -35,5 +43,6 @@ exec timeout --foreground "$TIMEOUT" qemu-system-x86_64 \
     -drive file="$DISK",format=raw,if=virtio \
     "${PAYLOAD_ARGS[@]}" \
     -device i6300esb -action watchdog=reset \
-    -nic none -display none -monitor none \
+    "${DISPLAY_ARGS[@]}" "${MONITOR_ARGS[@]}" \
+    -nic none -display none \
     -serial file:"$LOG"

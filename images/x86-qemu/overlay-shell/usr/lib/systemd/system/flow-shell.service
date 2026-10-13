@@ -1,0 +1,18 @@
+[Unit]
+Description=The Flow shell: the compositor that draws the screen
+Documentation=https://github.com/robmitchellengineering-hub/MorpheOS/blob/main/docs/20-build-plan.md
+# A broken shell must be a failed unit, so a bad update fails the boot health check and
+# falls back (doc 20, E3). No `Restart=` that would hide a crash loop from it.
+After=systemd-udev-settle.service systemd-logind.service
+
+[Service]
+# ⚠️ ROOT FOR NOW. Taking DRM master without a seat manager needs root; running as an
+# ordinary user through a seat is doc 20's E10, and Rob decides the account model (S5).
+RuntimeDirectory=flow
+RuntimeDirectoryMode=0755
+Environment=XDG_RUNTIME_DIR=/run/flow
+ExecStart=/usr/bin/flow-compositor --socket wayland-0 --drm /dev/dri/card0
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target
