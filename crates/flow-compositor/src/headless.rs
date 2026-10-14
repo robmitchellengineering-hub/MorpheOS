@@ -1256,7 +1256,7 @@ fn render(
             ];
             for (i, h) in [6, 11, 16].into_iter().enumerate() {
                 let x = bx + 5 + 5 * i as i32;
-                parts.push((rect((x, by + 20 - h, 4, h)), colour(palette::TEXT)));
+                parts.push((rect((x, by + 20 - h, 4, h)), colour(palette::BAR_ICON)));
             }
             for (r, c) in parts {
                 frame
