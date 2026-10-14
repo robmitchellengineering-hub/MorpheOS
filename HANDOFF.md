@@ -71,12 +71,12 @@ From a DSH shell in PowerShell, run any of them as
 
 ## Open pull requests at handover
 
-#42 to #51 (E3, E10, the handover plan, S10, E12, E4's browser and popups, E5's network and
-Wi-Fi picker, the laptop drivers) were merged on 2026-10-13 and 14, as merge commits so the stack merged without conflicts. Open:
+#42 to #52 (E3, E10, the handover plan, S10, E12, E4's browser and popups, E5's network and
+Wi-Fi picker, the laptop drivers, the stick guide) were merged on 2026-10-13 and 14, as merge commits so the stack merged without conflicts. Open:
 
 | # | Branch | What |
 |---|---|---|
-| (E6) | `feat/e6-stick-guide` | HARDWARE.md for Rob's three machines: writing the stick on Windows, each machine's boot menu, the BitLocker warning |
+| (E9) | `feat/e9-move-fullscreen-switch` | E9: move by the edge or with Super, Alt+Tab, fullscreen (Super+F, or the client's F11) |
 
 If CI goes red on it, it is yours to fix, on that branch. **When a pull request's base is
 another open branch** (a stack), and the base merges: if it was squash-merged, the next branch
@@ -236,3 +236,10 @@ One line per piece of work: date, who, what, what's next.
   writing the stick from Windows (balenaEtcher), each machine's boot menu and Secure Boot
   switch, and, first, the BitLocker recovery key, since turning Secure Boot off on an
   encrypted Windows laptop makes Windows ask for it.
+
+- 2026-10-14 · Claude Code · E9 (`feat/e9-move-fullscreen-switch`): windows move by their
+  edge, or anywhere with Super held, or by their own title bar (a client's `move` request);
+  the window used comes to the front; Alt+Tab switches; Super+F, or the client's own
+  request, goes fullscreen and back to the same place and size. Found while sabotaging the
+  test: a press passed to a window whose release is not leaves the pointer grabbed for
+  good, and every window deaf to the mouse; the test now ends with a click that must arrive.
