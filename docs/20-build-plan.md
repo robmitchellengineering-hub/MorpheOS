@@ -731,8 +731,8 @@ internal disk (E7):
    (doc 15's "broken driver as an update", as near as M1 gets), heal (the spare rebuilt
    after a failed trial), and ransomware against `~/Documents`. Deleting the system root,
    filling the disk and corrupting a config are S4, S7 and S8 (M2); leave them out.
-2. **The media, published by CI.** ⚠️ HARDWARE.md says the payload stick "is built by CI
-   too", but `images.yml` uploads no payload, so fix that sentence in the same PR. Teach
+2. **The media, published by CI.** `images.yml` uploads no payload yet; HARDWARE.md says so
+   (fixed on 2026-10-14, with the mount under `/run`), and this step changes that. Teach
    `images/x86-qemu/build-payload.sh` kinds `unhealthy`, `crash`, `broken-shell` and
    `hung-shell`, made with `debugfs` on a copy of `root-a.img` the way the marker is. For
    example, `crash` points `/usr/sbin/init` at `/bin/false`, so the kernel panics and

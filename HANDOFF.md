@@ -365,3 +365,8 @@ One line per piece of work: date, who, what, what's next.
   nothing on a machine runs yet): the machine, kernel, boot, recovery image, free space,
   replicas, single-copy, heal's switch, the network, the users and the capsules are now listed
   too (H5). S11's notes say to remove `/machine/name` with `/storage/retention`.
+- 2026-10-14 · Claude Code · `fix/hardware-payload-doc`: HARDWARE.md's update steps said CI builds
+  the payload stick (it uploads none), that the tool finds it by its label (it takes a path), and
+  mounted it under `/mnt`, on the read-only root. Now: built with `build-payload.sh` on the
+  machine that built the stick, mounted read-only at `/run/morph-media` as the self-test does,
+  then `morph-boot trial`. The same text on the image follows once #68 (which edits it) merges.
