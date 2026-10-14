@@ -33,7 +33,7 @@ cargo build --release -p morph-boot -p strata -p morph-update -p morph-heal -p f
 if [ "$WHAT" = plain ] || [ "$WHAT" = all ]; then
     step "the image a person uses: build, boot, and read back its report"
     sudo images/x86-qemu/build.sh "$WORK" plain
-    sudo images/x86-qemu/test-boot.sh "$WORK" 150
+    sudo images/x86-qemu/test-boot.sh "$WORK" 300
     node scripts/verify-motd.mjs "$WORK/serial-plain.log"
 fi
 if [ "$WHAT" = scenarios ] || [ "$WHAT" = all ]; then

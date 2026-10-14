@@ -227,7 +227,7 @@ user, which waits on Rob's account model (S5).
    it under Open questions and do not choose an account model yourself.
 7. **Size:** M, one PR.
 
-### E4 · A browser · in progress · needs E10
+### E4 · A browser · done · needs E10
 
 **What:** Firefox from Mozilla's own APT repository (packages.mozilla.org, pinned), running on
 Wayland (`MOZ_ENABLE_WAYLAND=1`). Then `plain` boots into the shell, with the browser in it
@@ -242,14 +242,23 @@ and the Wi-Fi picker's window (the VM has no network). The boot history on the E
 exactly `a/committed/none`, a login must still complete on the serial console, and the
 hardware report checks must still pass.
 
+**Evidence:** `images/x86-qemu/test-boot.sh` and `images/x86-qemu/test-browser.sh`. In the
+`images` workflow, `plain` boots into the shell: a screendump shows the shell's background,
+Firefox on its local start page over a quarter of the screen or more, and the Wi-Fi picker in
+front saying in red that there is no Wi-Fi; slot A is committed, a login completes on the
+serial console, and the hardware report reads back. `test-browser.sh` shows Firefox drawing a
+local page and then one the CI host serves. Writing the `plain` check found that a window
+opening under Firefox would be off the screen and behind it (`fix/new-window-in-view`), and
+`build.sh`'s new slot-size check measured slot A at 1134 MiB of the 1200 MiB `ROOT_MB`
+(94%, Measured); `ROOT_MB` is now 1600.
+
 **Progress:** the first half is done and VM-proven. In `test-browser.sh`, Firefox 158
 (Mozilla's build) draws a local page on the shell and then a page the CI host serves (#47,
 #49). Popups (menus and dropdowns) are placed, drawn on top, take clicks and close on a click
 outside (`tests/popups.rs`). Step 5 (PR A) is done: the service runs `--drm auto`, which
 takes the first card in `/dev/dri` with a connected display (`src/display.rs`, unit-tested;
-`test-shell.sh` checks the compositor said which card it chose). Still to do: `plain` boots
-into the shell, and HARDWARE.md says how
-to reach the shell and the console.
+`test-shell.sh` checks the compositor said which card it chose). PR B is done too: `plain`
+boots into the shell, and HARDWARE.md says how to reach the shell and the console.
 
 **Notes:** ⚠️ Ubuntu 24.04's `firefox` and `chromium` packages are snap stubs. Firefox needs
 more protocols than E1 serves: `linux-dmabuf` (or it falls back to shm), `xdg-decoration`,
@@ -366,8 +375,8 @@ Firefox from its local page to one the CI host serves at 10.0.2.2. Part 2: the W
 itself when the machine has no network. `tests/on_the_shell.rs` drives it on the compositor
 with a fake backend; `images/x86-qemu/test-wifi.sh` joins a WPA2 network carried by the
 kernel's simulated radios (`mac80211_hwsim`) in a VM, a wrong password and then the right one
-typed on the VM's keyboard, judged by screendumps and the network's own DHCP log. Still to
-do: Firefox and the picker together in `plain` (with E4), and a way to open the picker when
+typed on the VM's keyboard, judged by screendumps and the network's own DHCP log. Firefox and the picker are together in `plain` (E4). Still to
+do: a way to open the picker when
 the machine already has a network (from the shell's bar).
 
 **Notes:**
@@ -523,7 +532,7 @@ the first alone to a committed slot. It refuses to touch the disk it booted from
 
 **Notes:**
 1. **The layout,** derived from `images/x86-qemu/build.sh` (the stick: `esp` 300 MiB FAT32;
-   `root-a` and `root-b` 1200 MiB ext4 each, type `4f68bce3-e8cd-4db1-96e7-fbcaf984b709`,
+   `root-a` and `root-b` 1600 MiB ext4 each (1200 until E4 added Firefox), type `4f68bce3-e8cd-4db1-96e7-fbcaf984b709`,
    x86-64 root; `data` ext4) and from what `morph-update` writes. The names must stay the
    same, because the slot images find their partitions by `PARTLABEL` (`fstab`; the loader
    entries' `root=PARTLABEL=root-<slot>`; `morph-update`'s and `morph-heal`'s default
@@ -537,7 +546,7 @@ the first alone to a committed slot. It refuses to touch the disk it booted from
    | 4 | `data` | `linux`, ext4 | the rest, at least 16 GiB | `/persist`: `home/morph/Documents`, `strata/` (mode 0700), `network/system-connections/` (mode 0700) |
 
    The installer refuses a disk smaller than 34 GiB (Target). The slots are larger than
-   today's 1200 MiB image on purpose. `write_image` writes into the device without resizing
+   today's 1600 MiB image on purpose. `write_image` writes into the device without resizing
    it, and `hash_prefix` reads back only the image's length, so a smaller image in a larger
    partition is fine. A later image larger than its partition can never be installed
    without repartitioning, which loses the A/B guarantee. Use E4's Measured root size to
@@ -619,7 +628,7 @@ the first alone to a committed slot. It refuses to touch the disk it booted from
      path. Real laptops often prefer an NVRAM entry, which is why `bootctl install` is in
      the steps.
    - After the install, Secure Boot must stay off: the image is not signed.
-   - Writing two 1200 MiB slots under TCG (no KVM) is slow, so give the VM 1800 s.
+   - Writing two 1600 MiB slots under TCG (no KVM) is slow, so give the VM 1800 s.
 8. **Rob's decisions** (before PR 1):
    - (a) The whole internal disk, or alongside Windows? Recommendation: the whole disk for
      M1. Shrinking NTFS and sharing the ESP with Windows is where installers lose data.

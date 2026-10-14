@@ -7,7 +7,8 @@
 #           ransomware                 (no update: slot A attacks its own files,
 #                                       and Strata has to get them back)
 #           plain                      (no self-test at all: a machine to USE, for real
-#                                       hardware — see images/x86-qemu/HARDWARE.md)
+#                                       hardware: the shell, Firefox and the Wi-Fi picker,
+#                                       see images/x86-qemu/HARDWARE.md)
 #
 # Disk layout (GPT):
 #   1 esp     FAT32  systemd-boot, loader.conf, one kernel+initrd per slot
@@ -25,13 +26,12 @@ set -euo pipefail
 WORK=${1:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
 SCENARIO=${2:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
 case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell|browser|wifi|broken-shell|hung-shell) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
-# `plain` is the one that leaves the CI harness behind and is meant to be booted by a person.
-# `shell` is `plain` with the Flow shell drawing the screen and taking the keyboard and mouse
-# (doc 20, E3 and E10), and the root console moved to VT2. It stays separate from `plain`
-# until there is something to do in the shell (a browser, E4): until then, the person
-# booting `plain` on a laptop is better served by the root console it opens on.
-# `browser` is `shell` with Firefox open on a test page instead of the demonstration window
-# (doc 20, E4).
+# `plain` is the one that leaves the CI harness behind and is meant to be booted by a person:
+# the Flow shell drawing the screen and taking the keyboard and mouse, Firefox on a local
+# start page, NetworkManager, and the Wi-Fi picker when there is no network (doc 20, E4 and
+# E5); the root console is on VT2.
+# `shell` is the shell with only a demonstration window, for the shell's own tests (E3, E10).
+# `browser` is `plain` with Firefox on a test page that then goes to the CI host (E4, E5).
 # `wifi` is `shell` with NetworkManager and no wired network: the Wi-Fi picker opens, and the
 # kernel's simulated radios (mac80211_hwsim) carry a WPA2 network for it to join (E5). No
 # Firefox, so it builds without Mozilla's servers.
@@ -40,8 +40,7 @@ SHELL_UI=0
 # `broken-shell` and `hung-shell` are self-test images (the scripted A/B walk) WITH the shell:
 # slot B's update ships a shell that cannot start, or one that never draws (E11).
 case "$SCENARIO" in
-    plain) HARDWARE=1 ;;
-    shell|browser|wifi) HARDWARE=1; SHELL_UI=1 ;;
+    plain|shell|browser|wifi) HARDWARE=1; SHELL_UI=1 ;;
     broken-shell|hung-shell) SHELL_UI=1 ;;
 esac
 
@@ -117,7 +116,7 @@ MOZILLA_FPR=35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3
 # systemd-resolved for DNS: the browser has to reach the network (E5).
 BROWSER_PKGS="$BASE_PKGS,firefox,fonts-dejavu-core,network-manager,wpasupplicant,systemd-resolved"
 BROWSER_KEY="$BROWSER_PKGS,(linux-modules-extra)"
-if [ "$SCENARIO" = browser ]; then
+if [ "$SCENARIO" = browser ] || [ "$SCENARIO" = plain ]; then
     BROWSER_BASE="$WORK/rootfs-browser"
     if [ "$(cat "$BROWSER_BASE/.complete" 2>/dev/null)" != "$BROWSER_KEY" ]; then
         rm -rf "$BROWSER_BASE"
@@ -261,11 +260,13 @@ EOF
         # opens by itself when the machine has no network.
         apps=flow-demo-window
         case "$SCENARIO" in
-            browser) apps="flow-browser NetworkManager flow-wifi" ;;
+            plain|browser) apps="flow-browser NetworkManager flow-wifi" ;;
             wifi) apps="NetworkManager flow-wifi morph-wifi-test-ap" ;;
         esac
-        case "$SCENARIO" in browser|wifi) cp -a "$HERE/overlay-network/." "$dir/" ;; esac
-        if [ "$SCENARIO" = browser ]; then cp -a "$HERE/overlay-browser/." "$dir/"; fi
+        case "$SCENARIO" in plain|browser|wifi) cp -a "$HERE/overlay-network/." "$dir/" ;; esac
+        case "$SCENARIO" in plain|browser) cp -a "$HERE/overlay-browser/." "$dir/" ;; esac
+        # What only the browser TEST needs (its page, and the drop-in that opens it).
+        if [ "$SCENARIO" = browser ]; then cp -a "$HERE/overlay-browser-test/." "$dir/"; fi
         if [ "$SCENARIO" = wifi ]; then
             cp -a "$HERE/overlay-wifi-test/." "$dir/"
             # The package's own hostapd service is not the test's access point: keep it off.
@@ -415,11 +416,22 @@ mkdir -p "$DATADIR/home/morph/Documents" "$DATADIR/strata"
 chmod 0700 "$DATADIR/strata"
 
 # 5. Partition images, then the disk. No loop devices or mounts needed.
-ESP_MB=300 ROOT_MB=1200 DATA_MB=256
+# ROOT_MB was 1200 until 2026-10-14, when `plain` took Firefox and the check above measured slot
+# A at 1134 MiB (94%). 1600 puts it at 71%. Each raise is deliberate and said in the pull request:
+# a machine installed with one slot size keeps it (doc 20, E7).
+ESP_MB=300 ROOT_MB=1600 DATA_MB=256
 rm -f "$WORK/esp.img"
 mkfs.vfat -F 32 -n ESP -C "$WORK/esp.img" $((ESP_MB * 1024)) >/dev/null
 mcopy -s -i "$WORK/esp.img" "$ESPDIR"/* ::/
 for slot in a b; do
+    # The slot's size is fixed when a machine is installed (E7), so a system that has grown
+    # into its slot is found here, at build time, not by an update that no longer fits.
+    used=$(du -sm "$WORK/root-$slot" | cut -f1)
+    echo "slot $slot: ${used} MiB of ${ROOT_MB} MiB" >&2
+    if [ "$used" -gt $((ROOT_MB * 85 / 100)) ]; then
+        echo "slot $slot's system (${used} MiB) is over 85% of ROOT_MB (${ROOT_MB} MiB): raise ROOT_MB on purpose, and say so" >&2
+        exit 1
+    fi
     rm -f "$WORK/root-$slot.img"
     mkfs.ext4 -q -L "root-$slot" -d "$WORK/root-$slot" "$WORK/root-$slot.img" "${ROOT_MB}M"
 done
@@ -437,7 +449,9 @@ size=${ROOT_MB}MiB, type=4f68bce3-e8cd-4db1-96e7-fbcaf984b709, name=root-b
 size=${DATA_MB}MiB, type=linux, name=data
 EOF
 dd if="$WORK/esp.img" of="$DISK" bs=1M seek=1 conv=notrunc status=none
-dd if="$WORK/root-a.img" of="$DISK" bs=1M seek=$((1 + ESP_MB)) conv=notrunc status=none
-dd if="$WORK/root-b.img" of="$DISK" bs=1M seek=$((1 + ESP_MB + ROOT_MB)) conv=notrunc status=none
-dd if="$WORK/data.img" of="$DISK" bs=1M seek=$((1 + ESP_MB + 2 * ROOT_MB)) conv=notrunc status=none
+# conv=sparse: the disk file is freshly truncated (all zeros), so skipping the filesystems' zero
+# blocks writes the same disk and keeps the file sparse, which keeps the CI runner's disk free.
+dd if="$WORK/root-a.img" of="$DISK" bs=1M seek=$((1 + ESP_MB)) conv=notrunc,sparse status=none
+dd if="$WORK/root-b.img" of="$DISK" bs=1M seek=$((1 + ESP_MB + ROOT_MB)) conv=notrunc,sparse status=none
+dd if="$WORK/data.img" of="$DISK" bs=1M seek=$((1 + ESP_MB + 2 * ROOT_MB)) conv=notrunc,sparse status=none
 echo "$DISK"

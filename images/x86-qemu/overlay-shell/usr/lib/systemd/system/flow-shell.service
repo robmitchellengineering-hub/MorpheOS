@@ -14,6 +14,9 @@ Documentation=https://github.com/robmitchellengineering-hub/MorpheOS/blob/main/d
 Requires=seatd.service
 After=seatd.service systemd-udev-settle.service systemd-logind.service getty@tty1.service
 Conflicts=getty@tty1.service
+# A shell that fails, or never draws (TimeoutStartSec), gives VT1 back to the console rather
+# than leaving a dark screen. It is still a failed unit, so an update that ships it falls back.
+OnFailure=getty@tty1.service
 
 [Service]
 Type=notify
