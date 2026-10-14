@@ -142,6 +142,10 @@ pub mod palette {
     pub const BACKGROUND: Colour = Colour::rgb(0x10, 0x12, 0x16);
     /// The session bar.
     pub const BAR: Colour = Colour::rgb(0x1b, 0x1f, 0x27);
+    /// What is drawn on the bar (the Wi-Fi button's bars). Its own colour, not TEXT: tests
+    /// find the pointer by TEXT, and a pointer that seemed drawn before the mouse moved
+    /// failed `test-shell.sh` when the icon used it.
+    pub const BAR_ICON: Colour = Colour::rgb(0x9a, 0xa4, 0xb8);
     /// A session surface that does not have focus.
     pub const SURFACE: Colour = Colour::rgb(0x22, 0x27, 0x30);
     /// A session surface that does.

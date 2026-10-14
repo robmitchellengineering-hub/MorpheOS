@@ -270,3 +270,85 @@ fn a_person_chooses_a_network_types_its_password_and_joins_it() {
         "Esc did not close the picker: {said:?}"
     );
 }
+
+/// The bar's Wi-Fi button and Super+W open the picker (E5): the shell starts it itself, so a
+/// person can reach it once the machine is online and the picker that opened at boot is gone.
+/// There is only ever one; a second press brings the open one to the front with the keyboard.
+#[test]
+fn the_bars_button_and_super_w_open_one_picker() {
+    let dir = runtime_dir("bar");
+    let f: Vec<PathBuf> = (0..5).map(|i| dir.join(format!("{i}.ppm"))).collect();
+    // On a 640 x 480 screen the button is the 24 x 24 square at (608, 452) (wm::wifi_button).
+    const KEY_LEFTMETA: u32 = 125;
+    let script = format!(
+        "settle 500\nframe {f0}\n\
+         click 620 464\nsettle 2500\nframe {f1}\n\
+         click 620 464\nsettle 1000\nframe {f2}\n\
+         key {KEY_ESC}\nsettle 1000\nframe {f3}\n\
+         key {KEY_LEFTMETA} {w}\nsettle 2500\nframe {f4}\n",
+        f0 = f[0].display(),
+        f1 = f[1].display(),
+        f2 = f[2].display(),
+        f3 = f[3].display(),
+        f4 = f[4].display(),
+        w = code('w'),
+    );
+    let script_path = dir.join("script");
+    std::fs::write(&script_path, script).unwrap();
+    let launch = format!(
+        "{PICKER} --fake Home:80:secured --size {}x{}",
+        SIZE.0, SIZE.1
+    );
+    let out = Command::new(compositor())
+        .env("XDG_RUNTIME_DIR", &dir)
+        .args(["--socket", "test", "--width", "640", "--height", "480"])
+        .args(["--wait-for", "0", "--timeout", "30", "--launch-wifi"])
+        .arg(&launch)
+        .arg("--script")
+        .arg(&script_path)
+        .output()
+        .unwrap();
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(out.status.success(), "the script did not complete: {said}");
+
+    let title = rgb(colours::TITLE);
+    let titles = |i: usize| Ppm::read(&f[i]).px.iter().filter(|p| **p == title).count();
+    let one = TITLE_H as usize * SIZE.0 * 8 / 10;
+    let button = rgb(flow_shell::palette::SURFACE_FOCUSED);
+    let start = Ppm::read(&f[0]);
+    assert_eq!(
+        start.px[464 * start.w + 610],
+        button,
+        "no Wi-Fi button on the bar"
+    );
+    assert_eq!(
+        titles(0),
+        0,
+        "a picker was open before anything asked for one"
+    );
+    let first = titles(1);
+    assert!(
+        first >= one,
+        "the bar's button did not open the picker ({first} px): {said}"
+    );
+    let again = titles(2);
+    assert!(
+        again >= one && again < first * 3 / 2,
+        "a second press opened a second picker ({first} px, then {again}): {said}"
+    );
+    assert_eq!(
+        said.matches("opening the Wi-Fi picker").count(),
+        2,
+        "{said}"
+    );
+    assert!(
+        said.contains("closed"),
+        "Esc did not close the picker: {said}"
+    );
+    assert_eq!(titles(3), 0, "the picker is still on the screen after Esc");
+    assert!(titles(4) >= one, "Super+W did not open the picker: {said}");
+}

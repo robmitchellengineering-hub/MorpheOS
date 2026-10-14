@@ -65,6 +65,7 @@ use smithay::wayland::selection::data_device::{
 use smithay::wayland::shell::xdg::SurfaceCachedState;
 use smithay::wayland::shell::xdg::{
     PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
+    XdgToplevelSurfaceData,
 };
 use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::{
@@ -93,6 +94,8 @@ pub struct Options {
     pub script: Option<String>,
     /// Show the screen on this DRM device and run until stopped (E3). Overrides the rest.
     pub drm: Option<PathBuf>,
+    /// The command that opens the Wi-Fi picker, from the bar's button or Super+W (E5).
+    pub launch_wifi: Option<String>,
 }
 
 struct App {
@@ -473,6 +476,23 @@ impl App {
         }
     }
 
+    /// The window whose toplevel says it is `app_id` (`xdg_toplevel.set_app_id`).
+    fn window_with_app_id(&self, app_id: &str) -> Option<u32> {
+        self.xdg_shell_state
+            .toplevel_surfaces()
+            .iter()
+            .find(|t| {
+                with_states(t.wl_surface(), |states| {
+                    states
+                        .data_map
+                        .get::<XdgToplevelSurfaceData>()
+                        .and_then(|d| d.lock().ok().and_then(|d| d.app_id.clone()))
+                        .is_some_and(|a| a == app_id)
+                })
+            })
+            .and_then(|t| self.id_of(t.wl_surface()))
+    }
+
     fn surface(&self, id: u32) -> Option<WlSurface> {
         self.ids
             .iter()
@@ -489,7 +509,11 @@ enum Shortcut {
     Vt(i32),
     Cycle,
     Fullscreen,
+    Wifi,
 }
+
+/// The Wi-Fi picker's `app_id`, by which the shell finds one already open.
+pub const WIFI_APP_ID: &str = "morpheos.wifi";
 
 /// The left mouse button's code (linux/input-event-codes.h `BTN_LEFT`).
 pub const BTN_LEFT: u32 = 0x110;
@@ -517,6 +541,21 @@ pub struct Server {
     /// The screen's size, which the pointer stays inside.
     width: u32,
     height: u32,
+    /// The socket clients connect to, and the Wi-Fi picker the bar opens (E5): its command,
+    /// and the pickers this shell started, reaped as they exit.
+    socket: String,
+    launch_wifi: Option<Vec<String>>,
+    launched: Vec<std::process::Child>,
+}
+
+impl Drop for Server {
+    /// A picker the shell started goes with it: nothing else would close it.
+    fn drop(&mut self) {
+        for child in &mut self.launched {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
 }
 
 impl Server {
@@ -532,6 +571,9 @@ impl Server {
             .dispatch_clients(&mut self.state)
             .map_err(|e| format!("dispatching: {e}"))?;
         self.state.refresh();
+        // Reap the pickers that have closed, or each stays a zombie.
+        self.launched
+            .retain_mut(|c| matches!(c.try_wait(), Ok(None)));
         if self.state.wm.focused() != self.keyboard_on {
             self.apply_focus();
         }
@@ -671,6 +713,20 @@ impl Server {
             self.state.wm.end_drag();
             return;
         }
+        // The bar's Wi-Fi button is the shell's: the press opens the picker, and neither it
+        // nor its release reaches a window.
+        if pressed
+            && button == BTN_LEFT
+            && self
+                .state
+                .wm
+                .on_wifi_button(self.pointer_at.x as i32, self.pointer_at.y as i32)
+        {
+            self.state.dismiss_popups();
+            self.drag_button = Some(button);
+            self.open_wifi();
+            return;
+        }
         if pressed && button == BTN_LEFT {
             let at = self.pointer_at;
             let with_super = self.keyboard.modifier_state().logo;
@@ -726,7 +782,8 @@ impl Server {
     ///   * Ctrl+Alt+F1..F12: returns the virtual terminal to switch to, so a person can
     ///     always reach the root console on VT2;
     ///   * Alt+Tab: the next window, in front (E9);
-    ///   * Super+F: the focused window fullscreen, and back (E9).
+    ///   * Super+F: the focused window fullscreen, and back (E9);
+    ///   * Super+W: the Wi-Fi picker, as the bar's button opens it (E5).
     pub fn key(&mut self, code: u32, pressed: bool, time: u32) -> Option<i32> {
         let state = if pressed {
             KeyState::Pressed
@@ -757,6 +814,8 @@ impl Server {
                         FilterResult::Intercept(Shortcut::Cycle)
                     } else if modifiers.logo && plain == Some(Keysym::f.raw()) {
                         FilterResult::Intercept(Shortcut::Fullscreen)
+                    } else if modifiers.logo && plain == Some(Keysym::w.raw()) {
+                        FilterResult::Intercept(Shortcut::Wifi)
                     } else {
                         FilterResult::Forward
                     }
@@ -778,7 +837,43 @@ impl Server {
                     }
                     None
                 }
+                Shortcut::Wifi => {
+                    self.open_wifi();
+                    None
+                }
             })
+    }
+
+    /// Open the Wi-Fi picker (the bar's button, Super+W). There is only ever one: one already
+    /// on the screen comes to the front with the keyboard, and while one this shell started is
+    /// still starting, nothing more is started.
+    fn open_wifi(&mut self) {
+        if let Some(id) = self.state.window_with_app_id(WIFI_APP_ID) {
+            self.state.wm.activate(id);
+            self.apply_focus();
+            return;
+        }
+        let Some(cmd) = &self.launch_wifi else {
+            eprintln!("flow-compositor: no Wi-Fi picker to open (no --launch-wifi)");
+            return;
+        };
+        if !self.launched.is_empty() {
+            return;
+        }
+        match std::process::Command::new(&cmd[0])
+            .args(&cmd[1..])
+            .env("WAYLAND_DISPLAY", &self.socket)
+            .spawn()
+        {
+            Ok(child) => {
+                eprintln!("flow-compositor: opening the Wi-Fi picker");
+                self.launched.push(child);
+            }
+            Err(e) => eprintln!(
+                "flow-compositor: could not open the Wi-Fi picker ({}): {e}",
+                cmd[0]
+            ),
+        }
     }
 
     /// Give keyboard focus to the window the window manager says has it.
@@ -966,6 +1061,9 @@ impl Server {
             last_frames: Instant::now(),
             width,
             height,
+            socket: socket.to_string(),
+            launch_wifi: None,
+            launched: Vec::new(),
         })
     }
 
@@ -998,6 +1096,11 @@ fn set_mode(output: &Output, width: u32, height: u32) {
 /// error means the run did not do what it was asked.
 pub fn run(opts: &Options) -> Result<(), String> {
     let mut server = Server::new(&opts.socket, opts.width, opts.height)?;
+    server.launch_wifi = opts
+        .launch_wifi
+        .as_deref()
+        .map(|c| c.split_whitespace().map(str::to_string).collect::<Vec<_>>())
+        .filter(|c| !c.is_empty());
 
     if let Some(device) = &opts.drm {
         return crate::live::run(server, device);
@@ -1127,6 +1230,40 @@ fn render(
         }
         draw_render_elements(&mut frame, 1.0, &elements, &[full])
             .map_err(err("drawing the windows"))?;
+        // The bar, over the windows (a moved one may reach under it), except when a window
+        // is fullscreen: then the screen is that window's (E5).
+        if state.wm.fullscreen().is_none() {
+            let (sw, sh) = state.screen;
+            let colour = |c: flow_shell::Colour| {
+                let (_, r, g, b) = c.channels();
+                Color32F::new(
+                    f32::from(r) / 255.0,
+                    f32::from(g) / 255.0,
+                    f32::from(b) / 255.0,
+                    1.0,
+                )
+            };
+            let rect =
+                |(x, y, w, h): (i32, i32, i32, i32)| Rectangle::new((x, y).into(), (w, h).into());
+            let (bx, by, _, _) = wm::wifi_button(sw, sh);
+            // The button: a square with three rising bars, the usual sign for Wi-Fi.
+            let mut parts = vec![
+                (rect(wm::bar(sw, sh)), colour(palette::BAR)),
+                (
+                    rect(wm::wifi_button(sw, sh)),
+                    colour(palette::SURFACE_FOCUSED),
+                ),
+            ];
+            for (i, h) in [6, 11, 16].into_iter().enumerate() {
+                let x = bx + 5 + 5 * i as i32;
+                parts.push((rect((x, by + 20 - h, 4, h)), colour(palette::BAR_ICON)));
+            }
+            for (r, c) in parts {
+                frame
+                    .draw_solid(r, &[Rectangle::from_size(r.size)], c)
+                    .map_err(err("drawing the bar"))?;
+            }
+        }
         if let Some((x, y)) = cursor {
             // The pointer: a white square with a dark edge, its top-left corner on the
             // point. Plain, but a person can see where they are. A themed cursor (and

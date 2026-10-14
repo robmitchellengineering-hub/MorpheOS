@@ -134,8 +134,9 @@ from any newer `images` run has the shell. Booting both on a new machine tells t
 ## 4. Use it
 
 In the shell: **Alt+Tab** switches windows, **Super+F** makes one fullscreen and back, and a
-window moves when you drag it by its edge (or anywhere, holding Super). Closing Firefox opens
-it again; there is no launcher yet.
+window moves when you drag it by its edge (or anywhere, holding Super). The button with three
+bars at the right of the bar along the bottom (or **Super+W**) opens the Wi-Fi picker, to join
+another network. Closing Firefox opens it again; there is no launcher yet.
 
 On the console (Ctrl+Alt+F2):
 

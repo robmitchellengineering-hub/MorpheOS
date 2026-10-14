@@ -14,9 +14,11 @@ mod live;
 const USAGE: &str = "\
 usage: flow-compositor --socket NAME (--out FRAME.png | --script FILE | --drm DEVICE)
                        [--wait-for N] [--timeout SECS] [--width N] [--height N]
+                       [--launch-wifi CMD]
 
 --drm /dev/dri/card0 shows the screen on that display and runs until stopped (the service);
 --drm auto takes the first card in /dev/dri with a connected display.
+--launch-wifi CMD is the command the bar's Wi-Fi button (and Super+W) runs to open the picker.
 Otherwise it is headless:
 
 Listen on $XDG_RUNTIME_DIR/NAME, wait until N windows (default 1) have drawn, write one
@@ -58,6 +60,7 @@ fn main() -> std::process::ExitCode {
                 None => None,
             },
             drm: flag("--drm").map(Into::into),
+            launch_wifi: flag("--launch-wifi"),
             wait_for: num("--wait-for", 1)? as usize,
             timeout: std::time::Duration::from_secs(num("--timeout", 30)?),
             width: num("--width", 800)? as u32,
