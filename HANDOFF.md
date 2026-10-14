@@ -71,12 +71,12 @@ From a DSH shell in PowerShell, run any of them as
 
 ## Open pull requests at handover
 
-#42 to #49 (E3, E10, the handover plan, S10, E12, E4's browser and popups, E5's network) were
-merged on 2026-10-13, as merge commits so the stack merged without conflicts. Open:
+#42 to #53 (E3, E10, the handover plan, S10, E12, E4's browser and popups, E5's network and
+Wi-Fi picker, the laptop drivers, the stick guide, the Rust pin) were merged on 2026-10-13 and 14, as merge commits so the stack merged without conflicts. Open:
 
 | # | Branch | What |
 |---|---|---|
-| (fix) | `fix/laptop-drivers` | the laptop drivers (graphics, Wi-Fi, touchscreen) were missing from every image |
+| #54 | `feat/e9-move-fullscreen-switch` | E9: move by the edge or with Super, Alt+Tab, fullscreen (Super+F, or the client's F11) |
 
 If CI goes red on it, it is yours to fix, on that branch. **When a pull request's base is
 another open branch** (a stack), and the base merges: if it was squash-merged, the next branch
@@ -93,9 +93,10 @@ branch that has a pull request open.
    Make that check exist and fail *before* writing the code that makes it pass. If you cannot
    make it fail, it does not test anything (AGENTS.md H3, H9).
 4. Implement the smallest change that makes it pass.
-5. `rustup update stable && bash scripts/check.sh`. It must end with `all checks passed`. The
-   update matters: CI uses the newest stable, and an older local clippy passes code CI
-   rejects (until doc 20's S9 pins the version).
+5. `bash scripts/check.sh`. It must end with `all checks passed`. The Rust version is pinned
+   in `rust-toolchain.toml` and CI installs exactly that one (`scripts/rust-toolchain.sh`,
+   doc 20 S9), so your clippy is CI's clippy. Do not `rustup update` your way past a
+   warning; a version bump is its own pull request.
 6. Push, open a pull request, and read **every** check by name, including the `images`
    workflow (AGENTS.md H6, H10). If a VM job times out, download the serial-log artifact and
    read it before forming any theory (H11).
@@ -228,3 +229,25 @@ One line per piece of work: date, who, what, what's next.
   `plan/` branch, for Rob to open or drop. It is deliberately product-free: a vendor wants to ship
   an appliance image on MorpheOS without forking it, which ADR 0006 and principle 7 already allow
   but nothing yet exercises. Not started. Next: Rob decides.
+- 2026-10-13 · Claude Code · E5 (2), the Wi-Fi picker (`feat/e5-wifi-picker`): `flow-wifi`, a
+  window on the shell that lists networks, takes a password (drawn as marks, never printed)
+  and joins over NetworkManager's D-Bus API (zbus: pure Rust, no libdbus). Its model is
+  unit-tested; `tests/on_the_shell.rs` drives the real window on the compositor; the VM test
+  (`test-wifi.sh`) joins a simulated WPA2 network (`mac80211_hwsim`, hostapd, dnsmasq). Found
+  on the way: a Wayland read after `poll` can return EAGAIN (a `delete_id` alone, say), and
+  the picker took that for a lost connection and quit a second after it opened.
+- 2026-10-14 · Claude Code · #50 and #51 merged (CI ran the Wi-Fi test: PASS, 74 s). E6 is
+  next and it is Rob's: HARDWARE.md now covers his three machines (`feat/e6-stick-guide`):
+  writing the stick from Windows (balenaEtcher), each machine's boot menu and Secure Boot
+  switch, and, first, the BitLocker recovery key, since turning Secure Boot off on an
+  encrypted Windows laptop makes Windows ask for it.
+- 2026-10-14 · Claude Code · S9 (`feat/s9-pin-rust`): Rust pinned to 1.99.0 in
+  `rust-toolchain.toml`; `scripts/rust-toolchain.sh` installs exactly that, with clippy and
+  rustfmt, and fails if any other `rustc` would run. Every workflow and `setup-linux.sh` use
+  it; `dtolnay/rust-toolchain@stable` is gone.
+- 2026-10-14 · Claude Code · E9 (`feat/e9-move-fullscreen-switch`): windows move by their
+  edge, or anywhere with Super held, or by their own title bar (a client's `move` request);
+  the window used comes to the front; Alt+Tab switches; Super+F, or the client's own
+  request, goes fullscreen and back to the same place and size. Found while sabotaging the
+  test: a press passed to a window whose release is not leaves the pointer grabbed for
+  good, and every window deaf to the mouse; the test now ends with a click that must arrive.

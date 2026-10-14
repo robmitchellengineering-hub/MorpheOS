@@ -39,7 +39,8 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust, the version rust-toolchain.toml names (doc 20, S9)
+        run: bash scripts/rust-toolchain.sh
       - run: cargo build --release -p morph-boot -p strata
       # The update scenario needs the updater. Built here, as a sibling of the line
       # above and for the same reason: the harness scripts run under `sudo`, whose PATH
@@ -102,12 +103,17 @@ jobs:
       # libraries came from setup-linux.sh above.
       - name: The Flow shell on a real display, with a keyboard and a mouse
         run: |
-          cargo build --release -p flow-compositor
+          cargo build --release -p flow-compositor -p flow-wifi
           sudo images/x86-qemu/test-shell.sh "$RUNNER_TEMP/img"
       # Doc 20, E4: Firefox (Mozilla's own build, from packages.mozilla.org) on the shell,
       # showing a local page; the verdict is the page's colours in a screendump.
       - name: A browser on the Flow shell
         run: sudo images/x86-qemu/test-browser.sh "$RUNNER_TEMP/img"
+      # Doc 20, E5: the Wi-Fi picker joins a WPA2 network (the kernel's simulated radios,
+      # mac80211_hwsim) through NetworkManager: a wrong password, then the right one, typed
+      # on the VM's keyboard; verdicts from screendumps and the network's own DHCP log.
+      - name: Joining Wi-Fi with the picker
+        run: sudo images/x86-qemu/test-wifi.sh "$RUNNER_TEMP/img"
       - name: Keep serial logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -131,7 +137,8 @@ jobs:
       RPI_IMAGE_GEN_REF: b7077549890ed8a3854ebb136e9458e5b1658391
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust, the version rust-toolchain.toml names (doc 20, S9)
+        run: bash scripts/rust-toolchain.sh
       - name: Build morph-boot (native aarch64)
         run: cargo build --release -p morph-boot
       - name: Fetch rpi-image-gen (pinned)

@@ -1,0 +1,18 @@
+#!/bin/sh
+# The other end of the Wi-Fi test (doc 20, E5): two simulated radios from the kernel's
+# mac80211_hwsim, which hear each other as if they were in one room. wlan1 is a WPA2 access
+# point (hostapd) with a DHCP server (dnsmasq); wlan0 is the machine's Wi-Fi, left to
+# NetworkManager and the picker. NetworkManager is told to leave wlan1 alone (conf.d).
+#
+# dnsmasq logs each DHCP lease (DHCPACK) to the console: the test reads it as evidence,
+# from the network's side, that the machine joined, independent of what the picker says.
+set -eu
+modprobe mac80211_hwsim radios=2
+for _ in $(seq 1 100); do [ -e /sys/class/net/wlan1 ] && break; sleep 0.1; done
+ip link set wlan1 up
+ip addr add 192.168.77.1/24 dev wlan1
+hostapd /etc/morpheos/wifi-test/hostapd.conf &
+# The root is read-only: the lease file goes in /run.
+exec dnsmasq --keep-in-foreground --log-facility=- --log-dhcp --user=root \
+    --port=0 --no-resolv --no-hosts --interface=wlan1 --bind-interfaces --except-interface=lo \
+    --dhcp-range=192.168.77.10,192.168.77.50,1h --dhcp-leasefile=/run/wifi-test-ap.leases

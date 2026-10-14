@@ -13,7 +13,10 @@
 //! the screen (a VM's screendump) can see the input arrive. With `--popup-colour` a click in
 //! it opens a 120 x 80 popup of that colour at (40, 40) inside the window (a menu, as far
 //! as the compositor can tell), prints `popup-shown`, and prints `popup-done` when the
-//! compositor closes it. It exits when the compositor asks
+//! compositor closes it. With `--fullscreen-key` the F key asks to be fullscreen and, the
+//! next time, to stop (a toolkit's F11, as far as the compositor can tell), and every
+//! configure is printed as `configure WxH` with ` fullscreen` when it says so. It exits when
+//! the compositor asks
 //! it to close (`xdg_toplevel.close`), as a well-behaved app does, or when the compositor
 //! goes away.
 //!
@@ -67,6 +70,9 @@ mod client {
         /// A click asked for the popup to open; the compositor closed it.
         want_popup: bool,
         popup_done: bool,
+        /// The F key was pressed (with `--fullscreen-key`): ask for fullscreen, or to leave it.
+        want_fullscreen_toggle: bool,
+        fullscreen: bool,
     }
 
     /// Which of the window's colours it shows.
@@ -168,8 +174,22 @@ mod client {
             _: &Connection,
             _: &QueueHandle<Self>,
         ) {
-            if let xdg_toplevel::Event::Close = event {
-                state.closed = true;
+            match event {
+                xdg_toplevel::Event::Close => state.closed = true,
+                xdg_toplevel::Event::Configure {
+                    width,
+                    height,
+                    states,
+                } => {
+                    let fullscreen =
+                        states.as_chunks::<4>().0.iter().any(|s| {
+                            u32::from_ne_bytes(*s) == xdg_toplevel::State::Fullscreen as u32
+                        });
+                    state.fullscreen = fullscreen;
+                    let tag = if fullscreen { " fullscreen" } else { "" };
+                    say(&format!("configure {width}x{height}{tag}"));
+                }
+                _ => {}
             }
         }
     }
@@ -216,6 +236,10 @@ mod client {
                 } => {
                     say(&format!("key {key}"));
                     state.show = Some(Look::Key);
+                    const KEY_F: u32 = 33;
+                    if key == KEY_F {
+                        state.want_fullscreen_toggle = true;
+                    }
                 }
                 _ => {}
             }
@@ -249,6 +273,7 @@ mod client {
         key_colour: Option<u32>,
         click_colour: Option<u32>,
         popup_colour: Option<u32>,
+        fullscreen_key: bool,
         width: u32,
         height: u32,
     }
@@ -276,6 +301,7 @@ mod client {
             key_colour,
             click_colour,
             popup_colour,
+            fullscreen_key: args.iter().any(|a| a == "--fullscreen-key"),
             width: w,
             height: h,
         })
@@ -287,6 +313,7 @@ mod client {
             key_colour,
             click_colour,
             popup_colour,
+            fullscreen_key,
             width,
             height,
         } = args()?;
@@ -383,6 +410,15 @@ mod client {
                 Some(Look::Key) if key_colour.is_some() => show(&buffers[1]),
                 Some(Look::Click) if click_colour.is_some() => show(&buffers[2]),
                 _ => {}
+            }
+            if std::mem::take(&mut state.want_fullscreen_toggle) && fullscreen_key {
+                if state.fullscreen {
+                    say("asking to leave fullscreen");
+                    toplevel.unset_fullscreen();
+                } else {
+                    say("asking for fullscreen");
+                    toplevel.set_fullscreen(None);
+                }
             }
             if state.popup_done {
                 state.popup_done = false;

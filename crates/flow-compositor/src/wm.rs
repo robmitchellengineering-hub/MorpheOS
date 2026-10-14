@@ -7,14 +7,31 @@
 //! carries them out. Extending window management (move, fullscreen, tiling) means extending
 //! this module and its tests first.
 //!
-//! Layout today: windows are stacked down the screen in the order they opened, `MARGIN`
-//! apart, at their own size, but never larger than the screen ([`fit`]). The focused window
-//! is drawn with a border of `BORDER` pixels.
+//! Layout: windows are stacked down the screen in the order they opened, `MARGIN` apart, at
+//! their own size, but never larger than the screen ([`fit`]). A window a person has moved
+//! stays where they put it. The focused window is drawn with a border of `BORDER` pixels.
+//!
+//! What a person can do with them (E2, then E9 for real input):
+//!   * click a window to focus it, and it comes to the front;
+//!   * drag one by its edge (the `GRAB` pixels round it), or anywhere on it while holding
+//!     Super, or by its own title bar (a client asks to be moved: [`Manager::begin_move`]);
+//!   * make the focused one fullscreen and back (Super+F, or the client asks, as Firefox
+//!     does on F11): it covers the screen, with no border;
+//!   * switch to the next window (Alt+Tab, [`Manager::cycle`]), which comes to the front.
+//!
+//! Which window is in front is the order windows were last raised; [`Manager::layout`]
+//! lists them back to front.
 
 /// Gap between windows and the screen edges, in pixels.
 pub const MARGIN: i32 = 16;
 /// Width of the focus border drawn around the focused window, in pixels.
 pub const BORDER: i32 = 3;
+/// The strip round a window, outside it, that a press grabs to move the window: half the
+/// gap between windows, so a press there belongs to one window only.
+pub const GRAB: i32 = MARGIN / 2;
+/// How much of a moved window stays on the screen, in each direction, so a window cannot be
+/// dragged out of reach.
+pub const KEEP: i32 = 32;
 
 /// The largest a window may be on a screen of `screen_w` x `screen_h`: the screen less a
 /// margin all round. A toolkit picks its own window size, and GTK (so Firefox) picks one
@@ -57,13 +74,43 @@ impl Placed {
     fn contains(&self, x: i32, y: i32) -> bool {
         x >= self.x && x < self.x + self.w && y >= self.y && y < self.y + self.h
     }
+
+    /// In the grab strip: within `GRAB` of the window, but not on it.
+    fn on_edge(&self, x: i32, y: i32) -> bool {
+        let outer = Placed {
+            x: self.x - GRAB,
+            y: self.y - GRAB,
+            w: self.w + 2 * GRAB,
+            h: self.h + 2 * GRAB,
+            ..*self
+        };
+        outer.contains(x, y) && !self.contains(x, y)
+    }
 }
 
-/// The windows, in the order they opened, and which one has focus.
+/// A move in progress: which window, and where the pointer holds it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Drag {
+    id: u32,
+    dx: i32,
+    dy: i32,
+}
+
+/// The windows, in the order they opened; which one has focus; where moved ones are; which
+/// is in front; and which, if any, is fullscreen.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Manager {
     windows: Vec<Window>,
     focused: Option<u32>,
+    /// Windows a person moved, and where to.
+    moved: Vec<(u32, i32, i32)>,
+    /// Raised windows, back to front. A window never raised is behind every raised one.
+    raised: Vec<u32>,
+    fullscreen: Option<u32>,
+    /// The size the fullscreen window had before, to ask it back to afterwards.
+    before_fullscreen: Option<(u32, i32, i32)>,
+    drag: Option<Drag>,
+    screen: (i32, i32),
 }
 
 impl Manager {
@@ -73,6 +120,15 @@ impl Manager {
     pub fn sync(&mut self, current: &[Window]) {
         self.windows
             .retain(|w| current.iter().any(|c| c.id == w.id));
+        let alive = |id: &u32| current.iter().any(|c| c.id == *id);
+        self.moved.retain(|(id, _, _)| alive(id));
+        self.raised.retain(alive);
+        if !self.fullscreen.as_ref().is_some_and(alive) {
+            self.fullscreen = None;
+        }
+        if !self.drag.as_ref().is_some_and(|d| alive(&d.id)) {
+            self.drag = None;
+        }
         for c in current {
             match self.windows.iter_mut().find(|w| w.id == c.id) {
                 Some(w) => *w = *c,
@@ -87,24 +143,51 @@ impl Manager {
         }
     }
 
-    /// Where every window goes.
+    /// The screen's size: what fullscreen covers and what a moved window is kept on.
+    pub fn set_screen(&mut self, w: i32, h: i32) {
+        self.screen = (w, h);
+    }
+
+    /// Where every window goes, back to front: the last one is in front.
     #[must_use]
     pub fn layout(&self) -> Vec<Placed> {
         let mut y = MARGIN;
-        self.windows
+        let mut placed: Vec<Placed> = self
+            .windows
             .iter()
             .map(|w| {
-                let p = Placed {
+                let mut p = Placed {
                     id: w.id,
                     x: MARGIN,
                     y,
                     w: w.w,
                     h: w.h,
                 };
-                y += w.h + MARGIN;
+                // Unmoved windows stack down the screen; a moved one leaves no gap.
+                match self.moved.iter().find(|(id, _, _)| *id == w.id) {
+                    Some(&(_, mx, my)) => (p.x, p.y) = (mx, my),
+                    None => y += w.h + MARGIN,
+                }
+                if self.fullscreen == Some(w.id) {
+                    (p.x, p.y, p.w, p.h) = (0, 0, self.screen.0, self.screen.1);
+                }
                 p
             })
-            .collect()
+            .collect();
+        // Stable: windows never raised keep their opening order, behind the raised ones.
+        placed.sort_by_key(|p| {
+            self.raised
+                .iter()
+                .position(|r| *r == p.id)
+                .map_or(0, |i| i + 1)
+        });
+        placed
+    }
+
+    /// Bring a window to the front.
+    fn raise(&mut self, id: u32) {
+        self.raised.retain(|r| *r != id);
+        self.raised.push(id);
     }
 
     /// The window under a point, if any.
@@ -122,11 +205,13 @@ impl Manager {
     pub fn click(&mut self, x: i32, y: i32) -> Option<u32> {
         if let Some(id) = self.hit(x, y) {
             self.focused = Some(id);
+            self.raise(id);
         }
         self.focused
     }
 
-    /// Focus the next window in opening order, wrapping round (the switch shortcut).
+    /// Focus the next window in opening order, wrapping round (the switch shortcut), and
+    /// bring it to the front.
     pub fn cycle(&mut self) -> Option<u32> {
         let next = match self.focused {
             None => self.windows.first(),
@@ -136,7 +221,104 @@ impl Manager {
             }
         };
         self.focused = next.map(|w| w.id);
+        if let Some(id) = self.focused {
+            self.raise(id);
+        }
         self.focused
+    }
+
+    /// A press that may start a move: on a window's edge, or anywhere on it when `anywhere`
+    /// (Super is held). Returns the window it picked up, focused and in front; `None` leaves
+    /// the press to be a click. A fullscreen window does not move.
+    pub fn begin_drag(&mut self, x: i32, y: i32, anywhere: bool) -> Option<u32> {
+        let layout = self.layout();
+        // Front to back, so the press belongs to what is drawn on top. The window itself
+        // stops the search: its edge strip is under it, not beside it.
+        let id = layout.iter().rev().find_map(|p| {
+            if p.contains(x, y) {
+                Some(anywhere.then_some(p.id))
+            } else if p.on_edge(x, y) {
+                Some(Some(p.id))
+            } else {
+                None
+            }
+        })??;
+        self.begin_move(id, x, y)
+    }
+
+    /// Start moving a window from the pointer at `(x, y)`: a drag that began on its edge, or
+    /// a client asking to be moved (a press on its own title bar).
+    pub fn begin_move(&mut self, id: u32, x: i32, y: i32) -> Option<u32> {
+        if self.fullscreen == Some(id) {
+            return None;
+        }
+        let p = self.layout().into_iter().find(|p| p.id == id)?;
+        self.drag = Some(Drag {
+            id,
+            dx: x - p.x,
+            dy: y - p.y,
+        });
+        self.focused = Some(id);
+        self.raise(id);
+        Some(id)
+    }
+
+    /// The pointer moved during a move: the window follows, kept `KEEP` pixels on screen
+    /// (its top never above the screen, so it can always be grabbed again).
+    pub fn drag_to(&mut self, x: i32, y: i32) {
+        let Some(d) = self.drag else { return };
+        let Some(w) = self.windows.iter().find(|w| w.id == d.id) else {
+            return;
+        };
+        let (sw, sh) = self.screen;
+        let nx = (x - d.dx).clamp(KEEP - w.w, (sw - KEEP).max(KEEP - w.w));
+        let ny = (y - d.dy).clamp(0, (sh - KEEP).max(0));
+        self.moved.retain(|(id, _, _)| *id != d.id);
+        self.moved.push((d.id, nx, ny));
+    }
+
+    /// The button came up: the move is over.
+    pub fn end_drag(&mut self) {
+        self.drag = None;
+    }
+
+    #[must_use]
+    pub fn dragging(&self) -> bool {
+        self.drag.is_some()
+    }
+
+    /// Make a window fullscreen, or not. Returns whether anything changed (so the client
+    /// needs telling). Only one window is fullscreen at a time.
+    pub fn set_fullscreen(&mut self, id: u32, on: bool) -> bool {
+        if !self.windows.iter().any(|w| w.id == id) {
+            return false;
+        }
+        let was = self.fullscreen;
+        if on {
+            if was != Some(id) {
+                let w = self.windows.iter().find(|w| w.id == id).copied();
+                self.before_fullscreen = w.map(|w| (w.id, w.w, w.h));
+                self.fullscreen = Some(id);
+            }
+            self.focused = Some(id);
+            self.raise(id);
+        } else if was == Some(id) {
+            self.fullscreen = None;
+        }
+        self.fullscreen != was
+    }
+
+    #[must_use]
+    pub fn fullscreen(&self) -> Option<u32> {
+        self.fullscreen
+    }
+
+    /// The size a window had before it was last made fullscreen, to ask it back to.
+    #[must_use]
+    pub fn size_before_fullscreen(&self, id: u32) -> Option<(i32, i32)> {
+        self.before_fullscreen
+            .filter(|(i, _, _)| *i == id)
+            .map(|(_, w, h)| (w, h))
     }
 
     #[must_use]
@@ -215,7 +397,127 @@ mod tests {
         m.sync(&[win(1, 10, 10)]);
         assert_eq!(m.focused(), Some(1));
         m.sync(&[win(1, 10, 10), win(5, 10, 10)]);
-        assert_eq!(m.layout()[1].y, MARGIN + 10 + MARGIN, "the gap closed up");
+        assert_eq!(at(&m, 5).1, MARGIN + 10 + MARGIN, "the gap closed up");
+    }
+
+    /// Two windows on a 640 x 480 screen: 1 at (16, 16) 100 x 50, 2 at (16, 82) 80 x 40.
+    fn two() -> Manager {
+        let mut m = Manager::default();
+        m.set_screen(640, 480);
+        m.sync(&[win(1, 100, 50), win(2, 80, 40)]);
+        m
+    }
+
+    fn at(m: &Manager, id: u32) -> (i32, i32) {
+        let p = m.layout().into_iter().find(|p| p.id == id).unwrap();
+        (p.x, p.y)
+    }
+
+    #[test]
+    fn a_window_is_dragged_by_its_edge_and_stays_where_it_is_put() {
+        let mut m = two();
+        // The strip just above window 1's top edge.
+        assert_eq!(m.begin_drag(60, MARGIN - 2, false), Some(1));
+        assert!(m.dragging());
+        assert_eq!(m.focused(), Some(1), "picking it up focuses it");
+        m.drag_to(260, 200 - 2);
+        m.end_drag();
+        assert!(!m.dragging());
+        // Picked up 2 px above its top edge, so its top is 2 px below the pointer.
+        assert_eq!(at(&m, 1), (16 + 200, 200));
+        // Window 2 now stacks first, leaving no gap where 1 was.
+        assert_eq!(at(&m, 2), (MARGIN, MARGIN));
+        // A later move keeps it where it was put, and new windows do not disturb it.
+        m.sync(&[win(1, 100, 50), win(2, 80, 40), win(3, 10, 10)]);
+        assert_eq!(at(&m, 1), (216, 200));
+    }
+
+    #[test]
+    fn a_press_inside_a_window_is_a_click_unless_super_is_held() {
+        let mut m = two();
+        assert_eq!(
+            m.begin_drag(60, 40, false),
+            None,
+            "inside: a click for the window"
+        );
+        assert!(!m.dragging());
+        assert_eq!(m.begin_drag(60, 40, true), Some(1), "with Super: a move");
+        m.drag_to(70, 50);
+        assert_eq!(at(&m, 1), (26, 26));
+        // Far from every window: nothing to pick up, even with Super.
+        m.end_drag();
+        assert_eq!(m.begin_drag(600, 400, true), None);
+    }
+
+    #[test]
+    fn a_moved_window_stays_reachable() {
+        let mut m = two();
+        m.begin_drag(60, MARGIN - 2, false);
+        m.drag_to(-5000, -5000);
+        assert_eq!(
+            at(&m, 1),
+            (KEEP - 100, 0),
+            "its right part and its top stay on screen"
+        );
+        m.drag_to(5000, 5000);
+        assert_eq!(at(&m, 1), (640 - KEEP, 480 - KEEP));
+    }
+
+    #[test]
+    fn the_window_clicked_comes_to_the_front_and_owns_the_overlap() {
+        let mut m = two();
+        // Move 1 down to y = 30. Window 2 stacks up into the space it left, at (16, 16)
+        // 80 x 40, so the two overlap between y = 30 and y = 56.
+        m.begin_drag(60, MARGIN - 2, false);
+        m.drag_to(60, 28);
+        m.end_drag();
+        assert_eq!(at(&m, 1), (MARGIN, 30));
+        assert_eq!(at(&m, 2), (MARGIN, MARGIN));
+        assert_eq!(
+            m.layout().last().unwrap().id,
+            1,
+            "the moved window is in front"
+        );
+        assert_eq!(m.hit(30, 40), Some(1));
+        // Alt+Tab to 2 brings it in front: the overlap is now 2's.
+        assert_eq!(m.cycle(), Some(2));
+        assert_eq!(m.layout().last().unwrap().id, 2);
+        assert_eq!(m.hit(30, 40), Some(2));
+        // And a click on 1 (below the overlap) brings 1 back.
+        assert_eq!(m.click(30, 70), Some(1));
+        assert_eq!(m.hit(30, 40), Some(1));
+    }
+
+    #[test]
+    fn fullscreen_covers_the_screen_and_comes_back_to_where_the_window_was() {
+        let mut m = two();
+        m.begin_drag(60, MARGIN - 2, false);
+        m.drag_to(260, 198);
+        m.end_drag();
+        assert!(m.set_fullscreen(2, true));
+        assert!(
+            !m.set_fullscreen(2, true),
+            "already fullscreen: nothing to tell"
+        );
+        // The client takes the screen's size; its old size is kept, to ask it back to.
+        m.sync(&[win(1, 100, 50), win(2, 640, 480)]);
+        assert_eq!(m.size_before_fullscreen(2), Some((80, 40)));
+        let p = *m.layout().last().unwrap();
+        assert_eq!((p.id, p.x, p.y, p.w, p.h), (2, 0, 0, 640, 480));
+        assert_eq!(m.focused(), Some(2));
+        assert_eq!(m.hit(600, 400), Some(2), "it covers everything");
+        // A fullscreen window does not move.
+        assert_eq!(m.begin_drag(10, 10, true), None);
+        assert!(m.set_fullscreen(2, false));
+        m.sync(&[win(1, 100, 50), win(2, 80, 40)]);
+        assert_eq!(at(&m, 2), (MARGIN, MARGIN));
+        assert_eq!(at(&m, 1), (216, 200), "the others did not move");
+        // Only one at a time, and a window that goes away takes it with it.
+        m.set_fullscreen(1, true);
+        m.set_fullscreen(2, true);
+        assert_eq!(m.fullscreen(), Some(2));
+        m.sync(&[win(1, 100, 50)]);
+        assert_eq!(m.fullscreen(), None);
     }
 
     #[test]
