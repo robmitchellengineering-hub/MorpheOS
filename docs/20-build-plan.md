@@ -245,7 +245,10 @@ hardware report checks must still pass.
 **Progress:** the first half is done and VM-proven. In `test-browser.sh`, Firefox 158
 (Mozilla's build) draws a local page on the shell and then a page the CI host serves (#47,
 #49). Popups (menus and dropdowns) are placed, drawn on top, take clicks and close on a click
-outside (`tests/popups.rs`). Still to do: `plain` boots into the shell, and HARDWARE.md says how
+outside (`tests/popups.rs`). Step 5 (PR A) is done: the service runs `--drm auto`, which
+takes the first card in `/dev/dri` with a connected display (`src/display.rs`, unit-tested;
+`test-shell.sh` checks the compositor said which card it chose). Still to do: `plain` boots
+into the shell, and HARDWARE.md says how
 to reach the shell and the console.
 
 **Notes:** ⚠️ Ubuntu 24.04's `firefox` and `chromium` packages are snap stubs. Firefox needs

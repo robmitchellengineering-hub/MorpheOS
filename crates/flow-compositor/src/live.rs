@@ -30,6 +30,7 @@ use smithay::reexports::rustix::fs::OFlags;
 
 use crate::drm_output::Output;
 use crate::headless::Server;
+use flow_compositor::display;
 
 /// How long seatd has to give us the seat before the service gives up.
 const SEAT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -139,7 +140,37 @@ fn announce(device: &smithay::reexports::input::Device) {
     }
 }
 
-/// Take the seat, show the screen on `device`, and serve until stopped.
+/// Open `device` through the seat and show a buffer on its first connected display.
+fn open_output(session: &mut LibSeatSession, device: &Path) -> Result<Output, String> {
+    let fd = session
+        .open(
+            device,
+            OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOCTTY | OFlags::NONBLOCK,
+        )
+        .map_err(|e| format!("opening {} through the seat: {e}", device.display()))?;
+    Output::open(fd, device)
+}
+
+/// `--drm auto`: the first card in `/dev/dri` with a connected display ([`display`] says
+/// why not `card0`). A card passed over stays known to the seat until the shell exits; it
+/// is never shown on.
+fn open_any(session: &mut LibSeatSession) -> Result<Output, String> {
+    let names = std::fs::read_dir("/dev/dri")
+        .map_err(|e| format!("reading /dev/dri: {e}"))?
+        .filter_map(|e| e.ok()?.file_name().into_string().ok());
+    let cards = display::card_order(names);
+    let (card, output) = display::choose(&cards, |card| {
+        open_output(session, &Path::new("/dev/dri").join(card))
+    })?;
+    eprintln!(
+        "flow-compositor: --drm auto chose /dev/dri/{card} (of {})",
+        cards.join(", ")
+    );
+    Ok(output)
+}
+
+/// Take the seat, show the screen on `device` (or the first card that can, for `auto`),
+/// and serve until stopped.
 pub fn run(server: Server, device: &Path) -> Result<(), String> {
     let (session, notifier) = LibSeatSession::new()
         .map_err(|e| format!("opening a seat session (is seatd running?): {e}"))?;
@@ -179,14 +210,11 @@ pub fn run(server: Server, device: &Path) -> Result<(), String> {
             .map_err(|e| format!("waiting for the seat: {e}"))?;
     }
 
-    let fd = live
-        .session
-        .open(
-            device,
-            OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOCTTY | OFlags::NONBLOCK,
-        )
-        .map_err(|e| format!("opening {} through the seat: {e}", device.display()))?;
-    let output = Output::open(fd, device)?;
+    let output = if device == Path::new("auto") {
+        open_any(&mut live.session)?
+    } else {
+        open_output(&mut live.session, device)?
+    };
     live.server.resize(output.width, output.height);
     live.output = Some(output);
     let seat = live.session.seat();

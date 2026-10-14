@@ -329,6 +329,11 @@ EOF
             echo "this kernel has no built-in framebuffer console, so a laptop screen stays dark" >&2
             exit 1
         fi
+        # Why the shell picks its card (`--drm auto`, crates/flow-compositor/src/display.rs):
+        # with simpledrm built in, the firmware framebuffer is card0 and the real driver card1.
+        if grep -q '^CONFIG_DRM_SIMPLEDRM=y' "$config"; then
+            echo "kernel: simpledrm is built in, so a laptop's graphics driver is not card0" >&2
+        fi
     fi
     if [ "$SCENARIO" = ransomware ]; then
         # No update in this scenario: the self-test attacks the files instead.

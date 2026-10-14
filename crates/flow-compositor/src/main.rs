@@ -15,7 +15,8 @@ const USAGE: &str = "\
 usage: flow-compositor --socket NAME (--out FRAME.png | --script FILE | --drm DEVICE)
                        [--wait-for N] [--timeout SECS] [--width N] [--height N]
 
---drm /dev/dri/card0 shows the screen on that display and runs until stopped (the service).
+--drm /dev/dri/card0 shows the screen on that display and runs until stopped (the service);
+--drm auto takes the first card in /dev/dri with a connected display.
 Otherwise it is headless:
 
 Listen on $XDG_RUNTIME_DIR/NAME, wait until N windows (default 1) have drawn, write one
