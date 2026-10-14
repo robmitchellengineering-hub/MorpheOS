@@ -46,6 +46,14 @@ for _ in $(seq 1 600); do
 done
 
 fail=0
+# The service asks for `--drm auto`; it must have chosen a card and said which (the screen,
+# below, is what says it chose a working one).
+if grep -aq 'flow-compositor: --drm auto chose /dev/dri/card' "$log" 2>/dev/null; then
+    echo "    ok    $(grep -a -o -m1 'flow-compositor: --drm auto chose .*' "$log" | tr -d '\r')"
+else
+    echo "    FAIL  the compositor did not say which card --drm auto chose"
+    fail=1
+fi
 if [ -z "$ready" ]; then
     echo "    FAIL: the compositor never reported the window and both input devices"
     grep -a 'flow-compositor\|flow-shell\|solid-window\|seatd' "$log" | tail -20 || true

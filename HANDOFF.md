@@ -336,3 +336,9 @@ One line per piece of work: date, who, what, what's next.
   `storage.min_free_percent`, `storage.replicas` and `[[users]]` are parsed and obeyed by
   nothing (H5; S7, P1, S5), and the Pi image is Debian trixie, not A2's Ubuntu 24.04 (W4).
   Next: E4's `--drm auto`, then `plain` boots into the shell.
+- 2026-10-14 · Claude Code · E4 step 5 (`feat/e4-drm-auto`): the shell's service asks for
+  `--drm auto` instead of `/dev/dri/card0`, and takes the first card with a connected display,
+  because with simpledrm built in a laptop's real graphics driver registers as card1. The order
+  and the choice are pure and unit-tested (`display.rs`; sorting by name instead of number is
+  caught); `build.sh` says when simpledrm is built in; `test-shell.sh` checks the choice was
+  logged. Next: E4 PR B, `plain` boots into the shell.
