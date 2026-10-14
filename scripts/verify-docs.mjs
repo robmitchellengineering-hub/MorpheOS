@@ -29,6 +29,13 @@ import { dirname, join, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+// It takes no arguments. Refuse any, so that `--self-test` (which it does not have yet:
+// doc 20, E6, note 3) cannot pass for one by printing the normal success line.
+if (process.argv.length > 2) {
+  console.error(`verify-docs.mjs takes no arguments (got: ${process.argv.slice(2).join(' ')}); it has no --self-test yet`);
+  process.exit(2);
+}
 const failures = [];
 const fail = (msg) => failures.push(msg);
 

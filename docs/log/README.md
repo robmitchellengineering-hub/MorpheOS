@@ -4,6 +4,7 @@ One file per piece of work (each pull request adds one), so that two pull reques
 the same lines. The newest is the last by name.
 
 **Name:** `<date>-<branch>.md`, with the branch's `/` as `-`: `2026-10-16-feat-e7-installer.md`.
+The date is the day the branch starts.
 
 **Content:** a few lines, as plain as the rest of the repository:
 
@@ -14,8 +15,19 @@ What was done, in a sentence or two. What was found that the next person needs (
 measured number labelled Measured, a fact that turned out wrong). What is next.
 ```
 
+**Rob's words.** When the work acts on something Rob decided, the file carries one line per
+task, quoting him and saying when:
+
+```markdown
+- Rob on E7: "the whole disk; /persist plain for now", in the session, 2026-10-17.
+```
+
+`scripts/verify-plan.mjs` refuses, on any branch, a task opened, marked `parallel`, or freed
+from **Waiting on Rob:** without that line (doc 20, "How this doc works").
+
 `scripts/verify-pr.sh` (CI, on every pull request) refuses a pull request that adds no file
-here. Facts that stay true belong in HANDOFF.md, AGENTS.md or doc 20, not only here: the log is
+here, or one whose file does not start with the `# <date> · <who> · <what>` heading or says
+nothing after it. Facts that stay true belong in HANDOFF.md, AGENTS.md or doc 20, not only here: the log is
 what happened, not the plan.
 
 The entries from before this folder existed are in
