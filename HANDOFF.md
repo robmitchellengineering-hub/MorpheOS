@@ -359,3 +359,9 @@ One line per piece of work: date, who, what, what's next.
   of `ROOT_MB`. That check failed its first run: slot A with Firefox is 1134 MiB of 1200 (94%,
   Measured), so `ROOT_MB` is now 1600 (71%) and the stick image about 3.7 GiB. Next: E5, the
   bar and the picker from it.
+- 2026-10-14 · Claude Code · `fix/unenforced-settings`: the `W-UNENFORCED` warning names what a
+  Manifest says that nothing acts on, and it named five fields. Reading what each component
+  reads found that only `services` is read outside `morph-manifest` (by `morph-graph`, which
+  nothing on a machine runs yet): the machine, kernel, boot, recovery image, free space,
+  replicas, single-copy, heal's switch, the network, the users and the capsules are now listed
+  too (H5). S11's notes say to remove `/machine/name` with `/storage/retention`.

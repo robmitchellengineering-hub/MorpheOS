@@ -45,9 +45,12 @@
 //! - `storage.retention` — the retention policy is advisory; nothing evicts on it yet.
 //! - `heal.max_auto_rung` and `heal.ask_after_failed_rungs` — how far a heal engine may act
 //!   on its own; the slot repair in `morph-heal` is triggered by boot history, not by these.
+//! - everything else but `services`: the machine, the kernel and boot settings, free space,
+//!   replicas, heal's switch, the network, the users and the capsules. Nothing on a machine
+//!   reads the Manifest yet (doc 20, S11).
 //!
-//! They stay listed in [`morph_manifest::unenforced_settings`], and the warning `validate`
-//! emits on every Manifest is still true of them.
+//! They stay listed in [`morph_manifest::unenforced_settings`], which is the full list, and
+//! the warning `validate` emits on every Manifest is still true of them.
 
 pub mod applier;
 pub mod graph;
