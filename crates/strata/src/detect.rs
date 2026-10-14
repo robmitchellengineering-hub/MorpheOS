@@ -109,15 +109,10 @@ fn replaces(cipher: &Path, plain: &Path) -> bool {
     starts || (!stem(plain).is_empty() && stem(cipher) == stem(plain))
 }
 
-/// Remove and report the first entry related to `path`, if any.
-fn take(q: &mut VecDeque<(i64, PathBuf)>, related: impl Fn(&Path) -> bool) -> bool {
-    match q.iter().position(|(_, p)| related(p)) {
-        Some(i) => {
-            q.remove(i);
-            true
-        }
-        None => false,
-    }
+/// Remove the first entry related to `path`, if any, and say when it was recorded.
+fn take(q: &mut VecDeque<(i64, PathBuf)>, related: impl Fn(&Path) -> bool) -> Option<i64> {
+    let i = q.iter().position(|(_, p)| related(p))?;
+    q.remove(i).map(|(t, _)| t)
 }
 
 impl Detector {
@@ -150,33 +145,33 @@ impl Detector {
 
         let dir = folder(&new.path);
         let was_plain = prev.is_some_and(is_plain);
-        let suspicious = match new.kind {
+        // When the suspicious change began. For a replace that is the EARLIER half of
+        // the pair: version times are when the watcher recorded the change, and under
+        // load the two halves can be seconds apart. Timed from the later half, the
+        // rewind point could fall between them and leave the first ciphertext behind.
+        let hit = match new.kind {
             // In place: an ordinary file rewritten as ciphertext.
-            Kind::File if is_cipher(new) && was_plain => true,
+            Kind::File if is_cipher(new) && was_plain => Some(now),
             // Replace, ciphertext first: does a plain file in this folder vanish too?
             Kind::File if is_cipher(new) => {
-                if take(&mut self.deleted_plain, |plain| replaces(&new.path, plain)) {
-                    true
-                } else {
+                let gone = take(&mut self.deleted_plain, |plain| replaces(&new.path, plain));
+                if gone.is_none() {
                     self.new_cipher.push_back((now, new.path.clone()));
-                    false
                 }
+                gone.map(|t| t.min(now))
             }
             // Replace, deletion first (or second).
             Kind::Deleted if was_plain => {
-                if take(&mut self.new_cipher, |cipher| replaces(cipher, &new.path)) {
-                    true
-                } else {
+                let cipher = take(&mut self.new_cipher, |cipher| replaces(cipher, &new.path));
+                if cipher.is_none() {
                     self.deleted_plain.push_back((now, new.path.clone()));
-                    false
                 }
+                cipher.map(|t| t.min(now))
             }
-            _ => false,
+            _ => None,
         };
-        if !suspicious {
-            return None;
-        }
-        self.hits.push_back((now, dir.clone()));
+        let hit = hit?;
+        self.hits.push_back((hit, dir.clone()));
         if let Some(alert) = &mut self.current {
             // The attack goes on after the alert, and ransomware walks folders one
             // after another: the first alert can easily have seen only the first
@@ -184,7 +179,13 @@ impl Detector {
             // covers everything. Found by the VM test: the first 8 hits were all in
             // `Documents/clients`, and the 16 files in `Documents` stayed encrypted.
             alert.files += 1;
-            return alert.folders.insert(dir).then(|| alert.clone());
+            let earlier = hit < alert.first_ts;
+            if earlier {
+                alert.first_ts = hit;
+                alert.rewind_to = hit - SECOND;
+            }
+            let new_folder = alert.folders.insert(dir);
+            return (new_folder || earlier).then(|| alert.clone());
         }
         // Only the dense run of hits ending now counts. An attack is fast; a
         // stray coincidence (someone deleted a document and saved a photo in the
@@ -198,7 +199,15 @@ impl Detector {
         if burst < self.threshold {
             return None;
         }
-        let first_ts = self.hits[start].0;
+        // Not simply hits[start]: a replace's hit is timed from its earlier half, so the
+        // run is not strictly in time order.
+        let first_ts = self
+            .hits
+            .iter()
+            .skip(start)
+            .map(|(t, _)| *t)
+            .min()
+            .unwrap_or(now);
         let alert = Alert {
             first_ts,
             files: burst,
@@ -298,6 +307,41 @@ mod tests {
                 }
             }
             assert_eq!(alerts.len(), 1, "cipher_first={cipher_first}");
+        }
+    }
+
+    #[test]
+    fn a_replace_counts_from_its_first_half_so_the_rewind_covers_it() {
+        // Version times are when the watcher recorded the change, so under load the two
+        // halves of a replace can be seconds apart. Timed from the later half, the rewind
+        // point can fall between them. The break-it test's one failure on a busy machine
+        // (handoff rehearsal, 2026-10-14) fits exactly: only the FIRST victim's ciphertext,
+        // `invoice-1.txt.locked`, survived the rewind, and its original was restored.
+        for cipher_first in [true, false] {
+            let mut d = Detector::new(60 * SECOND, 4);
+            let mut alerts = Vec::new();
+            for i in 0..6 {
+                let early = (100 + 10 * i) * SECOND;
+                let late = early + 3 * SECOND;
+                let (t_locked, t_gone) = if cipher_first {
+                    (early, late)
+                } else {
+                    (late, early)
+                };
+                let plain = v(&format!("/d/f{i}.doc"), 0, Kind::File, 4.0);
+                let gone = v(&format!("/d/f{i}.doc"), t_gone, Kind::Deleted, 0.0);
+                let locked = v(&format!("/d/f{i}.doc.locked"), t_locked, Kind::File, 7.98);
+                if cipher_first {
+                    alerts.extend(d.observe(None, &locked));
+                    alerts.extend(d.observe(Some(&plain), &gone));
+                } else {
+                    alerts.extend(d.observe(Some(&plain), &gone));
+                    alerts.extend(d.observe(None, &locked));
+                }
+            }
+            let last = alerts.last().expect("alert");
+            assert_eq!(last.first_ts, 100 * SECOND, "cipher_first={cipher_first}");
+            assert!(last.rewind_to < 100 * SECOND, "cipher_first={cipher_first}");
         }
     }
 
