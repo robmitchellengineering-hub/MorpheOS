@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Does the documentation still point at things that exist?
 //
-// WHY THIS EXISTS. This repository is design-first: twenty documents and six ADRs
-// ARE the deliverable so far, and everything else is written to be read alongside
+// WHY THIS EXISTS. This repository started design-first: the numbered documents and the ADRs
+// were the deliverable, and everything else is written to be read alongside
 // them. That makes the documentation a surface with real failure modes that nothing
 // was checking:
 //
@@ -37,7 +37,7 @@ const listed = (dir, re) => readdirSync(join(REPO, dir)).filter((f) => re.test(f
 
 // ── 1. the numbered design docs ──────────────────────────────────────────────
 //
-// Numbered 00–19 with no gaps and no duplicates. A gap means a document was removed
+// Numbered from 00 with no gaps and no duplicates. A gap means a document was removed
 // and everything after it renumbered by hand, which is how cross-references rot; a
 // duplicate means two documents claim the same slot.
 

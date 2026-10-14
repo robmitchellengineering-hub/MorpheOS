@@ -2,7 +2,8 @@
 
 From **2026-10-16** this repository is built by a DeepSeek agent (DSH) on Rob's **Windows
 laptop at home** (host `win` in the harness-mesh repository's `MACHINES.md`), working inside
-**WSL2 Ubuntu 24.04**. Until then it was built by Claude Code. This file is how the work
+**WSL2 Ubuntu 24.04**. (harness-mesh is a private repository of Rob's, and you will not have it: the
+machines that matter are named in doc 20, E6.) Until then it was built by Claude Code. This file is how the work
 continues without anyone who was here before.
 
 **Read in this order:** [AGENTS.md](AGENTS.md) (the rules, and the hazards: mistakes already
@@ -73,15 +74,15 @@ From a DSH shell in PowerShell, run any of them as
 - `scripts/check.sh` on Windows or macOS **refuses**, and says why (AGENTS.md H16); with
   `--partial` it runs what it can and ends with `PARTIAL`, never `all checks passed`.
 
-## Open pull requests at handover
+## Open pull requests
 
-#42 to #61 were merged on 2026-10-13 and 14 (#56 and #57, docs 21 and 22, too), as merge commits. Open when this was written:
+**Look at GitHub, not at a table here:** the repository's *Pull requests* tab (or
+`gh pr list`) is the only list that is never out of date. Before you start, read every open
+pull request's title. **If an open `plan/` pull request changes the rules** (this file,
+AGENTS.md, doc 20 or `scripts/`), ask Rob to merge it first, or base your branch on it and say
+so in your pull request; otherwise you work to rules that are about to change.
 
-| # | Branch | What |
-|---|---|---|
-| (this) | `plan/build-ready` | Every unfinished task expanded into a recipe, an order of work per milestone, S11 proposed |
-
-If CI goes red on it, it is yours to fix, on that branch. **When a pull request's base is
+If CI goes red on a pull request of yours, it is yours to fix, on that branch. **When a pull request's base is
 another open branch** (a stack), and the base merges: if it was squash-merged, the next branch
 may conflict where both touched the same lines; `git fetch origin && git merge origin/main`,
 keep both sides' lines, run `bash scripts/check.sh`, and push. Never rebase or force-push a
@@ -99,7 +100,8 @@ branch that has a pull request open.
    Make that check exist and fail *before* writing the code that makes it pass. If you cannot
    make it fail, it does not test anything (AGENTS.md H3, H9).
 4. Implement the smallest change that makes it pass.
-5. `bash scripts/check.sh`. It must end with `all checks passed`. The Rust version is pinned
+5. Write the session-log file (step 7) now, then `bash scripts/check.sh`. It must end with
+   `all checks passed` (it counts the log file whether or not it is committed yet). The Rust version is pinned
    in `rust-toolchain.toml` and CI installs exactly that one (`scripts/rust-toolchain.sh`,
    doc 20 S9), so your clippy is CI's clippy. Do not `rustup update` your way past a
    warning; a version bump is its own pull request.
@@ -118,13 +120,19 @@ evidence; rename a required CI job without saying so in the PR (H10); edit an ac
 until Rob opens it.
 
 **When stuck for more than two attempts:** stop. Write what you tried and what you saw under
-**Open questions** below, push it, and ask Rob. A clear question beats a third guess.
+**Open questions** below, in a `plan/` pull request (with its log file), and ask Rob. A clear
+question beats a third guess.
 
 ## Decisions waiting for Rob now
 
 Each item names the task that waits on it; the task's **Notes** in doc 20 lay out the options
-and a recommendation. Ask the one that blocks your next task, once, and work on something else
-until he answers.
+and a recommendation. Ask the one that blocks your next task, once.
+
+**While you wait** you may do `fix/` work (a bug in something built), `plan/` work (check a
+`verify:` fact and correct its note, make a check stricter, correct a stale line), and nothing
+else: **do not start a task** that `node scripts/task.mjs --next` does not list, and do not
+start one it lists with a warning that it waits on Rob. `verify-plan.mjs` refuses such a
+branch. If there is no `fix/` or `plan/` work worth doing, say so to Rob and stop.
 
 - **The reference laptop.** Candidates: the Windows laptop at home, the Legion Go, the 2015
   Mac at work. The E12 report from one boot on each decides it (E6).
@@ -179,7 +187,9 @@ Write the question up (options and a recommendation) and wait:
 - every task, M1 to M5, each with a **Done when:** check.
 
 `scripts/verify-plan.mjs` enforces its format in CI, and refuses a pull request whose branch
-names no open task. Use `fix/…` for bugs in built things and `plan/…` for plan changes.
+names no task that may start: one whose needs are not done, or in a later milestone and not
+marked `parallel`, is refused with the reason. Use `fix/…` for bugs in built things and
+`plan/…` for plan changes; those two are not tied to a task.
 
 **Current milestone: M1, the express road.** Each milestone opens with an **Order of work**
 paragraph: follow it rather than picking by number. Every unfinished task has **Notes** that

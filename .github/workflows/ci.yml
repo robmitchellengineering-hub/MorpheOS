@@ -7,7 +7,9 @@ on:
 
 jobs:
   rust:
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: the image's own base, and what scripts/setup-linux.sh and
+    # doc 20 S10 say the bar runs on.
+    runs-on: ubuntu-24.04
     steps:
       # Full history: verify-pr.sh diffs the branch against its base, which needs their
       # common ancestor, and a shallow clone has none.

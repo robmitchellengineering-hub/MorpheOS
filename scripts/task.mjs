@@ -13,7 +13,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parse } from './verify-plan.mjs';
+import { parse, startable } from './verify-plan.mjs';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -131,32 +131,9 @@ function selfTest() {
   console.log('task: every rule can fail');
 }
 
-/** The milestone (`## M1 · ...`) each task is under, in the plan's order: id -> index. */
-function milestones(plan) {
-  const of = new Map();
-  let m = -1;
-  for (const line of plan.split('\n')) {
-    if (/^## M\d+ /.test(line)) m++;
-    const t = line.match(/^### ([A-Z]\d+) · /);
-    if (t) of.set(t[1], m);
-  }
-  return of;
-}
-
-/** Open tasks that can start: their needs are done, and their milestone is the current one
- * (the first with work open), or they are marked `parallel` (doc 20, "How this doc works"). */
+/** Open tasks that can start now: the same rule verify-plan.mjs enforces on a branch. */
 export function next(plan) {
-  const tasks = parse(plan);
-  const byId = new Map(tasks.map((t) => [t.id, t]));
-  const of = milestones(plan);
-  const live = (t) => ['open', 'in progress', 'blocked'].includes(t.status);
-  const current = Math.min(...tasks.filter(live).map((t) => of.get(t.id) ?? Infinity));
-  return tasks.filter(
-    (t) =>
-      t.status === 'open' &&
-      t.needs.every((n) => byId.get(n)?.status === 'done') &&
-      (of.get(t.id) === current || / · parallel/.test(plan.split('\n').find((l) => l.startsWith(`### ${t.id} · `)) ?? '')),
-  );
+  return startable(plan);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

@@ -83,7 +83,12 @@ else
 fi
 
 if [ -n "$branch" ] && [ -n "$base" ]; then
-    mapfile -t added < <(git diff --name-only --diff-filter=A "$base"...HEAD)
+    # Added since the base, committed or not (a log file written but not yet committed
+    # counts, so check.sh can be run before the commit), plus files git does not track yet.
+    mapfile -t added < <(
+        git diff --name-only --diff-filter=A "$(git merge-base "$base" HEAD)"
+        git ls-files --others --exclude-standard
+    )
     if found=$(log_rule "$branch" "${added[@]}"); then
         echo "  ok    the session log has this branch's entry ($found)"
     else
