@@ -24,8 +24,13 @@ To try an update you need a second USB stick built by
 this stick). This machine installs it with its own `morph-update`, which refuses
 an unsigned payload, one signed by another key, and an older release:
 
+  mkdir -p /run/morph-media
+  mount -o ro /dev/disk/by-label/payload /run/morph-media
   morph-update --esp /efi --root <the inactive slot's device> \
-      --payload /mnt/payload install
+      --payload /run/morph-media/payload install
+  morph-boot trial <that slot> --reboot
+
+The root is read-only, so the stick is mounted under /run, not /mnt.
 
 The inactive slot's device is whichever of /dev/disk/by-partlabel/root-a or
 root-b is NOT the booted slot - `morph-boot status` says which.

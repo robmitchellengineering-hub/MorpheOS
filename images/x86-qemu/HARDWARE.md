@@ -149,16 +149,22 @@ morph-boot trial b                 # boot slot b once; commit it if it is health
 proves the *flow*, not an update — the health check decides, and if it fails the next boot is
 back on A. That is the wedge, and it can be watched happening.
 
-**To try a real update**, you need a second stick carrying the payload. It is built by CI too,
-from `images/x86-qemu/build-payload.sh`; the tool finds it by its filesystem label:
+**To try a real update**, you need a second stick carrying a payload, made by
+`images/x86-qemu/build-payload.sh` on the machine that built this stick (CI does not publish one
+yet: doc 20, E8). Its filesystem is labelled `payload`. The system root is read-only, so mount the
+stick under `/run`, not `/mnt`:
 
 ```bash
+mkdir -p /run/morph-media
+mount -o ro /dev/disk/by-label/payload /run/morph-media
 morph-update --esp /efi --root /dev/disk/by-partlabel/root-<the slot that is NOT booted> \
-    --payload /mnt/payload install
+    --payload /run/morph-media/payload install
+morph-boot trial <that slot> --reboot
 ```
 
-The payload's signature is checked against the keys in the image, then its contents against its
-own digests, all before anything is written; the write is read back and hashed, and only then is
+The payload's signature is checked against the keys in the image, then its release number against the
+one this stick runs (an older one is refused), then its contents against its own digests, all
+before anything is written; the write is read back and hashed, and only then is
 the slot allowed to look ready to trial.
 
 ⚠️ **The stick accepts only payloads signed by the key it was built with** (doc 20, S2). An image
