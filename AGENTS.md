@@ -4,7 +4,8 @@ Operating rules for this repository. Read before changing anything.
 
 **What to work on next, and how, is in [HANDOFF.md](HANDOFF.md).** It holds the current
 state, the ordered task list with a machine-checked "Done when" for each task, and the
-session log. Update it in the same pull request as the work.
+session log (one file per piece of work, in `docs/log/`). Update both in the same pull request as
+the work.
 
 **Read `docs/00-strategy.md` first.** It holds the strategic decisions, and it says
 of itself: *"Where another doc disagrees with this one, this one wins."* The docs
@@ -273,6 +274,20 @@ shell looks like to the health check, before any shell had broken.
 **Rule:** a service a person depends on says it is ready only when it is doing its job
 (`Type=notify`, `READY=1` after the first frame on the display, not after `exec`), and each
 such service has a VM scenario in which it hangs, not only one in which it exits.
+
+**H20 — a test that finds things by colour, and two things the same colour.** The screen tests
+read verdicts by colour: the pointer is `palette::TEXT`, the picker is `colours::TITLE`. The
+bar's new Wi-Fi icon was drawn in `palette::TEXT`, and `test-shell.sh` saw a pointer before the
+mouse moved. Listing every colour then found three more pairs within the tolerance the tests
+match by (3 per channel), among them the shell's background and the picker's password field.
+**Rule:** every colour drawn on the screen is listed in `crates/flow-wifi/tests/colours.rs`,
+which fails when two are closer than a test can tell apart. A new colour goes in the list.
+
+**H21 — what `bash -n` cannot read.** The VM tests drive QEMU with Python inside the shell
+scripts. An edit left an IndentationError inside one, which `bash -n` and `check.sh` cannot see,
+and the images workflow found it 25 minutes in. **Rule:** `scripts/verify-embedded-python.sh`
+compiles every embedded program in seconds (in `check.sh` and CI); never rely on the VM run to
+find a syntax error.
 
 ## Writing code here
 

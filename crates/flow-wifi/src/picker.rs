@@ -75,14 +75,14 @@ pub const MAX_PASSWORD: usize = 63;
 /// screenshot finds the picker's parts by colour.
 pub mod colours {
     use flow_shell::Colour;
-    pub const BACKGROUND: Colour = Colour::rgb(0x1a, 0x1e, 0x26);
+    pub const BACKGROUND: Colour = Colour::rgb(0x1e, 0x23, 0x2c);
     pub const TITLE: Colour = Colour::rgb(0x26, 0x2c, 0x38);
     pub const TEXT: Colour = Colour::rgb(0xe6, 0xea, 0xf2);
     pub const DIM: Colour = Colour::rgb(0x8a, 0x93, 0xa6);
     /// The selected row.
     pub const SELECTED: Colour = Colour::rgb(0x2a, 0x5c, 0xaa);
     /// The password field.
-    pub const FIELD: Colour = Colour::rgb(0x0e, 0x11, 0x16);
+    pub const FIELD: Colour = Colour::rgb(0x08, 0x0a, 0x0e);
     /// The status line, by state.
     pub const BUSY: Colour = Colour::rgb(0xc8, 0x8c, 0x1e);
     pub const OK: Colour = Colour::rgb(0x1e, 0xa0, 0x5a);

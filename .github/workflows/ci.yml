@@ -9,7 +9,11 @@ jobs:
   rust:
     runs-on: ubuntu-latest
     steps:
+      # Full history: verify-pr.sh diffs the branch against its base, which needs their
+      # common ancestor, and a shallow clone has none.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       # Exactly the Rust in rust-toolchain.toml, as on the builder's machine (doc 20, S9).
       # Not dtolnay/rust-toolchain@stable: it installs the newest stable and overrides the
       # file, which is how CI's clippy came to reject code the local bar had passed.
@@ -90,6 +94,17 @@ jobs:
             node scripts/verify-plan.mjs --branch "$GITHUB_HEAD_REF" --base "$RUNNER_TEMP/base-plan.md"
           else
             node scripts/verify-plan.mjs
+          fi
+      # Every pull request adds its own session-log file (docs/log/), and every VM scenario is
+      # run by both the images workflow and scripts/test-images.sh (scripts/verify-pr.sh).
+      - name: The pull request carries its log, and the scenarios are wired
+        run: |
+          bash scripts/verify-pr.sh --self-test
+          if [ -n "$GITHUB_HEAD_REF" ]; then
+            git fetch -q origin "$GITHUB_BASE_REF"
+            bash scripts/verify-pr.sh --branch "$GITHUB_HEAD_REF" --base "origin/$GITHUB_BASE_REF"
+          else
+            bash scripts/verify-pr.sh
           fi
       # A CONSOLE FONT CANNOT DRAW EVERYTHING, AND A LOG CANNOT SHOW YOU THAT. A screenshot
       # of the booted image showed `MorpheOS ■ "never breaks, and heals itself"` on a real
