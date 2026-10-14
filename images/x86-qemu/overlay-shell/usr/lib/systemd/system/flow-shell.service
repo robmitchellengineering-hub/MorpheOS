@@ -2,7 +2,10 @@
 Description=The Flow shell: the compositor that draws the screen
 Documentation=https://github.com/robmitchellengineering-hub/MorpheOS/blob/main/docs/20-build-plan.md
 # A broken shell must be a failed unit, so a bad update fails the boot health check and
-# falls back (doc 20, E11). No `Restart=` that would hide a crash loop from it.
+# falls back (doc 20, E11). No `Restart=` that would hide a crash loop from it. And a shell
+# that runs but never draws is broken too: the unit is `Type=notify`, and the compositor says
+# it is ready only once its first frame is on the display, so one that hangs before that
+# fails its start (TimeoutStartSec) instead of counting as running.
 #
 # seatd owns the seat: it gives the shell VT1 in graphics mode with the kernel's keyboard
 # handling off, so keys reach windows and not the console underneath, and Ctrl+Alt+F2
@@ -13,6 +16,8 @@ After=seatd.service systemd-udev-settle.service systemd-logind.service getty@tty
 Conflicts=getty@tty1.service
 
 [Service]
+Type=notify
+TimeoutStartSec=60
 # ⚠️ ROOT FOR NOW. Running as an ordinary user through a seat session is doc 20's E11, and
 # Rob decides the account model (S5).
 RuntimeDirectory=flow
