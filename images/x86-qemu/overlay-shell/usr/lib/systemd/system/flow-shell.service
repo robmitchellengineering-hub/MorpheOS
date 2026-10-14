@@ -26,7 +26,10 @@ TimeoutStartSec=60
 RuntimeDirectory=flow
 RuntimeDirectoryMode=0755
 Environment=XDG_RUNTIME_DIR=/run/flow LIBSEAT_BACKEND=seatd
-ExecStart=/usr/bin/flow-compositor --socket wayland-0 --drm auto
+# The bar's Wi-Fi button (and Super+W) opens the picker (doc 20, E5): the shell starts it
+# itself, so it says what it found on this unit's output.
+ExecStart=/usr/bin/flow-compositor --socket wayland-0 --drm auto --launch-wifi /usr/bin/flow-wifi
+StandardOutput=journal+console
 StandardError=journal+console
 
 [Install]

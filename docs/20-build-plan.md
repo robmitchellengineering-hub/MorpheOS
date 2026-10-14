@@ -22,8 +22,9 @@ pick up without having to guess. `scripts/verify-plan.mjs` checks it in CI.
   first pull request of a milestone is a `plan/` PR that expands its tasks (engineering notes,
   traps, the exact check) the way M1's are expanded.
 - **Every 10 merged pull requests**, re-anchor: compare the HANDOFF state table with the north
-  star below, write one paragraph in the HANDOFF session log, and fix any task that has
-  drifted.
+  star below, write one paragraph in a log file of its own (`docs/log/<date>-re-anchor.md`, in
+  a `plan/` pull request, which also fixes any task that has drifted). Count from the last
+  re-anchor file.
 
 ## The north star: what "finished" means
 
@@ -62,8 +63,9 @@ Exit: a general user boots the laptop, gets online, browses, and cannot make it 
 
 **Order of work (M1).**
 
-What the builder does in M1 from here, in order. Each step is one branch and one pull request
-unless it says otherwise; Rob merges every one.
+What the builder does in M1, in order. Each step is one branch and one pull request unless it
+says otherwise; Rob merges every one. **Steps 1 to 3 are done** (#63 to #66, 2026-10-14); M1
+continues at step 4, which waits on Rob's reports.
 
 1. **E4, PR A: choose the display by what is connected** (`--drm auto`, S). Do this before
    `plain` goes onto laptops, where the screen is often not `/dev/dri/card0`.
@@ -96,7 +98,8 @@ unless it says otherwise; Rob merges every one.
 - E8: running it. And merging every pull request.
 
 **If the builder runs out of M1 work** (after step 3, with E6, S5 and E13 still waiting), stop
-and ask Rob one question, and do not pick work for yourself. The options to offer: open
+and ask Rob one question, and do not start a task he has not opened; `fix/` and `plan/` work
+(HANDOFF.md, "While you wait") is fine. The options to offer: open
 E13; let E7's VM half start before E6 is done; or take one M2 task early.
 ### E1 · The shell becomes a real Wayland compositor (headless) · done
 
@@ -165,7 +168,7 @@ the client gets `button 272` and `key 30`, and Ctrl+Alt+F2 never reaches it).
 **Notes:** `plain` keeps its text console until E4: a shell with nothing to run in it serves
 a person on the laptop worse than the root console it opens on.
 
-### E11 · The shell as an ordinary user, and a broken shell falls back · open · needs E3
+### E11 · The shell as an ordinary user, and a broken shell falls back · blocked · needs E3
 
 **What:** start the compositor in a seat session (`libseat` with `seatd` or logind) as the
 ordinary user (A9; Rob decides the account model in S5), not root. Add an image scenario
@@ -177,6 +180,9 @@ is read off the disk (sharpened): a test-only unit in the `shell` image writes t
 compositor's `Uid:` line from `/proc/<pid>/status`, and the owner of `/run/flow/wayland-0`,
 to the ESP. `test-shell.sh` reads them with `mtype` and requires a non-zero uid that is the
 same as the one in the image's `/etc/passwd`.
+
+**Blocked on:** Rob's account model (S5), or his yes to the placeholder user in note 6 below.
+The status goes back to `open` in the `plan/` pull request that records his answer.
 
 **Progress:** the second half is done. `test-fallback.sh broken-shell hung-shell` trials an
 update whose shell cannot start, and one whose shell starts and never draws; each is
@@ -323,7 +329,7 @@ What is left, step by step (steps 1 to 4 above are done):
      HARDWARE.md. (verify: what Firefox's exit code is when its last window is closed.)
    - **Firefox's cache and Strata.** Strata versions every file written under `/home` and
      has no exclude list (`crates/strata`). Firefox's disk cache would therefore fill the
-     store. Set `XDG_CACHE_HOME=/persist/cache` in `flow-browser.service` and add a
+     store. Set `XDG_CACHE_HOME=/persist/browser/cache` in `flow-browser.service` (done: the profile is in `/persist/browser/profile` too) and add a
      `tmpfiles.d` line for that directory (verify: Firefox puts `cache2` under
      `$XDG_CACHE_HOME/mozilla/`).
    - **Size.** Make `build.sh` print `du -sm` of `root-a` and fail when it is over 85% of
@@ -357,7 +363,7 @@ What is left, step by step (steps 1 to 4 above are done):
 10. **Size:** M for what is left (PR A is S, PR B is M). Each PR leaves `main` green on its
    own.
 
-### E5 · Networking · in progress · needs E3
+### E5 · Networking · done · needs E3
 
 **What:** NetworkManager (A6) in the image, wired and Wi-Fi, and a minimal Wi-Fi picker in
 the shell (list networks, enter a password) over NetworkManager's D-Bus API.
@@ -369,15 +375,25 @@ left): `test-boot.sh` finds the picker on `plain`'s screen when the machine has 
 the shell's bar. A screendump must show the picker open again, and the network the machine
 is on listed in it.
 
+**Evidence:** `images/x86-qemu/test-wifi.sh`, `images/x86-qemu/test-browser.sh`,
+`images/x86-qemu/test-boot.sh` and `crates/flow-wifi/tests/on_the_shell.rs`. In the `images`
+workflow Firefox reaches a page the CI host serves; the picker joins a simulated WPA2 network
+(a wrong password refused, the right one leased an address by the network's own DHCP
+server), then Esc closes it and the bar's Wi-Fi button opens it again, listing the network;
+and `plain` with no network shows the picker in front of Firefox. Headless, the bar's button
+and Super+W open exactly one picker (sabotaged twice: a button that never hits, and no
+"only one" rule, each fails the test).
+
 **Progress:** part 1 (#49): NetworkManager in the browser image; `test-browser.sh` sends
 Firefox from its local page to one the CI host serves at 10.0.2.2. Part 2: the Wi-Fi picker
 (`crates/flow-wifi`), a window on the shell over NetworkManager's D-Bus API that opens by
 itself when the machine has no network. `tests/on_the_shell.rs` drives it on the compositor
 with a fake backend; `images/x86-qemu/test-wifi.sh` joins a WPA2 network carried by the
 kernel's simulated radios (`mac80211_hwsim`) in a VM, a wrong password and then the right one
-typed on the VM's keyboard, judged by screendumps and the network's own DHCP log. Firefox and the picker are together in `plain` (E4). Still to
-do: a way to open the picker when
-the machine already has a network (from the shell's bar).
+typed on the VM's keyboard, judged by screendumps and the network's own DHCP log. Firefox and
+the picker are together in `plain` (E4). Part 3: the bar along the bottom of the screen, with a
+Wi-Fi button (and Super+W) that opens the picker when the machine is already online; there is
+only ever one picker.
 
 **Notes:**
 1. **The picker in `plain`** comes with E4's PR B (`overlay-network` and `flow-wifi.service`
@@ -480,8 +496,10 @@ finding it while the browser is being built costs nothing. Suspend and sound wai
 note what the report shows of them.
 
 The builder's half (Rob does the booting):
-1. **Before Rob boots,** give him the number of the newest green `images` run on `main`. Its
-   `morpheos-x86-usb` artefact is the stick to use, and it is kept for 30 days. Say whether it
+1. **Before Rob boots,** give him the number of the newest green `images` run on `main`
+   (GitHub, the repository's *Actions* tab, workflow `images`, filtered to branch `main`; or
+   `gh run list --workflow images.yml --branch main`). Its `morpheos-x86-usb` artefact is the
+   stick to use, and it is kept for 30 days. Say whether it
    is the console stick (before E4's PR B) or the shell stick (after). Recommendation: boot
    both. The console stick works even when the graphics do not. The shell stick is the only
    way to find out whether the touchpad, the keyboard in a window and the compositor's
@@ -499,7 +517,9 @@ The builder's half (Rob does the booting):
    doc needs, with MAC addresses replaced by `xx:xx:…`. Add a check in the same PR (AGENTS.md:
    a claim about the repository is a test): extend `scripts/verify-docs.mjs` so that every
    `docs/hardware/*.md` has the headings above and contains no MAC address
-   (`([0-9a-f]{2}:){5}[0-9a-f]{2}`, case-insensitive). Give it a self-test case that fails.
+   (`([0-9a-f]{2}:){5}[0-9a-f]{2}`, case-insensitive). ⚠️ `verify-docs.mjs` has no self-test
+   mode yet (`--self-test` is ignored and it exits 0): add one, with a case that fails, and
+   run it in `check.sh` and CI.
 4. **Every failure becomes a task, in a `plan/` PR.** A firmware file or a driver that is
    missing for a machine in MACHINES.md is a bug in E12. Fix it on a `fix/` branch: add the
    package to `BASE_PKGS` and the module name to `build.sh`'s laptop driver list (H18).
@@ -877,6 +897,13 @@ read off the disk after the VM stops, and from the server's request log:
 - `tampered` (a byte of `root.img` changed after signing): no trial in the history, slot B has
   no marker and no `.morph-incomplete`, and the server log shows that the files *were*
   downloaded, so the refusal came from the check and not from a failed fetch.
+
+**Progress:** step 3.1 is done (`fix/payload-rollback`): the signed manifest carries a
+required `release <n>` line, every image says its release in `/usr/lib/morpheos/release`
+(`RELEASE` in `build.sh`, default 1; payloads default to 2), and `install` refuses an older
+release before anything is written and allows an equal one (`morph-heal` seals at the running
+release). `tests/install.rs` covers older, equal, newer, a missing, doubled or malformed release
+line, and a missing release file; removing the check fails the older-release test.
 
 **Notes:**
 

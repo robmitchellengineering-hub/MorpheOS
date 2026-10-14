@@ -2,11 +2,13 @@
 
 Operating rules for this repository. Read before changing anything.
 
-**What to work on next, and how, is in [HANDOFF.md](HANDOFF.md).** It holds the current
-state, the ordered task list with a machine-checked "Done when" for each task, and the
-session log. Update it in the same pull request as the work.
+**What to work on next, and how, is in [HANDOFF.md](HANDOFF.md)**: the current state, how
+to work, and the decisions that are Rob's. **The task list is
+[doc 20](docs/20-build-plan.md)**, and only doc 20; `node scripts/task.mjs --next` says which
+tasks may start now. In the same pull request as the work: the task's status in doc 20, and a
+session-log file in `docs/log/`.
 
-**Read `docs/00-strategy.md` first.** It holds the strategic decisions, and it says
+**After this file and HANDOFF.md, read `docs/00-strategy.md`.** It holds the strategic decisions, and it says
 of itself: *"Where another doc disagrees with this one, this one wins."* The docs
 describe an intended system; the code implements a small part of it. Both are
 worth reading, and the difference between them matters more than either.
@@ -17,10 +19,12 @@ An AI-native operating system, design phase. The wedge is decided and narrow:
 **"never breaks, and heals itself."** Everything else — capsules, the AI
 configurator, the mesh, Flow shell — waits behind it.
 
-- **Phase 1 is only "unbreakable".** A change that does not serve it, or that
-  weakens it, is out of scope even when it is a good idea. That is ADR
-  [0003](docs/adr/0003-unbreakable-wedge.md), and it is the rule most likely to be
-  violated by enthusiasm.
+- **"Unbreakable" is never weakened.** A change that weakens it is out of scope even when it
+  is a good idea. That is ADR [0003](docs/adr/0003-unbreakable-wedge.md), and it is the rule
+  most likely to be violated by enthusiasm. **What is built, and in what order**, is
+  [ADR 0014](docs/adr/0014-express-road-first.md)'s express road (the wedge was built first;
+  now the shell, a browser and a real laptop, so a person can drive it), turned into tasks by
+  doc 20. Work that no doc 20 task asks for waits, as a `proposed` task.
 - **The Linux kernel is the base.** A new kernel is a research track, not a plan
   (ADR [0001](docs/adr/0001-linux-kernel-first.md)).
 - **The userland is Apache-2.0.** Paid services are separate and closed. Code
@@ -30,7 +34,9 @@ configurator, the mesh, Flow shell — waits behind it.
 
 ## How to make a change
 
-1. **Branch from a fresh `origin/main`.** `git fetch && git switch -c <type>/<slug> origin/main`.
+1. **Branch from a fresh `origin/main`.** `git fetch && git switch -c <type>/<slug> origin/main`,
+   where `<type>` is `feat` (a doc 20 task: `feat/e7-installer`), `fix` or `plan`; CI refuses
+   anything else.
 2. **Never push to `main`.** It is the published branch. Every change lands through
    a pull request.
 3. **One worktree per session** if more than one session is working here. **Never
@@ -44,16 +50,14 @@ configurator, the mesh, Flow shell — waits behind it.
 
 ## The verification bar
 
-"It builds" is not verification. Before a pull request:
+"It builds" is not verification. Before a pull request, on Linux (WSL2 on Windows):
 
 ```bash
-cargo fmt --all --check
-cargo clippy --all-targets -- -D warnings
-cargo test --all
-for f in manifest/examples/*.toml; do cargo run -q -p morph-manifest -- validate "$f"; done
+bash scripts/check.sh      # every step of CI's `rust` job; ends "all checks passed"
 ```
 
-That is what CI runs. It is not the whole bar:
+It runs formatting, clippy, every test, the example Manifests, and every verifier with its
+self-test. It is not the whole bar:
 
 - **The bar is run on Linux.** On macOS or Windows, `cargo test --all` skips the three
   `strata` watcher tests (they report as `ignored`) and **compiles every
@@ -113,11 +117,13 @@ match silently lands at tier 2**. Nothing fails; the change is just classified b
 a default.
 **Rule:** a ranked classifier must be **total** over its schema, and every leaf
 path should be asserted through `json_schema()`. An unmatched input is a bug, not
-a fallback.
+a fallback. (Since fixed: an unmatched path is `UNCLASSIFIED`, which is security-critical,
+and a test checks every schema leaf has a rule.)
 
 **H5 — a field nothing reads.** `system.channel`, `system.update_ring`,
 `heal.max_auto_rung` and `storage.retention` are parsed and validated, and **no
-code consumes them** (`unenforced_settings()` in `validate.rs` is the full list).
+code consumes them** (`unenforced_settings()` in `validate.rs` is the full list; on
+2026-10-14 it was found to name only five of the many such fields, and now names them all).
 The Manifest therefore describes behaviour the system does not have — and a reader
 trusts it. Another, `boot.max_boot_attempts`, promised a 3-boot retry the firmware
 cannot do; ADR [0008](docs/adr/0008-one-try-trial.md) removed it.
@@ -273,6 +279,20 @@ shell looks like to the health check, before any shell had broken.
 **Rule:** a service a person depends on says it is ready only when it is doing its job
 (`Type=notify`, `READY=1` after the first frame on the display, not after `exec`), and each
 such service has a VM scenario in which it hangs, not only one in which it exits.
+
+**H20 — a test that finds things by colour, and two things the same colour.** The screen tests
+read verdicts by colour: the pointer is `palette::TEXT`, the picker is `colours::TITLE`. The
+bar's new Wi-Fi icon was drawn in `palette::TEXT`, and `test-shell.sh` saw a pointer before the
+mouse moved. Listing every colour then found three more pairs within the tolerance the tests
+match by (3 per channel), among them the shell's background and the picker's password field.
+**Rule:** every colour drawn on the screen is listed in `crates/flow-wifi/tests/colours.rs`,
+which fails when two are closer than a test can tell apart. A new colour goes in the list.
+
+**H21 — what `bash -n` cannot read.** The VM tests drive QEMU with Python inside the shell
+scripts. An edit left an IndentationError inside one, which `bash -n` and `check.sh` cannot see,
+and the images workflow found it 25 minutes in. **Rule:** `scripts/verify-embedded-python.sh`
+compiles every embedded program in seconds (in `check.sh` and CI); never rely on the VM run to
+find a syntax error.
 
 ## Writing code here
 

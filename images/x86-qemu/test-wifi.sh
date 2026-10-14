@@ -15,6 +15,8 @@
 #   * Enter, the right password, Enter: the picker says it joined, its status line turns
 #     green, and the network's own DHCP server logs the lease it gave (evidence from the
 #     other end, not from the picker);
+#   * Esc closes the picker, and the bar's Wi-Fi button opens it again: it lists the network
+#     the machine is now on (doc 20, E5: the picker is reachable once the machine is online);
 #   * the boot was healthy and committed.
 # The screenshots are the verdict on what a person sees (AGENTS.md H8); the log lines say
 # when to look, and what NetworkManager and the network did.
@@ -54,7 +56,7 @@ import json, socket, sys, time
 
 qmp_path, work, log_path = sys.argv[1], sys.argv[2], sys.argv[3]
 # The picker's colours (crates/flow-wifi/src/picker.rs, `colours`).
-SELECTED, FIELD = (0x2a, 0x5c, 0xaa), (0x0e, 0x11, 0x16)
+SELECTED, FIELD = (0x2a, 0x5c, 0xaa), (0x08, 0x0a, 0x0e)
 FAIL, OK = (0xc0, 0x32, 0x32), (0x1e, 0xa0, 0x5a)
 WINDOW = (16, 16, 480, 360)      # where the window manager puts the first window
 ROW = 480 * 36                   # one row or status line across the window, in pixels
@@ -97,8 +99,8 @@ def shot(name):
 def count(screen, rgb):
     return sum(1 for p in screen[2] if p == rgb)
 
-def said(pattern):
-    return pattern in open(log_path, "rb").read().decode("utf-8", "replace")
+def said(pattern, times=1):
+    return open(log_path, "rb").read().decode("utf-8", "replace").count(pattern) >= times
 
 ok = True
 def check(name, cond):
@@ -107,9 +109,9 @@ def check(name, cond):
     ok = ok and cond
     return cond
 
-def wait_for(pattern, seconds):
+def wait_for(pattern, seconds, times=1):
     end = time.time() + seconds
-    while not said(pattern):
+    while not said(pattern, times):
         if time.time() > end:
             return False
         time.sleep(1)
@@ -171,6 +173,28 @@ check("the right password joined (flow-wifi: connected MorpheOS-test 192.168.77.
 check("the network's DHCP server leased the machine an address (dnsmasq DHCPACK)",
       wait_for("DHCPACK(wlan1) 192.168.77.", 10))
 until("joined", OK, ROW * 8 // 10)
+
+# Online now, so nothing opens the picker by itself any more: Esc closes it, and the bar's
+# Wi-Fi button (the 24 x 24 square at the bar's right end, wm::wifi_button) opens it again.
+TITLE = (0x26, 0x2c, 0x38)
+def networks_lines():
+    text = open(log_path, "rb").read().decode("utf-8", "replace")
+    return [l for l in text.splitlines() if "flow-wifi: networks " in l]
+key("esc")
+check("Esc closed the picker (flow-wifi: closed)", wait_for("flow-wifi: closed", 10))
+before = len(networks_lines())
+w, h, _ = shot("closed")
+click(w - 8 - 12, h - 32 + 4 + 12)
+check("the bar's Wi-Fi button opened the picker (flow-compositor: opening the Wi-Fi picker)",
+      wait_for("flow-compositor: opening the Wi-Fi picker", 20))
+end = time.time() + 60
+while len(networks_lines()) <= before and time.time() < end:
+    time.sleep(1)
+new = networks_lines()[before:]
+check(f"the picker it opened lists the network the machine is on ({new[:1]})",
+      any("MorpheOS-test" in l for l in new))
+until("reopened", TITLE, 480 * 40 * 8 // 10)
+until("reopened-list", SELECTED, ROW * 8 // 10)
 text = open(log_path, "rb").read().decode("utf-8", "replace")
 check("neither password appears on the console", WRONG not in text.replace("wrong-password", "") and RIGHT not in text)
 sys.exit(0 if ok else 1)

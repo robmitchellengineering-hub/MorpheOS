@@ -134,8 +134,9 @@ from any newer `images` run has the shell. Booting both on a new machine tells t
 ## 4. Use it
 
 In the shell: **Alt+Tab** switches windows, **Super+F** makes one fullscreen and back, and a
-window moves when you drag it by its edge (or anywhere, holding Super). Closing Firefox opens
-it again; there is no launcher yet.
+window moves when you drag it by its edge (or anywhere, holding Super). The button with three
+bars at the right of the bar along the bottom (or **Super+W**) opens the Wi-Fi picker, to join
+another network. Closing Firefox opens it again; there is no launcher yet.
 
 On the console (Ctrl+Alt+F2):
 
@@ -161,8 +162,9 @@ morph-update --esp /efi --root /dev/disk/by-partlabel/root-<the slot that is NOT
 morph-boot trial <that slot> --reboot
 ```
 
-The payload's signature is checked against the keys in the image, then its contents against its
-own digests, all before anything is written; the write is read back and hashed, and only then is
+The payload's signature is checked against the keys in the image, then its release number against the
+one this stick runs (an older one is refused), then its contents against its own digests, all
+before anything is written; the write is read back and hashed, and only then is
 the slot allowed to look ready to trial.
 
 ⚠️ **The stick accepts only payloads signed by the key it was built with** (doc 20, S2). An image

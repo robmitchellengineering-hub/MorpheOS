@@ -88,17 +88,49 @@ export function check(text, exists = (p) => existsSync(join(REPO, p))) {
   return out;
 }
 
-/** Why this branch may not merge, or null when it may. */
+/** The open tasks that may start: every need done, and in the current milestone (the first
+ * with work open, in progress or blocked) or marked `parallel` ("How this doc works"). */
+export function startable(text) {
+  const tasks = parse(text);
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const milestone = new Map();
+  let m = -1;
+  for (const line of text.split('\n')) {
+    if (/^## M\d+ /.test(line)) m++;
+    const t = line.match(HEADING);
+    if (t) milestone.set(t[1], { m, parallel: / · parallel(?: ·|$)/.test(line) });
+  }
+  const live = (t) => ['open', 'in progress', 'blocked'].includes(t.status);
+  const current = Math.min(...tasks.filter(live).map((t) => milestone.get(t.id)?.m ?? Infinity));
+  return tasks.filter(
+    (t) =>
+      t.status === 'open' &&
+      t.needs.every((n) => byId.get(n)?.status === 'done') &&
+      (milestone.get(t.id)?.m === current || milestone.get(t.id)?.parallel),
+  );
+}
+
+/** Why this branch may not merge, or null when it may. A branch works on a task that is in
+ * progress, or one that may start (see `startable`): naming an open task whose needs are not
+ * done, or one in a later milestone, is refused, because green must not read as permission. */
 export function checkBranch(branch, text, baseText = text) {
   if (/^(fix|plan)\//.test(branch)) return null;
   const tasks = parse(baseText);
   const named = [...branch.matchAll(/(?:^|[/_-])([a-z]\d+)(?=$|[/_-])/gi)].map((m) => m[1].toUpperCase());
-  const live = tasks.filter((t) => named.includes(t.id) && (t.status === 'open' || t.status === 'in progress'));
-  if (live.length > 0) return null;
   if (named.length === 0) {
     return `branch "${branch}" names no task. Name the task it serves (e.g. feat/e2-classic-windows), or use fix/ or plan/`;
   }
-  return `branch "${branch}" names ${named.join(', ')}, but none was an open or in-progress task in the base ${PLAN}`;
+  const may = new Set(startable(baseText).map((t) => t.id));
+  if (tasks.some((t) => named.includes(t.id) && (t.status === 'in progress' || may.has(t.id)))) return null;
+  const why = named.map((id) => {
+    const t = tasks.find((x) => x.id === id);
+    if (!t) return `${id} is not a task`;
+    if (t.status !== 'open') return `${id} is ${t.status}`;
+    const waiting = t.needs.filter((n) => tasks.find((x) => x.id === n)?.status !== 'done');
+    if (waiting.length) return `${id} needs ${waiting.join(', ')}, not done`;
+    return `${id} is in a later milestone and not marked parallel (Rob can mark it, in a plan/ PR)`;
+  });
+  return `branch "${branch}" may not start yet in the base ${PLAN}: ${why.join('; ')}. node scripts/task.mjs --next lists what may`;
 }
 
 function selfTest() {
@@ -109,6 +141,13 @@ function selfTest() {
     '**Evidence:** https://example.com/pr/1',
     '### E2 · Second · open · needs E1',
     '**Done when:** another check.',
+    '### E3 · Third · open · needs E2',
+    '**Done when:** a third check.',
+    '## M2 · y',
+    '### S1 · Later · open',
+    '**Done when:** later.',
+    '### S2 · Early · open · parallel',
+    '**Done when:** early.',
   ].join('\n');
   const cases = [
     ['a good plan passes', good, 0],
@@ -133,6 +172,9 @@ function selfTest() {
     ['feat/e1-first', 'done'],
     ['feat/shiny-idea', 'none'],
     ['feat/e9-nothing', 'missing'],
+    ['feat/e3-needs-not-done', 'needs'],
+    ['feat/s1-later-milestone', 'later'],
+    ['feat/s2-marked-parallel', null],
   ];
   for (const [b, want] of branches) {
     const got = checkBranch(b, good);

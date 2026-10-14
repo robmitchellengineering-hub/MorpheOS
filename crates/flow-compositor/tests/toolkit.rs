@@ -143,16 +143,16 @@ fn a_gtk_window_finds_the_screen_and_sits_inside_it_where_the_window_manager_put
         "the window's top edge is not at y = {MARGIN}"
     );
     // Too big: GTK asked for 1393 x 740 on a 1024 x 768 screen, so the compositor must ask
-    // it to fit. The widget factory cannot comply (it sets a MINIMUM size of
+    // it to fit: the screen less a margin all round, and less the bar (32) at the bottom. The widget factory cannot comply (it sets a MINIMUM size of
     // 1393 x 740 itself), so this asserts the request, read from GTK's own protocol log; a
     // browser's minimum is far smaller, and E4's VM scenario sees it fit.
     assert!(
-        log.contains("configure_bounds(992, 736)"),
+        log.contains("configure_bounds(992, 704)"),
         "GTK was not told how big a window may be"
     );
     // The exact size GTK asks for depends on the machine's fonts and theme (CI's differs from
     // a desktop's), so assert the rule, not one instance: some configure asks for a size
-    // inside 992 x 736 that reaches the limit in a direction GTK overflowed.
+    // inside 992 x 704 that reaches the limit in a direction GTK overflowed.
     let (max_w, max_h) = (W as i32 - 2 * MARGIN as i32, H as i32 - 2 * MARGIN as i32);
     let fits: Vec<(i32, i32)> = log
         .lines()

@@ -58,11 +58,14 @@ impl Machine {
         let spare_root = base.join("root-b.img");
         std::fs::write(&spare_root, OLD_SPARE).unwrap();
 
+        let release_file = base.join("release");
+        std::fs::write(&release_file, "3\n").unwrap();
         let heal = Heal {
             esp,
             history: base.join("esp/morph-boot/history.jsonl"),
             report: base.join("esp/morph-boot/repairs.json"),
             stage: base.join("stage"),
+            release_file,
         };
         Machine {
             base,

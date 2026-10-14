@@ -46,8 +46,17 @@ fn digest(bytes: &[u8]) -> String {
     blake3::hash(bytes).to_hex().to_string()
 }
 
+/// The release every fixture payload is, and the release the fixture machine runs: equal, as
+/// when `morph-heal` reinstalls the running system.
+const RELEASE: u64 = 5;
+
 fn write_manifest(dir: &Path) {
-    let mut text = String::new();
+    write_manifest_with(dir, &format!("release {RELEASE}\n"));
+}
+
+/// A manifest whose release line(s) are exactly `release_lines` ("" for none).
+fn write_manifest_with(dir: &Path, release_lines: &str) {
+    let mut text = release_lines.to_string();
     for name in ["root.img", "vmlinuz", "initrd.img"] {
         let bytes = std::fs::read(dir.join(name)).unwrap();
         text.push_str(&format!("{}  {name}\n", digest(&bytes)));
@@ -114,6 +123,7 @@ impl Fixture {
             layout: Layout {
                 esp,
                 root_device: device,
+                running_release: RELEASE,
             },
         }
     }
@@ -301,6 +311,7 @@ fn a_write_that_cannot_happen_leaves_the_slot_marked_incomplete() {
     let layout = Layout {
         esp: f.layout.esp.clone(),
         root_device: f.layout.esp.clone(),
+        running_release: RELEASE,
     };
     let mut payload = f.open();
     let err = install(&running_a(), &mut payload, &layout, None).unwrap_err();
@@ -324,7 +335,8 @@ fn a_payload_file_that_is_a_device_is_read_not_called_missing() {
     std::fs::write(dir.join("vmlinuz"), b"k").unwrap();
     std::fs::write(dir.join("initrd.img"), b"i").unwrap();
 
-    morph_update::seal(&dir).expect("a device is a readable payload file, not a missing one");
+    morph_update::seal(&dir, RELEASE)
+        .expect("a device is a readable payload file, not a missing one");
     sign_with(&dir, &trusted_key());
     let mut payload = Payload::open(&dir, &trust()).unwrap();
     let sizes = payload.check().expect("and it still checks");
@@ -431,7 +443,7 @@ fn a_key_made_by_keygen_signs_a_payload_its_public_half_accepts() {
     ] {
         std::fs::write(dir.join(name), bytes).unwrap();
     }
-    morph_update::seal(&dir).unwrap();
+    morph_update::seal(&dir, RELEASE).unwrap();
     morph_update::sign(&dir, &secret).unwrap();
     let mut payload = Payload::open(&dir, &trusted).expect("its own signature is accepted");
     payload.check().unwrap();
@@ -440,4 +452,75 @@ fn a_key_made_by_keygen_signs_a_payload_its_public_half_accepts() {
         Payload::open(&dir, &trust()),
         Err(Error::Untrusted(_))
     ));
+}
+
+// RELEASES (doc 20, S3's first step). Without a release in the signed manifest, a correctly
+// signed OLD payload installed: anyone holding a copy of an old release, with a hole the new
+// one fixed, could put it back on a machine. The release is signed with the rest, so it cannot
+// be changed without the signature failing.
+
+/// A fixture whose payload says it is `release`, on a machine running RELEASE.
+fn fixture_at(release: u64) -> Fixture {
+    let f = Fixture::new(NEW_ROOT);
+    write_manifest_with(&f.payload_dir, &format!("release {release}\n"));
+    f
+}
+
+#[test]
+fn an_older_release_is_refused_before_anything_is_written() {
+    let f = fixture_at(RELEASE - 1);
+    let mut payload = f.open();
+    assert_eq!(payload.release(), RELEASE - 1);
+    let err = install(&running_a(), &mut payload, &f.layout, None).unwrap_err();
+    assert!(matches!(err, Error::Refused(_)), "got {err}");
+    assert!(err.to_string().contains("older"), "it says why: {err}");
+    assert_eq!(f.device_bytes(), PATTERN, "the slot was touched");
+    assert!(!f.layout.marker(Slot::B).exists(), "the slot was marked");
+}
+
+#[test]
+fn the_same_or_a_newer_release_installs() {
+    for release in [RELEASE, RELEASE + 1] {
+        let f = fixture_at(release);
+        let mut payload = f.open();
+        let outcome = install(&running_a(), &mut payload, &f.layout, None)
+            .unwrap_or_else(|e| panic!("release {release} on {RELEASE}: {e}"));
+        assert_eq!(outcome.release, release);
+    }
+}
+
+#[test]
+fn a_manifest_without_exactly_one_release_is_refused() {
+    for (lines, why) in [
+        ("", "no release line"),
+        ("release 5\nrelease 6\n", "two release lines"),
+        ("release five\n", "a release that is not a number"),
+        ("release -1\n", "a negative release"),
+    ] {
+        let f = Fixture::new(NEW_ROOT);
+        write_manifest_with(&f.payload_dir, lines);
+        let err = Payload::open(&f.payload_dir, &trust()).unwrap_err();
+        assert!(matches!(err, Error::BadPayload(_)), "{why}: got {err}");
+    }
+}
+
+#[test]
+fn seal_writes_the_release_and_open_reads_it_back() {
+    let f = Fixture::new(NEW_ROOT);
+    morph_update::seal(&f.payload_dir, 42).unwrap();
+    sign_with(&f.payload_dir, &trusted_key());
+    assert_eq!(f.open().release(), 42);
+}
+
+#[test]
+fn the_running_release_is_read_from_its_file_and_a_missing_one_refuses() {
+    let dir = scratch("release");
+    let file = dir.join("release");
+    std::fs::write(&file, "7\n").unwrap();
+    assert_eq!(morph_update::read_release(&file).unwrap(), 7);
+    std::fs::write(&file, "seven\n").unwrap();
+    assert!(morph_update::read_release(&file).is_err());
+    // An image that does not say which release it runs cannot tell an old payload from a new
+    // one, so it refuses rather than guessing 0.
+    assert!(morph_update::read_release(&dir.join("absent")).is_err());
 }

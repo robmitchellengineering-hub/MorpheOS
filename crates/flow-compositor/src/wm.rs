@@ -37,14 +37,39 @@ pub const GRAB: i32 = MARGIN / 2;
 /// dragged out of reach.
 pub const KEEP: i32 = 32;
 
+/// The bar along the bottom of the screen (doc 20, E5): the shell's own, drawn over every
+/// window but a fullscreen one. Windows are sized and placed to leave it clear.
+pub const BAR_HEIGHT: i32 = 32;
+/// The Wi-Fi button at the bar's right-hand end: a square this big, `BUTTON_INSET` from the
+/// bar's right edge and centred in its height.
+pub const BUTTON: i32 = 24;
+pub const BUTTON_INSET: i32 = 8;
+
+/// The bar on a screen of `screen_w` x `screen_h`, as (x, y, w, h).
+#[must_use]
+pub fn bar(screen_w: i32, screen_h: i32) -> (i32, i32, i32, i32) {
+    (0, screen_h - BAR_HEIGHT, screen_w, BAR_HEIGHT)
+}
+
+/// The Wi-Fi button on that screen, as (x, y, w, h).
+#[must_use]
+pub fn wifi_button(screen_w: i32, screen_h: i32) -> (i32, i32, i32, i32) {
+    (
+        screen_w - BUTTON_INSET - BUTTON,
+        screen_h - BAR_HEIGHT + (BAR_HEIGHT - BUTTON) / 2,
+        BUTTON,
+        BUTTON,
+    )
+}
+
 /// The largest a window may be on a screen of `screen_w` x `screen_h`: the screen less a
-/// margin all round. A toolkit picks its own window size, and GTK (so Firefox) picks one
-/// wider than a small screen; such a window is asked to shrink to this.
+/// margin all round and the bar. A toolkit picks its own window size, and GTK (so Firefox)
+/// picks one wider than a small screen; such a window is asked to shrink to this.
 #[must_use]
 pub fn max_size(screen_w: i32, screen_h: i32) -> (i32, i32) {
     (
         (screen_w - 2 * MARGIN).max(1),
-        (screen_h - 2 * MARGIN).max(1),
+        (screen_h - 2 * MARGIN - BAR_HEIGHT).max(1),
     )
 }
 
@@ -169,7 +194,7 @@ impl Manager {
                 // at the top, CASCADE right and down from the last one: under a window that
                 // fills the screen (Firefox) it would otherwise open where nobody can see it.
                 // Not the first of a stack: a window taller than the screen is asked to fit.
-                let bottom = self.screen.1;
+                let bottom = self.screen.1 - BAR_HEIGHT;
                 if bottom > 0 && y > x && y + w.h > bottom {
                     x += CASCADE;
                     y = x;
@@ -200,6 +225,25 @@ impl Manager {
                 .map_or(0, |i| i + 1)
         });
         placed
+    }
+
+    /// Whether a point is on the bar's Wi-Fi button. The bar is not there while a window is
+    /// fullscreen, so neither is the button.
+    #[must_use]
+    pub fn on_wifi_button(&self, x: i32, y: i32) -> bool {
+        let (bx, by, bw, bh) = wifi_button(self.screen.0, self.screen.1);
+        self.fullscreen.is_none()
+            && self.screen.1 > 0
+            && (bx..bx + bw).contains(&x)
+            && (by..by + bh).contains(&y)
+    }
+
+    /// Bring a window to the front and give it focus, as when the shell opens it for a person.
+    pub fn activate(&mut self, id: u32) {
+        if self.windows.iter().any(|w| w.id == id) {
+            self.raise(id);
+            self.focused = Some(id);
+        }
     }
 
     /// Bring a window to the front.
@@ -356,10 +400,12 @@ mod tests {
     #[test]
     fn a_window_too_big_for_the_screen_is_asked_to_fit_and_one_that_fits_is_left_alone() {
         // GTK's widget factory asked for 1393 x 740 on a 1024 x 768 screen: both overflow.
-        assert_eq!(fit(1393, 740, 1024, 768), Some((1024 - 32, 768 - 32)));
+        // The height leaves the bar clear as well as the margins.
+        let tall = 768 - 32 - BAR_HEIGHT;
+        assert_eq!(fit(1393, 740, 1024, 768), Some((1024 - 32, tall)));
         assert_eq!(fit(1393, 600, 1024, 768), Some((1024 - 32, 600)));
-        assert_eq!(fit(500, 2000, 1024, 768), Some((500, 768 - 32)));
-        assert_eq!(fit(992, 736, 1024, 768), None, "exactly the limit fits");
+        assert_eq!(fit(500, 2000, 1024, 768), Some((500, tall)));
+        assert_eq!(fit(992, tall, 1024, 768), None, "exactly the limit fits");
         assert_eq!(fit(320, 200, 1024, 768), None);
     }
 
@@ -382,11 +428,59 @@ mod tests {
         let p = m.layout().into_iter().find(|p| p.id == 2).unwrap();
         assert!(p.y + p.h <= 800, "the picker is on the screen: {p:?}");
         assert_eq!((p.x, p.y), (MARGIN + CASCADE, MARGIN + CASCADE));
-        // A third one cascades on from there rather than landing on the second.
-        m.sync(&[win(1, 1248, 768), win(2, 480, 360), win(3, 480, 360)]);
+        // A third that fits under the second stacks there; one that would reach the bar
+        // cascades again rather than landing on the second.
+        m.sync(&[win(1, 1248, 768), win(2, 480, 300), win(3, 480, 300)]);
         assert_eq!(
             at(&m, 3),
-            (MARGIN + CASCADE, MARGIN + CASCADE + 360 + MARGIN)
+            (MARGIN + CASCADE, MARGIN + CASCADE + 300 + MARGIN)
+        );
+        m.sync(&[win(1, 1248, 768), win(2, 480, 360), win(3, 480, 360)]);
+        assert_eq!(at(&m, 3), (MARGIN + 2 * CASCADE, MARGIN + 2 * CASCADE));
+    }
+
+    #[test]
+    fn the_wifi_button_sits_at_the_right_of_the_bar_and_goes_with_fullscreen() {
+        let mut m = Manager::default();
+        m.set_screen(640, 480);
+        assert_eq!(bar(640, 480), (0, 448, 640, 32));
+        assert_eq!(wifi_button(640, 480), (608, 452, 24, 24));
+        assert!(m.on_wifi_button(608, 452) && m.on_wifi_button(631, 475));
+        assert!(!m.on_wifi_button(607, 460) && !m.on_wifi_button(632, 460));
+        assert!(!m.on_wifi_button(620, 451) && !m.on_wifi_button(620, 476));
+        m.sync(&[win(1, 100, 50)]);
+        m.set_fullscreen(1, true);
+        assert!(
+            !m.on_wifi_button(620, 460),
+            "no bar over a fullscreen window"
+        );
+        assert!(
+            !Manager::default().on_wifi_button(0, 0),
+            "no screen, no button"
+        );
+    }
+
+    #[test]
+    fn a_window_stacked_onto_the_bar_starts_a_new_stack_instead() {
+        let mut m = Manager::default();
+        m.set_screen(640, 480);
+        // Second window: y = 16 + 300 + 16 = 332; 332 + 120 = 452 reaches the bar at 448.
+        m.sync(&[win(1, 200, 300), win(2, 200, 120)]);
+        assert_eq!(at(&m, 2), (MARGIN + CASCADE, MARGIN + CASCADE));
+    }
+
+    #[test]
+    fn activating_a_window_brings_it_to_the_front_with_focus() {
+        let mut m = two();
+        m.sync(&[win(1, 100, 50), win(2, 80, 40), win(3, 60, 30)]);
+        m.activate(1);
+        assert_eq!(m.focused(), Some(1));
+        assert_eq!(m.layout().last().map(|p| p.id), Some(1));
+        m.activate(9);
+        assert_eq!(
+            m.focused(),
+            Some(1),
+            "a window that is not there changes nothing"
         );
     }
 

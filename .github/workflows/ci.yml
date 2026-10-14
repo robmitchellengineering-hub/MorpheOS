@@ -7,9 +7,15 @@ on:
 
 jobs:
   rust:
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: the image's own base, and what scripts/setup-linux.sh and
+    # doc 20 S10 say the bar runs on.
+    runs-on: ubuntu-24.04
     steps:
+      # Full history: verify-pr.sh diffs the branch against its base, which needs their
+      # common ancestor, and a shallow clone has none.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       # Exactly the Rust in rust-toolchain.toml, as on the builder's machine (doc 20, S9).
       # Not dtolnay/rust-toolchain@stable: it installs the newest stable and overrides the
       # file, which is how CI's clippy came to reject code the local bar had passed.
@@ -91,6 +97,17 @@ jobs:
           else
             node scripts/verify-plan.mjs
           fi
+      # Every pull request adds its own session-log file (docs/log/), and every VM scenario is
+      # run by both the images workflow and scripts/test-images.sh (scripts/verify-pr.sh).
+      - name: The pull request carries its log, and the scenarios are wired
+        run: |
+          bash scripts/verify-pr.sh --self-test
+          if [ -n "$GITHUB_HEAD_REF" ]; then
+            git fetch -q origin "$GITHUB_BASE_REF"
+            bash scripts/verify-pr.sh --branch "$GITHUB_HEAD_REF" --base "origin/$GITHUB_BASE_REF"
+          else
+            bash scripts/verify-pr.sh
+          fi
       # A CONSOLE FONT CANNOT DRAW EVERYTHING, AND A LOG CANNOT SHOW YOU THAT. A screenshot
       # of the booted image showed `MorpheOS ■ "never breaks, and heals itself"` on a real
       # screen, while the serial log had carried the same bytes and read as text. This is
@@ -102,6 +119,15 @@ jobs:
       # log that is, and a clean one.
       - name: Prove the hardware report names missing firmware
         run: bash scripts/verify-hwreport.sh
+      # The VM tests drive QEMU with Python inside the shell scripts, which `bash -n` cannot
+      # read; a syntax error there was found 25 minutes into the images workflow. Seconds here.
+      - name: Prove the VM tests' embedded Python compiles
+        run: |
+          bash scripts/verify-embedded-python.sh --self-test
+          bash scripts/verify-embedded-python.sh
+      # One task's recipe, needs and hazards on one page (scripts/task.mjs); its rules can fail.
+      - name: Prove the task cards find what they should
+        run: node scripts/task.mjs --self-test
       - name: Prove the console can draw what the machine prints on it
         run: |
           node scripts/verify-console-text.mjs --self-test

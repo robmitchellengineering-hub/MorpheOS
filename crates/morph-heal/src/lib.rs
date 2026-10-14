@@ -49,6 +49,8 @@ pub struct Heal {
     pub report: PathBuf,
     /// Scratch space for assembling the payload. Must not be the read-only root.
     pub stage: PathBuf,
+    /// Which release the running system is: the repair reinstalls exactly that one.
+    pub release_file: PathBuf,
 }
 
 impl Heal {
@@ -60,6 +62,7 @@ impl Heal {
             history: esp.join("morph-boot/history.jsonl"),
             report: esp.join("morph-boot/repairs.json"),
             stage: PathBuf::from("/run/morph-heal"),
+            release_file: PathBuf::from(morph_update::RELEASE_FILE),
             esp,
         }
     }
@@ -263,7 +266,10 @@ impl Heal {
             std::fs::copy(&from, stage.join(name))
                 .map_err(io(format!("reading {}", from.display())))?;
         }
-        morph_update::seal(&stage)?;
+        // The spare becomes the running system again, so it is the running release: equal,
+        // which `install` allows, never older.
+        let release = morph_update::read_release(&self.release_file)?;
+        morph_update::seal(&stage, release)?;
         // There is no unsigned way to open a payload (doc 20, S2), and this one needs no
         // vendor's signature: it is the machine's own running system, read from its own
         // read-only root. So it is signed with a key made for this one repair and opened
@@ -275,6 +281,7 @@ impl Heal {
         let layout = Layout {
             esp: self.esp.clone(),
             root_device: spare_root.to_path_buf(),
+            running_release: release,
         };
         let outcome = morph_update::install(bc, &mut payload, &layout, Some(failure.slot))?;
 
