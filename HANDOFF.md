@@ -356,4 +356,6 @@ One line per piece of work: date, who, what, what's next.
   `/persist/browser`, outside Strata's `/home`, and the disk cache is capped at 50 MiB, because
   the data partition is 256 MiB. A shell that fails gives VT1 back to the console
   (`OnFailure=`); closing Firefox reopens it; `build.sh` fails when a slot's system passes 85%
-  of `ROOT_MB`. Next: E5, the bar and the picker from it.
+  of `ROOT_MB`. That check failed its first run: slot A with Firefox is 1134 MiB of 1200 (94%,
+  Measured), so `ROOT_MB` is now 1600 (71%) and the stick image about 3.7 GiB. Next: E5, the
+  bar and the picker from it.

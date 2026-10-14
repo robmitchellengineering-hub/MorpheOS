@@ -77,7 +77,7 @@ jobs:
       # negative test runs in the `ci` workflow, where it costs a second.
       - name: Prove the legal notice is not doubled
         run: node scripts/verify-motd.mjs "$RUNNER_TEMP/img/serial-plain.log"
-      # The raw disk is ~4.5 GiB of mostly empty ext4; `xz` makes it a download rather than a
+      # The raw disk is ~3.7 GiB of mostly empty ext4; `xz` makes it a download rather than a
       # transfer. Level 3 with threads: this is a convenience, not an archive.
       #
       # `if: always()` — the first version ran this after the boot check without it, so a FAILED

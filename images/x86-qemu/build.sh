@@ -416,7 +416,10 @@ mkdir -p "$DATADIR/home/morph/Documents" "$DATADIR/strata"
 chmod 0700 "$DATADIR/strata"
 
 # 5. Partition images, then the disk. No loop devices or mounts needed.
-ESP_MB=300 ROOT_MB=1200 DATA_MB=256
+# ROOT_MB was 1200 until 2026-10-14, when `plain` took Firefox and the check above measured slot
+# A at 1134 MiB (94%). 1600 puts it at 71%. Each raise is deliberate and said in the pull request:
+# a machine installed with one slot size keeps it (doc 20, E7).
+ESP_MB=300 ROOT_MB=1600 DATA_MB=256
 rm -f "$WORK/esp.img"
 mkfs.vfat -F 32 -n ESP -C "$WORK/esp.img" $((ESP_MB * 1024)) >/dev/null
 mcopy -s -i "$WORK/esp.img" "$ESPDIR"/* ::/
@@ -446,7 +449,9 @@ size=${ROOT_MB}MiB, type=4f68bce3-e8cd-4db1-96e7-fbcaf984b709, name=root-b
 size=${DATA_MB}MiB, type=linux, name=data
 EOF
 dd if="$WORK/esp.img" of="$DISK" bs=1M seek=1 conv=notrunc status=none
-dd if="$WORK/root-a.img" of="$DISK" bs=1M seek=$((1 + ESP_MB)) conv=notrunc status=none
-dd if="$WORK/root-b.img" of="$DISK" bs=1M seek=$((1 + ESP_MB + ROOT_MB)) conv=notrunc status=none
-dd if="$WORK/data.img" of="$DISK" bs=1M seek=$((1 + ESP_MB + 2 * ROOT_MB)) conv=notrunc status=none
+# conv=sparse: the disk file is freshly truncated (all zeros), so skipping the filesystems' zero
+# blocks writes the same disk and keeps the file sparse, which keeps the CI runner's disk free.
+dd if="$WORK/root-a.img" of="$DISK" bs=1M seek=$((1 + ESP_MB)) conv=notrunc,sparse status=none
+dd if="$WORK/root-b.img" of="$DISK" bs=1M seek=$((1 + ESP_MB + ROOT_MB)) conv=notrunc,sparse status=none
+dd if="$WORK/data.img" of="$DISK" bs=1M seek=$((1 + ESP_MB + 2 * ROOT_MB)) conv=notrunc,sparse status=none
 echo "$DISK"
