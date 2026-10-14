@@ -49,6 +49,7 @@ running machine:
 - **The user's own signal:** "this is broken" or "this is slow" is a first-class input.
 
 ### Diagnose
+*(Designed in detail, with interfaces, guarantees and an evaluation protocol, in [doc 22](22-diagnosis.md).)*
 - Most diagnosis is **deterministic playbooks**: typed decision trees for known
   failure classes such as Wi-Fi, audio, display, printing, boot and disk.
 - **Change correlation:** "this started after transaction #4182". Because every

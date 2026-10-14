@@ -75,11 +75,10 @@ From a DSH shell in PowerShell, run any of them as
 
 ## Open pull requests at handover
 
-#42 to #61 were merged on 2026-10-13 and 14, as merge commits. Open when this was written:
+#42 to #61 were merged on 2026-10-13 and 14 (#56 and #57, docs 21 and 22, too), as merge commits. Open when this was written:
 
 | # | Branch | What |
 |---|---|---|
-| #57 | `plan/diagnosis` | Doc 22 and tasks F1–F10 (written in another session; plan only) |
 | (this) | `plan/build-ready` | Every unfinished task expanded into a recipe, an order of work per milestone, S11 proposed |
 
 If CI goes red on it, it is yours to fix, on that branch. **When a pull request's base is
@@ -152,6 +151,11 @@ until he answers.
   hardware reports), the evaluation bar's numbers, whether Morpheus may generate the practice sentences, the
   model-licence policy, the template syntax, vendor-registered intents, and English only. Until Rob opens
   them, I1–I10 are `proposed`: do not build them.
+- **The diagnosis plan ([doc 22](docs/22-diagnosis.md), tasks F1–F10 in doc 20, stacked on doc 21).** Six
+  decisions (D1–D6, section 12). The one worth acting on soon is **F1** (D1): when a trial boot fails, the
+  history does not say why, because the failed units go only to the console log. F1 records them, serves
+  the wedge directly, is small, and is provable in the existing VM suite. Until Rob opens them, F1–F10 are
+  `proposed`: do not build them.
 
 ## Decisions that are Rob's, not yours
 
@@ -308,6 +312,16 @@ One line per piece of work: date, who, what, what's next.
   Manifest changes need their own risk, which the catalogue makes each executor declare; and that the plan
   should build the judge (corpus and scorer, I3) before any resolver. Nothing is built; all tasks are
   `proposed`. Next: Rob decides D1–D7.
+- 2026-10-14 · Claude Code · Planned diagnosis ([doc 22](docs/22-diagnosis.md), F1–F10), stacked on the
+  intent engine (doc 21). Compiled and tested a playbook validator in a scratch crate (120 probe-answer
+  combinations; twelve sabotages each caught) and put it in the doc as a reference. Reviewing it caught
+  two errors in my own first draft: its Wi-Fi playbook asked about a link that cannot exist when firmware
+  is missing (the likely Legion Go case), and nothing checked a probe's answer against its declared kind. Found: `boot-check`
+  records `{state, status, decision}` but not *why* a trial failed (the failed units go only to the
+  console); and `morph-heal` errors on any unparsable history line, so F1 must have Rust, not `sh`, write
+  the evidence or one hostile journal line would disable healing. The judge's generic parts move into a
+  shared `morph-eval` crate (I3) so both plans use them. Nothing is built; all tasks are `proposed`.
+  Next: Rob decides D1–D6 (doc 22) and D1–D7 (doc 21).
 - 2026-10-14 · Claude Code · Picking up S8 found it blocked: nothing on the machine reads the
   Manifest (H5), so there is no Manifest-managed setting to corrupt, and ADR 0009 forbids H2
   before the transactional apply exists. Proposed S11 (`plan/s11-manifest-obeyed`): `morphd` v0
