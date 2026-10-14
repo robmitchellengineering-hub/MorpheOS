@@ -41,8 +41,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Rust, the version rust-toolchain.toml names (doc 20, S9)
         run: bash scripts/rust-toolchain.sh
-      # The shell is in the image a person uses (doc 20, E4), so it is built before that image.
-      - run: cargo build --release -p morph-boot -p strata -p flow-compositor -p flow-wifi
+      - run: cargo build --release -p morph-boot -p strata
       # The update scenario needs the updater. Built here, as a sibling of the line
       # above and for the same reason: the harness scripts run under `sudo`, whose PATH
       # has no cargo, so a binary built inside them cannot find its own toolchain.
@@ -52,6 +51,11 @@ jobs:
       # and KVM opened up if the runner has it.
       - name: Install image and VM tools (scripts/setup-linux.sh --images)
         run: bash scripts/setup-linux.sh --images
+      # The shell is in the image a person uses (doc 20, E4), so it is built before that image,
+      # and after the step above, which installs the system libraries it links (libudev,
+      # libinput, libseat, xkbcommon, pixman). Built before it, it failed on libudev.
+      - name: Build the shell and the Wi-Fi picker
+        run: cargo build --release -p flow-compositor -p flow-wifi
       # ⚠️ FIRST, AND BEFORE THE SCENARIOS. This is the image a PERSON boots — the one that
       # goes on real hardware — and it is built and published before any test that might fail,
       # so a red scenario cannot cost us the artefact somebody is waiting for. `if: always()`
