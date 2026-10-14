@@ -155,7 +155,12 @@ fi
 if [ -n "$branch" ] && [ -n "$base" ]; then
     # Added since the base, committed or not (a log file written but not yet committed
     # counts, so check.sh can be run before the commit), plus files git does not track yet.
-    mb=$(git merge-base "$base" HEAD)
+    # Without a common ancestor every later answer is wrong (git diff '' fails, so "no log
+    # file" was reported for a branch that had one). Say what is actually wrong.
+    if ! mb=$(git merge-base "$base" HEAD 2>/dev/null); then
+        echo "  FAIL  $base and HEAD have no common ancestor here: is the clone shallow? (git fetch --unshallow)"
+        exit 1
+    fi
     mapfile -t added < <(
         git diff --name-only --diff-filter=A "$mb"
         git ls-files --others --exclude-standard
