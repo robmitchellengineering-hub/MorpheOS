@@ -498,6 +498,15 @@ he sends; record it in that branch's log as "Rob on E6: <which reports, and when
 
 **Rob decides before E6 is done:** the reference laptop (note 6).
 
+**Not yet hardware, but a first step (2026-10-15):** Rob ran the `plain` image from images run
+38604870469 (main at #71) in **VMware Workstation on `win-2`**: UEFI, Secure Boot off, the raw disk
+used in place through a flat VMDK, a SATA disk, NAT networking (`e1000`) and no 3D. In his words,
+"It booted, it's live now and I can use Firefox." That is the first boot on virtual hardware other
+than QEMU's: VMware's SVGA (`vmwgfx`), mouse and SATA controller. It proves nothing about the
+Legion Go's own AMD graphics, MediaTek Wi-Fi or portrait panel, which only a USB boot shows. The
+VM was made by the mesh job `2026-10-14T2203Z-win-2-morpheos-vmware-2`. The `.vmx`, and how the
+VMDK wraps the raw disk, are in that job's `command.ps1` (in Rob's harness-mesh repository).
+
 **Notes:** moved ahead of E4 on 2026-10-13 (Rob): the riskiest unknown is the hardware, and
 finding it while the browser is being built costs nothing. Suspend and sound wait for M3;
 note what the report shows of them.
