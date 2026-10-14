@@ -354,10 +354,35 @@ view by scripted input, with no terminal (N3).
 **Done when:** a VM scenario fills `/persist`; the machine still boots healthy, Strata prunes
 by its retention policy, and the shell warns (doc 15, step 4).
 
+**Notes:** "Strata prunes by its retention policy" waits on S11: `storage.retention` is parsed
+and validated, and nothing obeys it yet (AGENTS.md H5).
+
 ### S8 · A corrupted setting rolls back (rung H2) · open
 
 **Done when:** a VM scenario corrupts a Manifest-managed setting, and `morph-transaction`
 rolls it back and names the transaction that caused it (doc 15, step 6).
+
+**Notes:** waits on S11 (proposed). Nothing on the machine reads the Manifest yet (AGENTS.md
+H5), so there is no Manifest-managed setting to corrupt, and ADR 0009 says H2 is not to be
+attempted before the transactional apply exists.
+
+### S11 · The Manifest is obeyed: `morphd` v0 applies its first settings · proposed
+
+**What:** the smallest `morphd` (a service under systemd, ADR 0017) that makes the current
+Manifest generation real on the machine, through `morph-transaction`: plan, apply, health
+check, commit or roll back. It applies only settings the machine can obey today, each one
+moving out of `unenforced_settings()` as it does: `machine.name` as the hostname, and
+`storage.retention` as Strata's pruning policy. Both images carry it.
+
+**Done when:** in a VM, a new Manifest generation changes the hostname and the retention, and
+the machine shows both (read from the machine, not from `morphd`'s log); a generation whose
+health check fails is rolled back and the old values are back; `unenforced_settings()` no
+longer lists `/storage/retention`.
+
+**Notes:** proposed 2026-10-14 by Claude Code, while picking up S8. It unblocks S8 (a
+Manifest-managed setting to corrupt) and S7 (Strata pruning by `storage.retention`). Rob opens
+it or not; it is the first time the Manifest drives the machine, which is why it is a task of
+its own rather than a part of S8.
 
 ## M3 · Daily driver
 

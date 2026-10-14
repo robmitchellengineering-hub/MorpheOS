@@ -247,3 +247,8 @@ One line per piece of work: date, who, what, what's next.
   request, goes fullscreen and back to the same place and size. Found while sabotaging the
   test: a press passed to a window whose release is not leaves the pointer grabbed for
   good, and every window deaf to the mouse; the test now ends with a click that must arrive.
+- 2026-10-14 · Claude Code · Picking up S8 found it blocked: nothing on the machine reads the
+  Manifest (H5), so there is no Manifest-managed setting to corrupt, and ADR 0009 forbids H2
+  before the transactional apply exists. Proposed S11 (`plan/s11-manifest-obeyed`): `morphd` v0
+  applies `machine.name` and `storage.retention` through `morph-transaction`. It unblocks S8
+  and S7's pruning. Rob opens it or not; meanwhile S2 (signed updates, with a test key).
