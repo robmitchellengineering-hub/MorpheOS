@@ -136,6 +136,13 @@ whose update ships a compositor that fails to start.
 **Done when:** the shell scenario passes with the compositor not running as root, and the
 broken-shell update is trialled once and falls back, like `unhealthy`.
 
+**Progress:** the second half is done. `test-fallback.sh broken-shell hung-shell` trials an
+update whose shell cannot start, and one whose shell starts and never draws; each is
+trialled once and falls back to A, whose shell draws on every boot. The hung case is why the
+shell is `Type=notify`, ready only once its first frame is on the display: a running
+compositor that shows nothing was a healthy unit. Still to do: the compositor as an ordinary
+user, which waits on Rob's account model (S5).
+
 ### E4 · A browser · in progress · needs E10
 
 **What:** Firefox from Mozilla's own APT repository (packages.mozilla.org, pinned), running on
