@@ -291,7 +291,7 @@ through (so every pull request runs it on a fresh Ubuntu 24.04 runner, and the `
 then passes `test-shell.sh`); `scripts/test-images.sh`; and the `ci` step "Prove check.sh
 refuses a partial bar off Linux".
 
-### S9 · Pin the exact Rust version, locally and in CI · open · parallel
+### S9 · Pin the exact Rust version, locally and in CI · done · parallel
 
 **What:** `rust-toolchain.toml` names an exact version, and the workflows honour it (drop
 `dtolnay/rust-toolchain@stable`, which overrides the file). Bump it deliberately, in its own PR.
@@ -299,6 +299,10 @@ refuses a partial bar off Linux".
 **Done when:** CI prints the same `rustc --version` as `rust-toolchain.toml`. Found on
 2026-10-13: CI's newer stable clippy rejected code that passed `scripts/check.sh` locally
 (`clippy::chunks_exact_to_as_chunks`), so the local bar was not CI's bar.
+
+**Evidence:** `rust-toolchain.toml` (1.99.0) and `scripts/rust-toolchain.sh`, which every
+workflow job and `scripts/setup-linux.sh` run: it installs the pinned toolchain and fails
+unless `rustc --version` is that version, and the job logs print it.
 
 ### S2 · Signed updates (A4) · open · parallel
 

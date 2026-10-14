@@ -10,9 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      # Exactly the Rust in rust-toolchain.toml, as on the builder's machine (doc 20, S9).
+      # Not dtolnay/rust-toolchain@stable: it installs the newest stable and overrides the
+      # file, which is how CI's clippy came to reject code the local bar had passed.
+      - name: Rust, the version rust-toolchain.toml names
+        run: bash scripts/rust-toolchain.sh
       # The SAME script the builder runs in WSL2 (doc 20, S10): if a package the build needs
       # is missing from it, this job goes red, so the builder's setup cannot quietly rot.
       - name: Install what the build needs (scripts/setup-linux.sh)

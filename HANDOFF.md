@@ -93,9 +93,10 @@ branch that has a pull request open.
    Make that check exist and fail *before* writing the code that makes it pass. If you cannot
    make it fail, it does not test anything (AGENTS.md H3, H9).
 4. Implement the smallest change that makes it pass.
-5. `rustup update stable && bash scripts/check.sh`. It must end with `all checks passed`. The
-   update matters: CI uses the newest stable, and an older local clippy passes code CI
-   rejects (until doc 20's S9 pins the version).
+5. `bash scripts/check.sh`. It must end with `all checks passed`. The Rust version is pinned
+   in `rust-toolchain.toml` and CI installs exactly that one (`scripts/rust-toolchain.sh`,
+   doc 20 S9), so your clippy is CI's clippy. Do not `rustup update` your way past a
+   warning; a version bump is its own pull request.
 6. Push, open a pull request, and read **every** check by name, including the `images`
    workflow (AGENTS.md H6, H10). If a VM job times out, download the serial-log artifact and
    read it before forming any theory (H11).
@@ -231,3 +232,7 @@ One line per piece of work: date, who, what, what's next.
   (`test-wifi.sh`) joins a simulated WPA2 network (`mac80211_hwsim`, hostapd, dnsmasq). Found
   on the way: a Wayland read after `poll` can return EAGAIN (a `delete_id` alone, say), and
   the picker took that for a lost connection and quit a second after it opened.
+- 2026-10-14 · Claude Code · S9 (`feat/s9-pin-rust`): Rust pinned to 1.99.0 in
+  `rust-toolchain.toml`; `scripts/rust-toolchain.sh` installs exactly that, with clippy and
+  rustfmt, and fails if any other `rustc` would run. Every workflow and `setup-linux.sh` use
+  it; `dtolnay/rust-toolchain@stable` is gone.
