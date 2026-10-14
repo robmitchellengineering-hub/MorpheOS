@@ -226,6 +226,10 @@ One line per piece of work: date, who, what, what's next.
   unit is an unhealthy boot. rfkill and backlight start on any machine with a radio switch
   or a backlight (every laptop; no VM until test-wifi.sh's simulated radios showed it), so
   `plain` on a laptop could have been judged unhealthy. Their directories are tmpfs now.
+- 2026-10-13 · Claude Code · Proposed W7 (vendor layers, driver trials and a change freeze) in a
+  `plan/` branch, for Rob to open or drop. It is deliberately product-free: a vendor wants to ship
+  an appliance image on MorpheOS without forking it, which ADR 0006 and principle 7 already allow
+  but nothing yet exercises. Not started. Next: Rob decides.
 - 2026-10-13 · Claude Code · E5 (2), the Wi-Fi picker (`feat/e5-wifi-picker`): `flow-wifi`, a
   window on the shell that lists networks, takes a password (drawn as marks, never printed)
   and joins over NetworkManager's D-Bus API (zbus: pure Rust, no libdbus). Its model is
