@@ -39,18 +39,35 @@ step "example manifests"
 for f in manifest/examples/*.toml; do cargo run -q -p morph-manifest -- validate "$f"; done
 step "shell frame is not blank"
 cargo run -q -p flow-shell -- --out "${TMPDIR:-/tmp}/frame.png" --sessions 3
+step "a real client's window through the compositor"
+[ "$(uname -s)" != Linux ] && echo "skipped: the compositor is Linux only (a PARTIAL run)" || (
+    export XDG_RUNTIME_DIR=$(mktemp -d)
+    cargo build -q -p flow-compositor
+    target/debug/flow-compositor --socket check --out "$XDG_RUNTIME_DIR/frame.png" --timeout 30 &
+    until [ -S "$XDG_RUNTIME_DIR/check" ]; do sleep 0.1; done
+    WAYLAND_DISPLAY=check target/debug/solid-window --colour 00a0ff --size 320x200 || true
+    wait %1
+)
 step "docs";     node scripts/verify-docs.mjs
 step "plan"
 node scripts/verify-plan.mjs --self-test
+# Judged against main as it is now, not as this clone last saw it.
+git fetch -q origin main 2>/dev/null || echo "(could not fetch origin/main: judging against the last fetched copy)"
+branch=$(git rev-parse --abbrev-ref HEAD)
+if [ "$branch" = HEAD ]; then
+    echo "detached HEAD: switch to your branch (git switch <branch>) so the branch checks can run" >&2
+    exit 1
+fi
 git show origin/main:docs/20-build-plan.md > "${TMPDIR:-/tmp}/base-plan.md"
-node scripts/verify-plan.mjs --branch "$(git rev-parse --abbrev-ref HEAD)" --base "${TMPDIR:-/tmp}/base-plan.md"
+node scripts/verify-plan.mjs --branch "$branch" --base "${TMPDIR:-/tmp}/base-plan.md"
 step "pull request carries its log; scenarios are wired"
 bash scripts/verify-pr.sh --self-test
-if [ "$(git rev-parse --abbrev-ref HEAD)" = main ]; then
+if [ "$branch" = main ]; then
     bash scripts/verify-pr.sh
 else
-    bash scripts/verify-pr.sh --branch "$(git rev-parse --abbrev-ref HEAD)" --base origin/main
+    bash scripts/verify-pr.sh --branch "$branch" --base origin/main
 fi
+step "task cards";       node scripts/task.mjs --self-test
 step "console text"
 node scripts/verify-console-text.mjs --self-test
 node scripts/verify-console-text.mjs
