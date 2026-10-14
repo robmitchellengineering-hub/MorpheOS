@@ -15,7 +15,7 @@ made here), this file, [doc 00](docs/00-strategy.md) (what wins arguments), then
 unbootable** (ADR 0014's exit). Everything below serves that. Anything that doesn't goes in
 the widening backlog (ADR 0014, lane 2) and waits.
 
-## Where things stand (2026-10-13)
+## Where things stand (2026-10-14)
 
 | Piece | State | Evidence |
 |---|---|---|
@@ -31,6 +31,10 @@ the widening backlog (ADR 0014, lane 2) and waits.
 | Real keyboard and mouse, root console on VT2 (E10) | **VM-proven** | `test-shell.sh`: a USB-tablet click and a PS/2 key change the window's colour; Ctrl+Alt+F2 and back |
 | Firefox on the shell, a local page read off the screen (E4, part) | **VM-proven** | `test-browser.sh`: the page's colours, inside the screen, boot committed. No menus yet |
 | Bootable x86 USB image for a person, with laptop firmware and a hardware report (E12) | **builds, boots in QEMU** | [HARDWARE.md](images/x86-qemu/HARDWARE.md); `test-boot.sh` reads the report back. **Never booted on real hardware** |
+| Wi-Fi picker over NetworkManager, a WPA2 join typed on the keyboard (E5, part) | **VM-proven** | `test-wifi.sh`: simulated radios, a wrong password refused, the right one joins, the network's own DHCP log |
+| Move, fullscreen, Alt+Tab on real input paths (E9) | **tested headless** | `crates/flow-compositor/tests/move_fullscreen.rs` |
+| A shell update that cannot start, or starts and never draws, falls back (E11, part) | **VM-proven** | `test-fallback.sh broken-shell hung-shell`; the shell is `Type=notify`, ready on its first frame |
+| Signed updates: a payload is opened only if a key in the image signed it (S2) | **tested, VM-proven** | `morph-update` tests (unsigned, wrong key, tampered); the `update` scenario installs a signed payload. Releases still need Rob's key |
 | Pi 5 image | **builds and is read back** | `verify-pi-image.mjs`. **Never booted on a Pi** |
 
 "VM-proven" means a CI job boots it and reads the verdict off the disk. It does **not** mean
@@ -71,13 +75,12 @@ From a DSH shell in PowerShell, run any of them as
 
 ## Open pull requests at handover
 
-#42 to #54 (E3, E10, the handover plan, S10, E12, E4's browser and popups, E5's network and
-Wi-Fi picker, the laptop drivers, the stick guide, the Rust pin, E9's window moves) were merged
-on 2026-10-13 and 14, as merge commits so the stack merged without conflicts. Open:
+#42 to #61 were merged on 2026-10-13 and 14, as merge commits. Open when this was written:
 
 | # | Branch | What |
 |---|---|---|
-| (E11) | `feat/e11-broken-shell-falls-back` | E11 (second half): a broken or hung shell update falls back; the shell is ready only with a frame on the display |
+| #57 | `plan/diagnosis` | Doc 22 and tasks F1–F10 (written in another session; plan only) |
+| (this) | `plan/build-ready` | Every unfinished task expanded into a recipe, an order of work per milestone, S11 proposed |
 
 If CI goes red on it, it is yours to fix, on that branch. **When a pull request's base is
 another open branch** (a stack), and the base merges: if it was squash-merged, the next branch
@@ -117,6 +120,10 @@ until Rob opens it.
 
 ## Decisions waiting for Rob now
 
+Each item names the task that waits on it; the task's **Notes** in doc 20 lay out the options
+and a recommendation. Ask the one that blocks your next task, once, and work on something else
+until he answers.
+
 - **The reference laptop.** Candidates: the Windows laptop at home, the Legion Go, the 2015
   Mac at work. The E12 report from one boot on each decides it (E6).
 - **`plain` boots into the shell at E4, not E10.** Until the browser lands, the root console
@@ -125,6 +132,20 @@ until Rob opens it.
 - **The release signing key (S2).** Images trust a test key made per build. Releases need a key
   Rob holds, and somewhere to keep it (an offline machine, a hardware key): his call, as is
   whether a lost key can be replaced by an update signed with the old one.
+- **Open S11** (`morphd` v0 obeys the Manifest). S7 and S8 need it.
+- **The account model (S5)**: an appliance with no password, one owner with a password
+  (recommended), or several people. E11's first half waits on it.
+- **Where releases are served from, and when an installed update reboots (S3).**
+- **The installer (E7):** the whole internal disk or alongside Windows (recommended: whole
+  disk); `/persist` encrypted or not (recommended: plain for M1); the reference laptop must not
+  be `win`, the machine the builder works on.
+- **Where saved Wi-Fi passwords live (E5)** (recommended: as now, in NetworkManager's keyfiles
+  on `/persist`, until `/persist` encryption is decided).
+- **The recovery partition (S4):** its size, and whether updates refresh it.
+- **Backups (P1):** the encryption and key model (recommended: Strata's store replicated, each
+  object encrypted with `age`; the machine holds only the public half). Its first PR is an ADR.
+- **Open E13** (the shell on every screen, and a portrait panel) once the E6 reports show it
+  is needed.
 
 ## Decisions that are Rob's, not yours
 
@@ -147,10 +168,13 @@ Write the question up (options and a recommendation) and wait:
 `scripts/verify-plan.mjs` enforces its format in CI, and refuses a pull request whose branch
 names no open task. Use `fix/…` for bugs in built things and `plan/…` for plan changes.
 
-**Current milestone: M1, the express road.** Take the lowest-numbered open task whose
-`needs` are done, with two exceptions for the first days: finish **S10** first if it is not
-merged (without it you cannot run the bar), and **E12** before E4 if it is not merged (Rob
-needs the stick for E6).
+**Current milestone: M1, the express road.** Each milestone opens with an **Order of work**
+paragraph: follow it rather than picking by number. Every unfinished task has **Notes** that
+are its recipe: the files, the order, the check to write first, what the verdict is read from,
+the traps already known, Rob's decisions, and how to split it into pull requests. Lines marked
+"verify:" are facts nobody has checked yet: check them first, and fix the note in the same pull
+request if it was wrong. A note is advice, not a rule: if the code says otherwise, the code
+wins, and you correct the note.
 
 ## Open questions
 
@@ -275,3 +299,12 @@ One line per piece of work: date, who, what, what's next.
   before the transactional apply exists. Proposed S11 (`plan/s11-manifest-obeyed`): `morphd` v0
   applies `machine.name` and `storage.retention` through `morph-transaction`. It unblocks S8
   and S7's pruning. Rob opens it or not; meanwhile S2 (signed updates, with a test key).
+- 2026-10-14 · Claude Code · Expanded every unfinished task in doc 20 (M1 to M5, not the I, F
+  or W7 tasks) into a recipe, and gave each milestone an order of work, so the builder from
+  2026-10-16 does not have to plan (`plan/build-ready`, which also carries S11). Added the needs
+  the notes already implied (S7 and S8 need S11, D5 needs S6, W5 needs P1 and P3). Found on the
+  way: a correctly signed older payload still installs (no release number in the signed
+  manifest; S3's first PR), the 256 MiB data partition cannot hold a downloaded payload (S3),
+  `storage.min_free_percent`, `storage.replicas` and `[[users]]` are parsed and obeyed by
+  nothing (H5; S7, P1, S5), and the Pi image is Debian trixie, not A2's Ubuntu 24.04 (W4).
+  Next: E4's `--drm auto`, then `plain` boots into the shell.
