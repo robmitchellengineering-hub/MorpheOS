@@ -330,7 +330,7 @@ minutes; see D3.
 ## Appendix A · The reference: a playbook that can be checked
 
 Compiled and tested on 2026-10-14 in a scratch crate outside the workspace (`rustc 1.97`, edition 2024,
-`clippy -D warnings` and `rustfmt --check` clean): five tests, including one over **every combination of
+`clippy -D warnings` and `rustfmt --check` clean, and re-checked on 2026-10-14 under the repository's pinned Rust 1.99.0 from S9): five tests, including one over **every combination of
 probe answers and every way a probe can fail to run** (48 runs), and **nine deliberate sabotages**
 (cycle check, cite-on-path check, certain-needs-cites check, repair-must-exist check, unreachable-step
 check, kind-mismatch check, unknown-probe check, budget enforcement, and treating a failed probe as
