@@ -359,3 +359,9 @@ One line per piece of work: date, who, what, what's next.
   of `ROOT_MB`. That check failed its first run: slot A with Firefox is 1134 MiB of 1200 (94%,
   Measured), so `ROOT_MB` is now 1600 (71%) and the stick image about 3.7 GiB. Next: E5, the
   bar and the picker from it.
+- 2026-10-14 · Claude Code · E5 done (`feat/e5-wifi-bar`): a bar along the bottom of the screen
+  with a Wi-Fi button; it and Super+W open the picker (`--launch-wifi`), only ever one, and an
+  open one comes to the front with the keyboard. Windows are sized and stacked to leave the bar
+  clear (GTK's bounds on 1024 x 768 are now 992 x 704). `on_the_shell.rs` drives it headless,
+  sabotaged twice; `test-wifi.sh` closes the picker after joining and reopens it from the bar.
+  Next in M1: E6's reports (Rob), then E7.

@@ -357,7 +357,7 @@ What is left, step by step (steps 1 to 4 above are done):
 10. **Size:** M for what is left (PR A is S, PR B is M). Each PR leaves `main` green on its
    own.
 
-### E5 · Networking · in progress · needs E3
+### E5 · Networking · done · needs E3
 
 **What:** NetworkManager (A6) in the image, wired and Wi-Fi, and a minimal Wi-Fi picker in
 the shell (list networks, enter a password) over NetworkManager's D-Bus API.
@@ -369,15 +369,25 @@ left): `test-boot.sh` finds the picker on `plain`'s screen when the machine has 
 the shell's bar. A screendump must show the picker open again, and the network the machine
 is on listed in it.
 
+**Evidence:** `images/x86-qemu/test-wifi.sh`, `images/x86-qemu/test-browser.sh`,
+`images/x86-qemu/test-boot.sh` and `crates/flow-wifi/tests/on_the_shell.rs`. In the `images`
+workflow Firefox reaches a page the CI host serves; the picker joins a simulated WPA2 network
+(a wrong password refused, the right one leased an address by the network's own DHCP
+server), then Esc closes it and the bar's Wi-Fi button opens it again, listing the network;
+and `plain` with no network shows the picker in front of Firefox. Headless, the bar's button
+and Super+W open exactly one picker (sabotaged twice: a button that never hits, and no
+"only one" rule, each fails the test).
+
 **Progress:** part 1 (#49): NetworkManager in the browser image; `test-browser.sh` sends
 Firefox from its local page to one the CI host serves at 10.0.2.2. Part 2: the Wi-Fi picker
 (`crates/flow-wifi`), a window on the shell over NetworkManager's D-Bus API that opens by
 itself when the machine has no network. `tests/on_the_shell.rs` drives it on the compositor
 with a fake backend; `images/x86-qemu/test-wifi.sh` joins a WPA2 network carried by the
 kernel's simulated radios (`mac80211_hwsim`) in a VM, a wrong password and then the right one
-typed on the VM's keyboard, judged by screendumps and the network's own DHCP log. Firefox and the picker are together in `plain` (E4). Still to
-do: a way to open the picker when
-the machine already has a network (from the shell's bar).
+typed on the VM's keyboard, judged by screendumps and the network's own DHCP log. Firefox and
+the picker are together in `plain` (E4). Part 3: the bar along the bottom of the screen, with a
+Wi-Fi button (and Super+W) that opens the picker when the machine is already online; there is
+only ever one picker.
 
 **Notes:**
 1. **The picker in `plain`** comes with E4's PR B (`overlay-network` and `flow-wifi.service`
