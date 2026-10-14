@@ -57,6 +57,7 @@ what "AI-reconfigurable to stable possibilities" means in practice.
   this session to the Studio profile?").
 - **Self-healing:** it diagnoses failures (Wi-Fi, printing, display, audio) by
   walking a library of diagnostic playbooks, then proposes a fix transaction.
+  (Designed in [doc 22](22-diagnosis.md).)
 
 ### 3. Predictor
 - A small, local, on-device model of your usage patterns (time, location, network,

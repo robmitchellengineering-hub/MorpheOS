@@ -433,9 +433,12 @@ warnings` fails if someone adds a wildcard arm. The PR quotes a sabotage run for
 **Notes:** trap T5. The reference was verified to catch seven sabotages; port those checks too.
 
 ### I3 · The judge: corpus validator, scorer and corpus v0 · proposed · needs I1, I2
-**What:** `crates/morph-intent-eval` (library and binary) per doc 21 section 8: the corpus and
-predictions formats, `validate`, a group-aware split with a leakage check, and `score`, which
-recomputes the disposition itself with I2's function and exits 0, 1 or 2. Commit corpus v0: at
+**What:** two crates. `crates/morph-eval` holds what any judge here needs and nothing about intents:
+group-aware splitting with a leakage check, the bootstrap interval, the rule-of-three bound, the
+pinned predictions header, provenance labels, and the 0 / 1 / 2 exit-code convention (diagnosis, doc 22,
+reuses it). `crates/morph-intent-eval` (library and binary) is the intent judge on top of it, per doc 21
+section 8: the corpus and predictions formats, `validate`, and `score`, which recomputes the
+disposition itself with I2's function. Commit corpus v0: at
 least 12 hand-written seeds for each v1 intent, at least 60 out-of-scope and near-miss strings and
 at least 30 injection strings, all tagged `seed`.
 
@@ -532,6 +535,127 @@ runs out of process, with the numbers from I8 and I9 and their labels.
 matches it.
 
 **Notes:** Rob decides. If the answer is "T0 and T1 are enough", that is a good result.
+
+### F1 · Evidence at the moment of failure · proposed
+**What:** when `boot-check` decides *unhealthy*, the boot history also records why (doc 22 section 4):
+the failed units and their results, up to five error lines each from their journal, the kernel taint
+flag, and the data partition's free-space percentage. **Rust writes it** (`serde_json`, in
+`morph-boot`), not `sh`. It is a new `"evidence"` field; existing fields do not move. Bounded to a few
+KiB, best effort, and it must never fail or block a boot.
+
+**Done when:** the `unhealthy` VM scenario reads `history.jsonl` from the disk (AGENTS H8) and finds the
+broken service's name in the evidence; a planted journal line holding quotes, backslashes, a newline
+and non-UTF-8 bytes produces a history line that still parses, and `morph-heal`'s `last_failure` still
+reads the file; a planted failure to read the journal still records the decision and the boot still
+falls back correctly; a journal flooded with 1 MiB of errors still yields a record under the cap; and
+every existing scenario passes unchanged.
+
+**Notes:** traps T7, T8, T13. `morph-heal` errors on any unparsable history line and then refuses to
+repair, so a corrupt line disables healing. Guard every step on this failure path (H11).
+
+### F2 · Probes: registry, pure parsers and the first probes · proposed · needs F1
+**What:** a new library crate `crates/morph-diag`: the typed `Value` and `Finding`, a sensitivity tag, a
+probe registry that takes each probe's implementation, and a bounded runner (timeout, output cap, no
+write access). The first probes are those of doc 22 section 5. Each parser is a pure function over
+captured text, tested on fixtures taken from real `hwreport` folders and the VM.
+
+**Done when:** `cargo test -p morph-diag` passes on Linux, macOS and Windows; every probe has a healthy
+and a faulty fixture test; registration refuses a probe with no sensitivity tag or no timeout; the
+runner kills a probe that sleeps past its timeout and truncates one that floods its output (a fake
+probe for each); and the PR quotes a sabotage run for each rule.
+
+**Notes:** traps T6, T9. Only the runner that reads `/sys` and calls `systemctl` may be Linux-only.
+
+### F3 · Playbooks: the format, the validator, the engine and six seeds · proposed · needs F2, I1
+**What:** the TOML playbook format of doc 22 section 6, a loader, `validate`, and `run` with a probe
+budget, ported from the compiled reference in doc 22 appendix A. Six seed playbooks: `boot.trial_failed`,
+`wifi.no_link`, `display.no_output`, `disk.low`, `service.crash_loop`, `data.mass_write`.
+
+**Done when:** `cargo test -p morph-diag` includes the reference's tests ported over: each defect class
+is refused with its own named error (unknown probe, wrong kind, bad jump, cycle, unreachable step,
+`Certain` without citations, a citation not asked on the path, a repair not in the catalogue); a
+validated playbook always ends within budget over the full input space; a failed probe is `Unknown`,
+never false; every seed loads, validates, and is tested against a fixture machine for each of its
+verdicts plus a healthy one; and a sabotage run is quoted for each rule.
+
+**Notes:** traps T2, T3, T12. A repair may name only an intent whose executor exists (I1's catalogue).
+
+### F4 · Redaction · proposed · needs F2
+**What:** `redact(bundle, policy)`, pure, working from each value's declared sensitivity (doc 22
+section 8), and `morph-diag redact <report-dir>` for an `hwreport` folder.
+
+**Done when:** a planted-secret test (a Wi-Fi password, an SSID, a MAC, a hostname, a username, a home
+path, IPv4 and IPv6 addresses, a serial number) finds none of them in the serialised output under the
+default policy; equal values map to equal tokens within one bundle and to different tokens under a
+different salt; each sensitivity class has a sabotage run; and the CLI run on a fixture report folder
+produces output containing no MAC address.
+
+**Notes:** trap T11. This also lets a person share a hardware report without leaking their hardware.
+
+### F5 · The judge for diagnosis · proposed · needs I3, F3
+**What:** `crates/morph-diag-eval`, on the shared `morph-eval` core: the fault-corpus format, `validate`,
+and `score` for the metrics of doc 22 section 9.3 (the disposition of any named repair is recomputed
+with I2's function), with the same exit codes.
+
+**Done when:** `validate` fails on each planted defect (a family split across splits; a record with no
+expected diagnosis; a playbook that cites a withheld family; fewer healthy or wrong-symptom cases than
+the minimums); `score` fed a synthetic predictions file reports exactly the planted number of
+confident-wrong verdicts; exit codes 0, 1 and 2 each have a test; and at least six hand-written fixture
+records are committed.
+
+**Notes:** trap T4, T5. No fault harness exists yet; that is the point (G9).
+
+### F6 · The fault harness (VM) · proposed · needs F1, F5
+**What:** `images/x86-qemu/test-faults.sh`: inject at least 12 faults across at least 6 families into the
+existing images (reusing the scenario machinery), including healthy-with-complaint controls; capture
+each evidence bundle from the disk; run the diagnosis against it; and for each repairable fault, apply
+the repair and run the health check again.
+
+**Done when:** a local run writes a `faults.jsonl` that `morph-diag-eval validate` accepts; every
+record's cause matches the recipe that injected it (a planted mismatch fails the run); repair outcomes
+are read from the disk, not a log (H8); and the run's duration and CI cost are reported.
+
+**Notes:** needs Rob's decision D3 (where it runs). Wi-Fi uses the simulated radios `test-wifi.sh`
+already has; real firmware-missing evidence comes from E6 reports. Label results Simulated (T10).
+
+### F7 · Playbook authoring by a model (offline experiment) · proposed · needs F6
+**What:** arm B of doc 22 section 9.4. Measure the residual first. Then give a model the faults arm A
+mis-handles and ask for playbook or probe additions as a diff, through Morpheus. Accept nothing that
+fails `validate`, the held-out families or a person's review.
+
+**Done when:** `docs/diagnosis/results/F7-<date>.md` states the residual; then either arm B against arm
+A on the withheld families by the pre-registered bar (B1 to B6), once, or a statement that the residual
+was under 10 points and arm B was therefore not run.
+
+**Notes:** the withheld test families are touched once for this decision. Rob sets the bar first (D6).
+
+### F8 · The runtime hypothesis proposer (offline experiment) · proposed · needs F6, F4
+**What:** arm C: when a playbook returns `Unknown`, a constrained model names at most three causes from
+the registered list and which registered probes tell them apart; the engine runs those under budget.
+Include arm D (a large remote model, offline) as the ceiling, over redacted bundles only.
+
+**Done when:** `docs/diagnosis/results/F8-<date>.md` judges arm C against arm A by the bar, or records
+that the residual after F7 was under 10 points and arm C was not run.
+
+**Notes:** G7 and G8. No raw log text reaches a model. Verify and record each model's licence.
+
+### F9 · Diagnose from the intent bar · proposed · needs I7, F3
+**What:** `diagnose.*` intents in the catalogue, resolved by the engine of doc 21 (no extra AI). The bar
+shows the verdict and any repair offer through the disposition policy.
+
+**Done when:** a VM scenario types "my wifi isn't working" with a planted fault and the frame shows the
+verdict and a repair offer that waits for a confirm; on a healthy machine the frame says healthy and
+offers nothing; and a `Likely` verdict never offers an automatic repair.
+
+**Notes:** schedule after I7, which touches `flow-shell`.
+
+### F10 · Decide and record · proposed · needs F7, F8
+**What:** ADR 0016 records which diagnosis tiers ship, the playbook format, and the consent design for a
+remote tier, with F7 and F8's numbers and their labels.
+
+**Done when:** ADR 0016 is `Accepted` by Rob and indexed in `docs/adr/README.md`.
+
+**Notes:** Rob decides. "Playbooks are enough" is a good result.
 
 ### W4 · Pi 5 parity · proposed
 **Done when:** the Pi image boots on a Pi 5 with the same A/B, Strata and heal behaviour.

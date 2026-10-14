@@ -184,7 +184,9 @@ One JSON object per line, validated by `morph-intent-eval validate`:
 Each arm writes `predictions.jsonl`: one header line pinning `{arm, git_sha, catalogue_sha256,
 model, model_sha256, quant, hardware}`, then one line per utterance with the resolution, up to
 three candidates (intent, slots, score, tier), `latency_us` and `rss_kb`. **Arms may be written
-in any language.** One scorer, in Rust and tested, judges all of them.
+in any language.** One scorer, in Rust and tested, judges all of them. The generic parts (group splits, the leakage
+check, the interval and bound, the header, the exit codes) live in a shared `morph-eval` crate so
+diagnosis ([doc 22](22-diagnosis.md)) reuses them instead of re-deriving them.
 
 `morph-intent-eval score` **recomputes the disposition itself** with the real policy. A
 prediction that claims "AutoRun" is ignored. Exit **0** if the pre-registered bar is met, **1**
@@ -310,7 +312,7 @@ need a laptop only. **This is Rob's call** (D1).
 
 ## 12. After intent: diagnosis
 
-Same bones, different catalogue: a catalogue of **probes** (read-only checks the OS can run), a
+**Now designed in [doc 22](22-diagnosis.md).** Same bones, different catalogue: a catalogue of **probes** (read-only checks the OS can run), a
 resolver that proposes which probes fit a symptom, a deterministic check that confirms, and the
 judge first. The outside evidence I found says models are good at *detecting* that something is
 wrong and unreliable at naming the *cause*, so the model proposes and a probe confirms (doc 15

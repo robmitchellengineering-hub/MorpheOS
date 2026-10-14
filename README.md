@@ -46,6 +46,7 @@ needs, then gets out of the way.
 19. [Any Hardware](docs/19-any-hardware.md): adapting existing drivers or building new ones, without risking the machine
 20. [Build Plan](docs/20-build-plan.md): **the only task list.** What "finished" means, the settled architecture, and every task to get there
 21. [The Intent Engine](docs/21-intent-engine.md): words to a safe action; the catalogue, the tiers, what may run alone, and the evaluation that decides which tiers earn their place (tasks I1–I10)
+22. [Diagnosis](docs/22-diagnosis.md): from a symptom to a verified cause; probes, playbooks that can be checked, where AI helps, and the fault harness that tests it (tasks F1–F10)
 
 ## The big reframe
 
