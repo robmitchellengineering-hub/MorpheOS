@@ -330,7 +330,7 @@ reusable.
 ## Appendix A · The reference: what may run alone
 
 Compiled and tested on 2026-10-14 in a scratch crate outside the workspace (`rustc 1.97`, edition
-2024, `clippy -D warnings` clean): five tests over **3,750 input combinations**, and **seven
+2024, `clippy -D warnings` clean, and re-checked on 2026-10-14 under the repository's pinned Rust 1.99.0 from S9): five tests over **3,750 input combinations**, and **seven
 deliberate sabotages** (each rule removed in turn: untrusted check, planned risk, risk gate,
 guess auto-running, fuzzy threshold, `model_reachable`, duplicate ids) each made at least one test
 fail. This is a statement about that scratch run, not about anything in `crates/`. The real
