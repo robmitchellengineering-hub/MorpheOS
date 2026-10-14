@@ -102,6 +102,12 @@ jobs:
       # log that is, and a clean one.
       - name: Prove the hardware report names missing firmware
         run: bash scripts/verify-hwreport.sh
+      # The VM tests drive QEMU with Python inside the shell scripts, which `bash -n` cannot
+      # read; a syntax error there was found 25 minutes into the images workflow. Seconds here.
+      - name: Prove the VM tests' embedded Python compiles
+        run: |
+          bash scripts/verify-embedded-python.sh --self-test
+          bash scripts/verify-embedded-python.sh
       - name: Prove the console can draw what the machine prints on it
         run: |
           node scripts/verify-console-text.mjs --self-test

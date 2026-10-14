@@ -365,3 +365,9 @@ One line per piece of work: date, who, what, what's next.
   clear (GTK's bounds on 1024 x 768 are now 992 x 704). `on_the_shell.rs` drives it headless,
   sabotaged twice; `test-wifi.sh` closes the picker after joining and reopens it from the bar.
   Next in M1: E6's reports (Rob), then E7.
+- 2026-10-14 · Claude Code · #66's VM run found two mistakes of mine. The bar's Wi-Fi icon used
+  `palette::TEXT`, the colour `test-shell.sh` finds the pointer by (now `palette::BAR_ICON`), and
+  an edit left stale lines in `test-wifi.sh`'s embedded Python, an IndentationError that
+  `bash -n` cannot see. New guard: `scripts/verify-embedded-python.sh` compiles every
+  `<<'PY'` program in the image tests (in `check.sh` and the `ci` workflow; its self-test and
+  the broken file both fail it).

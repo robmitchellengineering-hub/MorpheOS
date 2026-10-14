@@ -196,20 +196,6 @@ check(f"the picker it opened lists the network the machine is on ({new[:1]})",
 until("reopened", TITLE, 480 * 40 * 8 // 10)
 until("reopened-list", SELECTED, ROW * 8 // 10)
 text = open(log_path, "rb").read().decode("utf-8", "replace")
-    return [l for l in text.splitlines() if "flow-wifi: networks " in l]
-before = len(networks_lines())
-w, h, _ = shot("closed")
-button = (w - 8 - 12, h - 32 + 4 + 12)
-click(*button)
-end = time.time() + 60
-while len(networks_lines()) <= before and time.time() < end:
-    time.sleep(1)
-new = networks_lines()[before:]
-check(f"the picker it opened lists the network the machine is on ({new[:1]})",
-      any("MorpheOS-test" in l for l in new))
-until("reopened", TITLE, 480 * 40 * 8 // 10)
-until("reopened-list", SELECTED, ROW * 8 // 10)
-text = open(log_path, "rb").read().decode("utf-8", "replace")
 check("neither password appears on the console", WRONG not in text.replace("wrong-password", "") and RIGHT not in text)
 sys.exit(0 if ok else 1)
 PY
