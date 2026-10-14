@@ -8,9 +8,16 @@
 #   1. a pull request adds its own session-log file, docs/log/<date>-<branch>.md (one file per
 #      pull request, so two never edit the same lines; HANDOFF.md's single log made every
 #      merge conflict);
+#      It starts "# <YYYY-MM-DD> · <who> · <what>" and says something after that heading:
+#      an empty file, or one with no heading, passes no one's reading;
 #   2. every VM scenario script (images/x86-qemu/test-*.sh) is run by the images workflow AND
 #      by scripts/test-images.sh, which the builder runs locally: a scenario only one of them
-#      runs is a scenario that silently stops being run somewhere.
+#      runs is a scenario that silently stops being run somewhere;
+#   3. a plan/ branch changes no file under crates/ or images/: code goes on fix/ or feat/,
+#      where it is reviewed as code (the second handoff rehearsal put feature code on a
+#      plan/ branch and every check passed);
+#   4. scripts/check.sh runs every scripts/ check the CI workflow runs: "keep it in step with
+#      ci.yml" was a rule in prose only, and the local bar can drift from CI's unnoticed.
 #
 #   bash scripts/verify-pr.sh [--branch NAME --base REF]   # rule 1 needs both
 #   bash scripts/verify-pr.sh --self-test                  # proves each rule can fail
@@ -32,6 +39,44 @@ log_rule() {
     done
     echo "the branch adds no session-log file: expected docs/log/<YYYY-MM-DD>-$slug.md (see docs/log/README.md)"
     return 1
+}
+
+# Rule 1's content, as logic: $1 is the log file. Prints the problem and fails.
+log_content_rule() {
+    local file=$1
+    if ! head -n 1 "$file" | grep -Eq '^# [0-9]{4}-[0-9]{2}-[0-9]{2} · .+ · .+'; then
+        echo "$file does not start with '# <YYYY-MM-DD> · <who> · <what>' (docs/log/README.md)"
+        return 1
+    fi
+    if [ -z "$(tail -n +2 "$file" | tr -d '[:space:]')" ]; then
+        echo "$file has a heading and nothing else: say what changed and why"
+        return 1
+    fi
+}
+
+# Rule 3, as logic: $1 is the branch, the rest are the files it changes. Prints each file a
+# plan/ branch may not change, and fails if there is one.
+plan_scope_rule() {
+    local branch=$1 bad=0 f
+    shift
+    case "$branch" in plan/*) ;; *) return 0 ;; esac
+    for f in "$@"; do
+        case "$f" in crates/*|images/*) echo "$f: a plan/ branch changes no code under crates/ or images/; use fix/ or feat/"; bad=1 ;; esac
+    done
+    return $bad
+}
+
+# Rule 4, as logic: $1 is the CI workflow, $2 the local bar. Prints every scripts/ check
+# the workflow runs and the bar does not, and fails if there is one. The two setup scripts
+# install things; they are not checks.
+bar_rule() {
+    local ci=$1 bar=$2 gaps=0 s
+    # Comments name scripts too; only what the workflow runs counts.
+    for s in $(grep -vE '^[[:space:]]*#' "$ci" | grep -oE 'scripts/[a-z0-9-]+\.(sh|mjs)' | sort -u); do
+        case "$s" in scripts/setup-linux.sh|scripts/rust-toolchain.sh) continue ;; esac
+        grep -q "$s" "$bar" || { echo "$s is run by $(basename "$ci") but not by $(basename "$bar")"; gaps=1; }
+    done
+    return $gaps
 }
 
 # Rule 2, as logic: $1 is a list of scenario scripts, $2 and $3 the two files that must name
@@ -60,6 +105,24 @@ if [ "${1:-}" = --self-test ]; then
     wiring_rule "test-a.sh" "$tmp/wf" "$tmp/local" > /dev/null || fail "complete wiring was refused"
     ! wiring_rule "test-a.sh test-b.sh" "$tmp/wf" "$tmp/local" > /dev/null \
         || fail "a scenario missing from the local runner was accepted"
+    printf '# 2026-10-16 · DSH · A change\n\nWhat and why.\n' > "$tmp/good.md"
+    log_content_rule "$tmp/good.md" > /dev/null || fail "a good log file was refused"
+    : > "$tmp/empty.md"
+    ! log_content_rule "$tmp/empty.md" > /dev/null || fail "an empty log file was accepted"
+    printf '# 2026-10-16 · DSH · A change\n\n' > "$tmp/bare.md"
+    ! log_content_rule "$tmp/bare.md" > /dev/null || fail "a log file with only a heading was accepted"
+    printf 'notes\nwhat\n' > "$tmp/nohead.md"
+    ! log_content_rule "$tmp/nohead.md" > /dev/null || fail "a log file without its heading was accepted"
+    plan_scope_rule plan/x docs/20-build-plan.md scripts/x.mjs > /dev/null || fail "a plan/ branch's docs were refused"
+    ! plan_scope_rule plan/x crates/strata/src/lib.rs > /dev/null || fail "code on a plan/ branch was accepted"
+    plan_scope_rule fix/x crates/strata/src/lib.rs > /dev/null || fail "code on a fix/ branch was refused"
+    printf 'run: node scripts/a.mjs\nrun: bash scripts/setup-linux.sh\n' > "$tmp/ci"
+    printf 'node scripts/a.mjs\n' > "$tmp/bar"
+    bar_rule "$tmp/ci" "$tmp/bar" > /dev/null || fail "a bar that runs every check was refused"
+    printf '  # scripts/only-named.sh in a comment\n' >> "$tmp/ci"
+    bar_rule "$tmp/ci" "$tmp/bar" > /dev/null || fail "a script named only in a comment was counted"
+    printf 'run: bash scripts/b.sh\n' >> "$tmp/ci"
+    ! bar_rule "$tmp/ci" "$tmp/bar" > /dev/null || fail "a check missing from the bar was accepted"
     echo "verify-pr: every rule can fail"
     exit 0
 fi
@@ -82,17 +145,43 @@ else
     status=1
 fi
 
+if out=$(bar_rule .github/workflows/ci.yml scripts/check.sh); then
+    echo "  ok    scripts/check.sh runs every check the CI workflow runs"
+else
+    printf '  FAIL  %s\n' "$out"
+    status=1
+fi
+
 if [ -n "$branch" ] && [ -n "$base" ]; then
     # Added since the base, committed or not (a log file written but not yet committed
     # counts, so check.sh can be run before the commit), plus files git does not track yet.
+    mb=$(git merge-base "$base" HEAD)
     mapfile -t added < <(
-        git diff --name-only --diff-filter=A "$(git merge-base "$base" HEAD)"
+        git diff --name-only --diff-filter=A "$mb"
         git ls-files --others --exclude-standard
     )
     if found=$(log_rule "$branch" "${added[@]}"); then
-        echo "  ok    the session log has this branch's entry ($found)"
+        if why=$(log_content_rule "$found"); then
+            echo "  ok    the session log has this branch's entry ($found)"
+            if git ls-files --others --exclude-standard | grep -qx "$found"; then
+                echo "        (not committed yet: git add it, or CI will not see it)"
+            fi
+        else
+            echo "  FAIL  $why"
+            status=1
+        fi
     else
         echo "  FAIL  $found"
+        status=1
+    fi
+    mapfile -t changed < <(
+        git diff --name-only "$mb"
+        git ls-files --others --exclude-standard
+    )
+    if why=$(plan_scope_rule "$branch" "${changed[@]}"); then
+        case "$branch" in plan/*) echo "  ok    this plan/ branch changes no code" ;; esac
+    else
+        printf '  FAIL  %s\n' "$why"
         status=1
     fi
 fi

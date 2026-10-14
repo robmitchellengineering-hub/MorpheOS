@@ -8,7 +8,9 @@ to work, and the decisions that are Rob's. **The task list is
 tasks may start now. In the same pull request as the work: the task's status in doc 20, and a
 session-log file in `docs/log/`.
 
-**After this file and HANDOFF.md, read `docs/00-strategy.md`.** It holds the strategic decisions, and it says
+**Read in this order:** this file, HANDOFF.md, `docs/00-strategy.md`, then
+[ADR 0014](docs/adr/0014-express-road-first.md) (the same order HANDOFF.md gives). Doc 00 holds
+the strategic decisions, and it says
 of itself: *"Where another doc disagrees with this one, this one wins."* The docs
 describe an intended system; the code implements a small part of it. Both are
 worth reading, and the difference between them matters more than either.
@@ -35,8 +37,9 @@ configurator, the mesh, Flow shell — waits behind it.
 ## How to make a change
 
 1. **Branch from a fresh `origin/main`.** `git fetch && git switch -c <type>/<slug> origin/main`,
-   where `<type>` is `feat` (a doc 20 task: `feat/e7-installer`), `fix` or `plan`; CI refuses
-   anything else.
+   where `<type>` is `feat` (exactly one doc 20 task that may start: `feat/e7-installer`), `fix`
+   (a bug in something built) or `plan` (doc 20, the docs and the checks; no code under
+   `crates/` or `images/`); CI refuses anything else.
 2. **Never push to `main`.** It is the published branch. Every change lands through
    a pull request.
 3. **One worktree per session** if more than one session is working here. **Never
@@ -269,7 +272,8 @@ passed, because a VM needs none of them. A missing driver says nothing: no error
 firmware, just a device nobody claimed.
 **Rule:** what a real machine needs is asserted in the build, by name, because no VM test can
 see it go missing. `build.sh` refuses a hardware image without the drivers for the machines
-in MACHINES.md (graphics, Wi-Fi, touchscreen, wired network); a new machine adds its own.
+named in doc 20, E6 (`win`, `win-2`, `mac-2015`: graphics, Wi-Fi, touchscreen, wired network);
+a new machine adds its own there.
 
 **H19 — running is not working.** The health check judges a trial by its units: no failed
 unit, healthy. A compositor that starts and never draws (stuck on the display, hung before
