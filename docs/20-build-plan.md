@@ -45,7 +45,7 @@ the ADR as the first task of the milestone named.
 
 | | Decision | Why |
 |---|---|---|
-| **A1** | **systemd is PID 1 for v1.** `morphd` (transactions, Manifest, service graph: `morph-transaction`, `morph-graph`) is a service under it, not init. *(record in M2; supersedes doc 03's "PID 1")* | Both images already run systemd; replacing init is years of work that serves nothing in the north star |
+| **A1** | **systemd is PID 1 for v1.** `morphd` (transactions, Manifest, service graph: `morph-transaction`, `morph-graph`) is a service under it, not init. *(recorded: [ADR 0017](adr/0017-systemd-is-pid-1.md))* | Both images already run systemd; replacing init is years of work that serves nothing in the north star |
 | **A2** | **The userland base is Ubuntu 24.04, built with `mmdebstrap`**, pinned. | Drivers, firmware and packages for a real laptop, now |
 | **A3** | **Immutable A/B system slots; everything mutable lives on the data partition** (`/persist`: `/home`, the Strata store, app data, machine settings). Nothing writes to a slot except `morph-update`. | It is what makes N2 possible, and it is built (ADRs 0006, 0008) |
 | **A4** | **Updates are whole slot images, signed.** A `BLAKE3SUMS` manifest (as today) signed with **ed25519** by an offline key that Rob holds, served as static files over HTTPS. The device checks the signature **before** `morph-update` writes anything. | Integrity exists today; authenticity does not. Static files need no server code |
@@ -135,6 +135,13 @@ whose update ships a compositor that fails to start.
 
 **Done when:** the shell scenario passes with the compositor not running as root, and the
 broken-shell update is trialled once and falls back, like `unhealthy`.
+
+**Progress:** the second half is done. `test-fallback.sh broken-shell hung-shell` trials an
+update whose shell cannot start, and one whose shell starts and never draws; each is
+trialled once and falls back to A, whose shell draws on every boot. The hung case is why the
+shell is `Type=notify`, ready only once its first frame is on the display: a running
+compositor that shows nothing was a healthy unit. Still to do: the compositor as an ordinary
+user, which waits on Rob's account model (S5).
 
 ### E4 · A browser · in progress · needs E10
 
@@ -278,10 +285,12 @@ own: that is the path a keyboard takes. Firefox's title-bar drag arrives as the 
 
 Exit: N2 holds in full, and updates arrive and apply by themselves, safely.
 
-### S1 · Record A1 as an ADR · open · parallel
+### S1 · Record A1 as an ADR · done · parallel
 
 **Done when:** an ADR states that systemd is PID 1 for v1 and that `morphd` is a service,
 superseding doc 03's claim; doc 03 links it.
+
+**Evidence:** `docs/adr/0017-systemd-is-pid-1.md`, indexed, and doc 03's `morphd` section links it.
 
 ### S10 · The whole bar on the builder's Windows laptop (WSL2) · done · parallel
 
@@ -315,13 +324,25 @@ refuses a partial bar off Linux".
 workflow job and `scripts/setup-linux.sh` run: it installs the pinned toolchain and fails
 unless `rustc --version` is that version, and the job logs print it.
 
-### S2 · Signed updates (A4) · open · parallel
+### S2 · Signed updates (A4) · done · parallel
 
 **What:** `morph-update` refuses a payload whose `BLAKE3SUMS` lacks a valid ed25519
 signature by a key baked into the image. Key custody is Rob's.
 
 **Done when:** tests show an unsigned, wrongly signed or tampered payload is refused before
 any write, and the `update` VM scenario passes with a signed payload.
+
+**Evidence:** `crates/morph-update/tests/install.rs` (unsigned, signed by another key, a manifest
+changed after signing, a garbage signature, and no trusted keys are each refused with the slot
+untouched; sabotaging the check fails three of them) and the `update` scenario of
+`images/x86-qemu/test-fallback.sh`, whose payload is signed by `build-payload.sh` and installed
+by the image's OWN `morph-update` against the key in its own root: the medium carries no
+updater, since one it brought could check nothing.
+
+**Notes:** the images trust a test key made per build (`build.sh`, `UPDATE_KEY` to give a real
+one). A release key, and where it is kept, is Rob's: no image a person uses should trust a key
+that lives in CI. `morph-heal`, which rebuilds a slot from the running system, signs that copy
+with a key made for the one repair, so there is still no unsigned way to open a payload.
 
 ### S3 · Updates arrive by themselves · open · needs S2
 
@@ -683,3 +704,22 @@ remote tier, with F7 and F8's numbers and their labels.
 
 ### W6 · Fleet (paid) · proposed
 **Done when:** revenue-gated (doc 00). Rob decides.
+
+### W7 · Vendor layers, driver trials and a change freeze · proposed · needs E6
+**What:** three generic extension points, so a vendor can ship its own appliance image on top of
+MorpheOS without forking it (ADR 0006: *"MorpheOS adds layers on top"*; doc 01 principle 7):
+(1) build an image from a pinned MorpheOS commit plus a layer directory that is not in this
+repository; (2) trial a kernel and driver set as one A/B unit (doc 15, doc 19 section 4), with a
+health check that a layer can extend; (3) a change-freeze flag that makes updates refuse and log
+(doc 12 section 13: *"during studio sessions ... never run updates"*).
+
+**Done when:** a VM scenario builds an image with a stand-in layer that adds one health-check unit;
+a deliberately failing check makes the trial fall back (`b/trial/fallback`) and a passing one
+commits (`b/trial/committed`); and with the freeze flag set `morph-update` refuses with a logged
+reason, and without it proceeds.
+
+**Notes:** proposed 2026-10-13. Not started: Rob opens it. Nothing in this repository may depend on
+any particular vendor or layer. Open question: can a layer be added to a finished image, or must the
+image be rebuilt from the pinned commit? ADR 0006 applies layers at build time, so the second is
+the likelier. The signing key for a vendor's own updates is the vendor's (A4 and doc 20 S2 cover
+MorpheOS's), so this task needs Rob's decision on the security model before it is opened.

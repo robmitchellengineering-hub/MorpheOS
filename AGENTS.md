@@ -265,6 +265,15 @@ firmware, just a device nobody claimed.
 see it go missing. `build.sh` refuses a hardware image without the drivers for the machines
 in MACHINES.md (graphics, Wi-Fi, touchscreen, wired network); a new machine adds its own.
 
+**H19 — running is not working.** The health check judges a trial by its units: no failed
+unit, healthy. A compositor that starts and never draws (stuck on the display, hung before
+its first frame) is a running unit, so an update that shipped one would have been committed,
+with a black screen, on the slot that is then the only one. Found by asking what a broken
+shell looks like to the health check, before any shell had broken.
+**Rule:** a service a person depends on says it is ready only when it is doing its job
+(`Type=notify`, `READY=1` after the first frame on the display, not after `exec`), and each
+such service has a VM scenario in which it hangs, not only one in which it exits.
+
 ## Writing code here
 
 - Match the existing style: doc comments that explain **why**, module headers that

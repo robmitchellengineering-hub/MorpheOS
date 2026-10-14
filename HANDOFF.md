@@ -71,12 +71,13 @@ From a DSH shell in PowerShell, run any of them as
 
 ## Open pull requests at handover
 
-#42 to #53 (E3, E10, the handover plan, S10, E12, E4's browser and popups, E5's network and
-Wi-Fi picker, the laptop drivers, the stick guide, the Rust pin) were merged on 2026-10-13 and 14, as merge commits so the stack merged without conflicts. Open:
+#42 to #54 (E3, E10, the handover plan, S10, E12, E4's browser and popups, E5's network and
+Wi-Fi picker, the laptop drivers, the stick guide, the Rust pin, E9's window moves) were merged
+on 2026-10-13 and 14, as merge commits so the stack merged without conflicts. Open:
 
 | # | Branch | What |
 |---|---|---|
-| #54 | `feat/e9-move-fullscreen-switch` | E9: move by the edge or with Super, Alt+Tab, fullscreen (Super+F, or the client's F11) |
+| (E11) | `feat/e11-broken-shell-falls-back` | E11 (second half): a broken or hung shell update falls back; the shell is ready only with a frame on the display |
 
 If CI goes red on it, it is yours to fix, on that branch. **When a pull request's base is
 another open branch** (a stack), and the base merges: if it was squash-merged, the next branch
@@ -121,6 +122,9 @@ until Rob opens it.
 - **`plain` boots into the shell at E4, not E10.** Until the browser lands, the root console
   serves a person on the laptop better than an empty shell (doc 20, E10's notes).
 - **The shell runs as root until E11**, which needs the account model (S5).
+- **The release signing key (S2).** Images trust a test key made per build. Releases need a key
+  Rob holds, and somewhere to keep it (an offline machine, a hardware key): his call, as is
+  whether a lost key can be replaced by an update signed with the old one.
 
 - **The intent engine plan ([doc 21](docs/21-intent-engine.md), tasks I1–I10 in doc 20).** Seven decisions
   (D1–D7, section 11): when to open I1–I3 (recommended: now, as the lane for the days you wait on Rob's
@@ -236,6 +240,10 @@ One line per piece of work: date, who, what, what's next.
   unit is an unhealthy boot. rfkill and backlight start on any machine with a radio switch
   or a backlight (every laptop; no VM until test-wifi.sh's simulated radios showed it), so
   `plain` on a laptop could have been judged unhealthy. Their directories are tmpfs now.
+- 2026-10-13 · Claude Code · Proposed W7 (vendor layers, driver trials and a change freeze) in a
+  `plan/` branch, for Rob to open or drop. It is deliberately product-free: a vendor wants to ship
+  an appliance image on MorpheOS without forking it, which ADR 0006 and principle 7 already allow
+  but nothing yet exercises. Not started. Next: Rob decides.
 - 2026-10-13 · Claude Code · E5 (2), the Wi-Fi picker (`feat/e5-wifi-picker`): `flow-wifi`, a
   window on the shell that lists networks, takes a password (drawn as marks, never printed)
   and joins over NetworkManager's D-Bus API (zbus: pure Rust, no libdbus). Its model is
@@ -258,6 +266,21 @@ One line per piece of work: date, who, what, what's next.
   request, goes fullscreen and back to the same place and size. Found while sabotaging the
   test: a press passed to a window whose release is not leaves the pointer grabbed for
   good, and every window deaf to the mouse; the test now ends with a click that must arrive.
+- 2026-10-14 · Claude Code · E11, second half (`feat/e11-broken-shell-falls-back`): an update
+  whose shell exits at once, and one whose shell runs and never draws, are each trialled
+  once and fall back (`test-fallback.sh broken-shell hung-shell`). The second needed a change:
+  the shell is `Type=notify` and tells systemd it is ready after its first frame is on the
+  display; before, a hung compositor was a running unit and the trial would have committed
+  (AGENTS.md H19). Running as an ordinary user still waits on S5.
+- 2026-10-14 · Claude Code · S1 (`plan/s1-adr-systemd-pid1`): A1 recorded as ADR 0017, systemd
+  is PID 1 for v1 and `morphd` a service under it; doc 03 links it. 0015 and 0016 are left for
+  the intent-engine and diagnosis records (docs 21, 22).
+- 2026-10-14 · Claude Code · S2, signed updates (`feat/s2-signed-updates`): `morph-update`
+  opens a payload only if `BLAKE3SUMS.sig` is an ed25519 signature by a key in the image
+  (`/usr/share/morpheos/update-keys`), checked before the manifest is parsed; `keygen` and
+  `sign` are the builder's half. Every image carries the updater and the key, and the test
+  driver installs with the image's own updater (a medium's could check nothing). Images trust
+  a per-build test key; the release key and its custody are Rob's (decisions above).
 - 2026-10-14 · Claude Code · Planned the intent engine ([doc 21](docs/21-intent-engine.md), I1–I10). The
   shell's intent bar is a search field; this designs what turns words into a safe action. Compiled and
   tested the safety core in a scratch crate (3,750 input combinations; nine sabotages each caught; a review then closed a hole where the

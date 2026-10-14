@@ -71,11 +71,13 @@ case "$step" in
         # The medium is a second disk the harness attaches read-only; if it is absent, or
         # carries the healer instead, this block does nothing.
         if mount_medium; then
-            if [ -x "$mnt/morph-update" ] && [ -d "$mnt/payload" ]; then
+            if [ -d "$mnt/payload" ]; then
                 say "installing the payload from $medium into the inactive slot"
                 # Bounded, so a slow or stuck install cannot stall the machine until the
                 # harness gives up — the test must always reach its own verdict.
-                if timeout 600 "$mnt/morph-update" --esp /efi --root /dev/vda3 \
+                # ⚠️ The machine's OWN morph-update, with its own trusted keys (doc 20, S2):
+                # one carried by the medium could skip the signature check entirely.
+                if timeout 600 /usr/bin/morph-update --esp /efi --root /dev/vda3 \
                     --payload "$mnt/payload" install
                 then
                     say "morph-update reported success"

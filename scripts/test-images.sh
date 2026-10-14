@@ -45,6 +45,8 @@ fi
 if [ "$WHAT" = shell ] || [ "$WHAT" = all ]; then
     step "the shell on a real display, with a keyboard and a mouse"
     sudo images/x86-qemu/test-shell.sh "$WORK"
+    step "a broken or hung shell update falls back"
+    sudo images/x86-qemu/test-fallback.sh "$WORK" broken-shell hung-shell
     step "a browser on the Flow shell"
     sudo images/x86-qemu/test-browser.sh "$WORK"
     step "joining Wi-Fi with the picker"
