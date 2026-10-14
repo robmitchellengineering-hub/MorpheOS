@@ -62,7 +62,7 @@ and the ladder's decision, exactly as for any intent.
 | G1 | **Probes are read-only, bounded and typed.** Each has a timeout, an output cap and a declared sensitivity, and returns a typed value, never prose. | A diagnostic that changes the machine, or floods it, is a new fault. |
 | G2 | **A probe exists only if something implements it.** Registration takes the implementation. | AGENTS H5; doc 21 R2. |
 | G3 | **Evidence before assertion.** A `Certain` verdict cites findings obtained **on the path that led to it**; the validator enforces this. | A model cannot assert a cause it did not look for. |
-| G4 | **"I could not look" is not "there is nothing there."** A probe that fails ends the diagnosis as `Unknown`; it is never read as false. | The commonest silent error in diagnostics. |
+| G4 | **"I could not look" is not "there is nothing there."** A probe that fails, **or answers with a different kind of value than it declared**, ends the diagnosis as `Unknown`; it is never read as false. | The commonest silent error in diagnostics. A mis-kinded answer would make every condition quietly false and send the playbook down its `otherwise` branch. |
 | G5 | **`Unknown` and `Healthy` are first-class.** A complaint is not proof of a fault. | Outside evidence (section 7) says agents degrade sharply when the report is wrong and the system is fine. |
 | G6 | **Diagnosis never repairs.** | ADR 0009: no rung decides alone. |
 | G7 | **Models propose; probes confirm.** A model may only name registered probes and registered causes (closed sets) and never sees raw logs. | Constrains the output space, as doc 21 R1. |
@@ -100,6 +100,7 @@ only Linux-only part and is thin.
 |---|---|---|---|
 | `boot.last_decision` | text | `history.jsonl` | exists |
 | `boot.failed_units` | list | the F1 record | after F1 |
+| `net.wifi_interfaces` | list | sysfs (an interface with a `wireless` entry; F2 confirms the marker) | new, small |
 | `net.link_up(iface)` | bool | sysfs `operstate` | read by `hwreport` |
 | `net.driver_bound(iface)` | bool | sysfs driver link | read by `hwreport` |
 | `firmware.missing` | list | kernel log parse | `hwreport` already finds it |
@@ -126,28 +127,39 @@ decision D2). Illustrative, not final (F3 fixes the schema):
 id = "wifi.no_link"
 symptom = "network.no_link"
 
-[[step]]                                   # step 0
-probe = "net.link_up"
-branches = [ { when = "is_true", then = "healthy" } ]
-otherwise = "step 1"
-
-[[step]]                                   # step 1
-probe = "net.driver_bound"
-branches = [ { when = "is_true", then = "unknown: a radio is bound and still has no link" } ]
+[[step]]                                   # step 0: is there a wireless interface at all?
+probe = "net.wifi_interfaces"
+branches = [ { when = "is_empty", then = "step 1" } ]
 otherwise = "step 2"
 
-[[step]]                                   # step 2
+[[step]]                                   # step 1: none. Is firmware missing?
 probe = "firmware.missing"
-branches = [ { when = "contains mt7921", then = "verdict wifi.firmware_missing certain cites net.driver_bound firmware.missing repair wifi.open" } ]
-otherwise = "verdict wifi.no_driver likely cites net.driver_bound"
+branches = [ { when = "is_empty", then = "unknown: no wireless interface and no missing firmware reported" } ]
+otherwise = "verdict wifi.firmware_missing certain cites net.wifi_interfaces firmware.missing"
+
+[[step]]                                   # step 2: an interface exists
+probe = "net.link_up"
+branches = [ { when = "is_true", then = "healthy" } ]
+otherwise = "step 3"
+
+[[step]]                                   # step 3: it exists and has no link
+probe = "rfkill.blocked"
+branches = [ { when = "is_true", then = "verdict wifi.radio_blocked certain cites net.link_up rfkill.blocked" } ]
+otherwise = "verdict wifi.not_connected likely cites net.link_up rfkill.blocked repair wifi.open"
 ```
+
+**The order matters, and it is the case Rob's Legion Go is likely to show.** A card whose firmware is
+missing never creates an interface, so a playbook that began by asking about the interface's link would
+have nothing to ask (G4 would end it as `Unknown`) and would never reach the firmware. [HARDWARE.md](../images/x86-qemu/HARDWARE.md)
+names missing Wi-Fi firmware as the usual first-boot problem. The reference in Appendix A tests exactly
+this path, and asserts that it asks two probes and not four.
 
 **A playbook is checked before it is trusted.** `validate` rejects, at load time and with a named
 error: an unknown probe; a condition of the wrong kind for its probe; a jump to nowhere; a cycle; an
 unreachable step; a `Certain` verdict with no citations; a citation of a probe **not asked on the way
 to that verdict**; and a repair that is not in the intent catalogue. An invalid playbook is refused
-whole, never partly run. Appendix A is a compiled, tested reference that proves the property that
-matters: **a playbook that validates always ends** in a verdict, `Unknown` or `Healthy`, within the
+whole, never partly run. At run time the engine also refuses an answer of the wrong kind (G4). Appendix A
+is a compiled, tested reference that proves the property that matters: **a playbook that validates always ends** in a verdict, `Unknown` or `Healthy`, within the
 probe budget, and never rests a `Certain` verdict on a finding it did not obtain.
 
 **Repairs name intents, and only intents whose executors exist** (the validator checks the catalogue).
@@ -329,16 +341,22 @@ minutes; see D3.
 
 ## Appendix A · The reference: a playbook that can be checked
 
-Compiled and tested on 2026-10-14 in a scratch crate outside the workspace (`rustc 1.97`, edition 2024,
-`clippy -D warnings` and `rustfmt --check` clean, and re-checked on 2026-10-14 under the repository's pinned Rust 1.99.0 from S9): five tests, including one over **every combination of
-probe answers and every way a probe can fail to run** (48 runs), and **nine deliberate sabotages**
-(cycle check, cite-on-path check, certain-needs-cites check, repair-must-exist check, unreachable-step
-check, kind-mismatch check, unknown-probe check, budget enforcement, and treating a failed probe as
-false) that each made a test fail (the cycle one by hanging forever, which a test timeout catches). This
-is a statement about that scratch run, not about anything in `crates/`.
+Compiled and tested on 2026-10-14 in a scratch crate outside the workspace (`rustc 1.99.0`, the version
+S9 pinned; edition 2024; `clippy -D warnings` and `rustfmt --check` clean): **seven tests**, including one
+over **every combination of answers and every way a probe can fail to run** (120 runs), and **twelve
+deliberate sabotages** that each made a test fail: the cycle check (by hanging forever, which a test
+timeout catches), the cite-on-path check, the certain-needs-cites check, the repair-must-exist check, the
+unreachable-step check, the condition-kind check, the unknown-probe check, budget enforcement, treating a
+failed probe as false, accepting a wrong-kind answer, and inverting each of the two list conditions.
+
+Writing it taught two things worth keeping. A first version had no list-valued probes although three of
+the probes in section 5 return lists, and its example playbook asked about a link that cannot exist when
+firmware is missing. And a sabotage that was *not* caught exposed that nothing checked a probe's answer
+against its declared kind; that is now G4's second half. This is a statement about the scratch run, not
+about anything in `crates/`.
 
 <details>
-<summary>Show the source (about 570 lines)</summary>
+<summary>Show the source (about 798 lines)</summary>
 
 ```rust
 //! A sketch of `morph-diag`'s core: a playbook that can be *checked* before it is trusted.
@@ -357,13 +375,8 @@ pub enum Value {
     Bool(bool),
     Int(i64),
     Text(String),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Kind {
-    Bool,
-    Int,
-    Text,
+    /// Several things, such as the units that failed or the firmware files not found.
+    List(Vec<String>),
 }
 
 impl Value {
@@ -372,8 +385,17 @@ impl Value {
             Value::Bool(_) => Kind::Bool,
             Value::Int(_) => Kind::Int,
             Value::Text(_) => Kind::Text,
+            Value::List(_) => Kind::List,
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    Bool,
+    Int,
+    Text,
+    List,
 }
 
 /// A registered probe. In the real crate the registry takes the probe's implementation, so a
@@ -391,6 +413,10 @@ pub enum Cond {
     IsFalse,
     LessThan(i64),
     Equals(String),
+    /// A list holds this item.
+    Contains(String),
+    /// A list holds nothing.
+    IsEmpty,
 }
 
 impl Cond {
@@ -399,6 +425,7 @@ impl Cond {
             Cond::IsTrue | Cond::IsFalse => Kind::Bool,
             Cond::LessThan(_) => Kind::Int,
             Cond::Equals(_) => Kind::Text,
+            Cond::Contains(_) | Cond::IsEmpty => Kind::List,
         }
     }
     fn holds(&self, v: &Value) -> bool {
@@ -407,6 +434,8 @@ impl Cond {
             (Cond::IsFalse, Value::Bool(b)) => !*b,
             (Cond::LessThan(n), Value::Int(i)) => i < n,
             (Cond::Equals(t), Value::Text(s)) => s == t,
+            (Cond::Contains(t), Value::List(l)) => l.contains(t),
+            (Cond::IsEmpty, Value::List(l)) => l.is_empty(),
             _ => false,
         }
     }
@@ -599,10 +628,12 @@ pub enum Diagnosis {
 }
 
 /// Run a validated playbook. `ask` runs a probe and returns `None` if it could not (timeout,
-/// missing device, permission). A probe that cannot run ends the diagnosis as `Unknown`; it is
-/// never treated as `false`, because "I could not look" is not "there is nothing there".
+/// missing device, permission). A probe that cannot run, or that answers with the wrong kind of
+/// value, ends the diagnosis as `Unknown`; it is never treated as `false`, because "I could not
+/// look" is not "there is nothing there".
 pub fn run(
     pb: &Playbook,
+    probes: &[ProbeSpec],
     budget: usize,
     mut ask: impl FnMut(&'static str) -> Option<Value>,
 ) -> Diagnosis {
@@ -620,6 +651,18 @@ pub fn run(
             let reason = format!("could not run probe {}", step.probe);
             return Diagnosis::Unknown { reason, findings };
         };
+        // A probe that answers with a different kind than it declared is not evidence either:
+        // every condition on it would quietly be false, and the playbook would fall through to
+        // its `otherwise` branch and name a cause it never observed.
+        if probes
+            .iter()
+            .find(|p| p.id == step.probe)
+            .map(|p| p.returns)
+            != Some(v.kind())
+        {
+            let reason = format!("probe {} returned the wrong kind of value", step.probe);
+            return Diagnosis::Unknown { reason, findings };
+        }
         findings.push((step.probe, v.clone()));
         let next = step
             .branches
@@ -656,20 +699,28 @@ mod tests {
 
     const PROBES: &[ProbeSpec] = &[
         ProbeSpec {
+            id: "net.wifi_interfaces",
+            returns: Kind::List,
+        },
+        ProbeSpec {
+            id: "firmware.missing",
+            returns: Kind::List,
+        },
+        ProbeSpec {
             id: "net.link_up",
             returns: Kind::Bool,
         },
         ProbeSpec {
-            id: "net.driver_bound",
+            id: "rfkill.blocked",
             returns: Kind::Bool,
-        },
-        ProbeSpec {
-            id: "fw.missing",
-            returns: Kind::Text,
         },
         ProbeSpec {
             id: "disk.free_percent",
             returns: Kind::Int,
+        },
+        ProbeSpec {
+            id: "boot.failed_units",
+            returns: Kind::List,
         },
     ];
     const INTENTS: &[&str] = &["system.rollback", "wifi.open"];
@@ -688,69 +739,142 @@ mod tests {
         })
     }
 
-    /// "My Wi-Fi is not working."
+    /// "My Wi-Fi is not working." A card whose firmware is missing never creates a network
+    /// interface, so the first question is whether there is an interface at all, not what its
+    /// link is doing. Asking about a link that does not exist is how a naive playbook never
+    /// finds the firmware.
     fn wifi() -> Playbook {
         Playbook {
             id: "wifi.no_link",
             steps: vec![
+                // 0
+                Step {
+                    probe: "net.wifi_interfaces",
+                    branches: vec![(Cond::IsEmpty, Next::Step(1))],
+                    otherwise: Next::Step(2),
+                },
+                // 1: no interface at all
+                Step {
+                    probe: "firmware.missing",
+                    branches: vec![(
+                        Cond::IsEmpty,
+                        Next::Unknown("no wireless interface and no missing firmware reported"),
+                    )],
+                    otherwise: verdict(
+                        "wifi.firmware_missing",
+                        Certainty::Certain,
+                        &["net.wifi_interfaces", "firmware.missing"],
+                        None,
+                    ),
+                },
+                // 2: an interface exists
                 Step {
                     probe: "net.link_up",
                     branches: vec![(Cond::IsTrue, Next::Healthy)],
-                    otherwise: Next::Step(1),
+                    otherwise: Next::Step(3),
                 },
+                // 3: it exists and has no link
                 Step {
-                    probe: "net.driver_bound",
+                    probe: "rfkill.blocked",
                     branches: vec![(
                         Cond::IsTrue,
-                        Next::Unknown("a radio is bound and still has no link"),
-                    )],
-                    otherwise: Next::Step(2),
-                },
-                Step {
-                    probe: "fw.missing",
-                    branches: vec![(
-                        Cond::Equals("mt7921".into()),
                         verdict(
-                            "wifi.firmware_missing",
+                            "wifi.radio_blocked",
                             Certainty::Certain,
-                            &["net.driver_bound", "fw.missing"],
-                            Some("wifi.open"),
+                            &["net.link_up", "rfkill.blocked"],
+                            None,
                         ),
                     )],
                     otherwise: verdict(
-                        "wifi.no_driver",
+                        "wifi.not_connected",
                         Certainty::Likely,
-                        &["net.driver_bound"],
-                        None,
+                        &["net.link_up", "rfkill.blocked"],
+                        Some("wifi.open"),
                     ),
                 },
             ],
         }
     }
 
+    struct Machine {
+        ifaces: &'static [&'static str],
+        missing: &'static [&'static str],
+        link: bool,
+        blocked: bool,
+    }
+
+    fn answer(m: &Machine, probe: &'static str) -> Option<Value> {
+        let list = |l: &[&str]| Value::List(l.iter().map(|x| (*x).to_owned()).collect());
+        Some(match probe {
+            "net.wifi_interfaces" => list(m.ifaces),
+            "firmware.missing" => list(m.missing),
+            "net.link_up" => Value::Bool(m.link),
+            "rfkill.blocked" => Value::Bool(m.blocked),
+            _ => return None,
+        })
+    }
+
     #[test]
     fn a_good_playbook_validates_and_reaches_each_kind_of_outcome() {
         assert_eq!(validate(&wifi(), PROBES, INTENTS), vec![]);
         let pb = wifi();
-        let m = |link, bound, fw: &'static str| {
-            run(&pb, 8, |p| match p {
-                "net.link_up" => Some(Value::Bool(link)),
-                "net.driver_bound" => Some(Value::Bool(bound)),
-                "fw.missing" => Some(Value::Text(fw.into())),
-                _ => None,
-            })
-        };
-        assert!(matches!(m(true, true, ""), Diagnosis::Healthy { .. }));
-        assert!(matches!(m(false, true, ""), Diagnosis::Unknown { .. }));
-        match m(false, false, "mt7921") {
-            Diagnosis::Known { verdict, .. } => {
+        let go = |m: Machine| run(&pb, PROBES, 8, |p| answer(&m, p));
+
+        // The Legion Go case: no interface, firmware missing -> found, with its evidence.
+        match go(Machine {
+            ifaces: &[],
+            missing: &["mediatek/mt7922/fw.bin"],
+            link: false,
+            blocked: false,
+        }) {
+            Diagnosis::Known { verdict, findings } => {
                 assert_eq!(verdict.cause, "wifi.firmware_missing");
-                assert_eq!(verdict.repair, Some("wifi.open"));
+                assert_eq!(verdict.certainty, Certainty::Certain);
+                assert_eq!(
+                    findings.len(),
+                    2,
+                    "it must not ask about a link that does not exist"
+                );
             }
             other => panic!("expected a verdict, got {other:?}"),
         }
-        match m(false, false, "") {
-            Diagnosis::Known { verdict, .. } => assert_eq!(verdict.certainty, Certainty::Likely),
+        assert!(matches!(
+            go(Machine {
+                ifaces: &[],
+                missing: &[],
+                link: false,
+                blocked: false
+            }),
+            Diagnosis::Unknown { .. }
+        ));
+        assert!(matches!(
+            go(Machine {
+                ifaces: &["wlan0"],
+                missing: &[],
+                link: true,
+                blocked: false
+            }),
+            Diagnosis::Healthy { .. }
+        ));
+        match go(Machine {
+            ifaces: &["wlan0"],
+            missing: &[],
+            link: false,
+            blocked: true,
+        }) {
+            Diagnosis::Known { verdict, .. } => assert_eq!(verdict.cause, "wifi.radio_blocked"),
+            other => panic!("expected a verdict, got {other:?}"),
+        }
+        match go(Machine {
+            ifaces: &["wlan0"],
+            missing: &[],
+            link: false,
+            blocked: false,
+        }) {
+            Diagnosis::Known { verdict, .. } => {
+                assert_eq!(verdict.certainty, Certainty::Likely);
+                assert_eq!(verdict.repair, Some("wifi.open"));
+            }
             other => panic!("expected a verdict, got {other:?}"),
         }
     }
@@ -758,20 +882,29 @@ mod tests {
     #[test]
     fn every_defect_class_is_caught() {
         let mut p = wifi();
-        p.steps[1].probe = "net.nope";
+        p.steps[2].probe = "net.nope";
         assert!(
             validate(&p, PROBES, INTENTS).contains(&Problem::UnknownProbe {
-                step: 1,
+                step: 2,
                 probe: "net.nope"
             })
         );
 
+        // A list condition on a bool probe, and a bool condition on a list probe.
         let mut p = wifi();
-        p.steps[0].branches = vec![(Cond::LessThan(3), Next::Healthy)];
+        p.steps[2].branches = vec![(Cond::IsEmpty, Next::Healthy)];
+        assert!(
+            validate(&p, PROBES, INTENTS).contains(&Problem::KindMismatch {
+                step: 2,
+                probe: "net.link_up"
+            })
+        );
+        let mut p = wifi();
+        p.steps[0].branches = vec![(Cond::IsTrue, Next::Step(1))];
         assert!(
             validate(&p, PROBES, INTENTS).contains(&Problem::KindMismatch {
                 step: 0,
-                probe: "net.link_up"
+                probe: "net.wifi_interfaces"
             })
         );
 
@@ -780,7 +913,7 @@ mod tests {
         assert!(validate(&p, PROBES, INTENTS).contains(&Problem::BadJump { step: 0, to: 9 }));
 
         let mut p = wifi();
-        p.steps[2].otherwise = Next::Step(0);
+        p.steps[3].otherwise = Next::Step(0);
         assert!(
             validate(&p, PROBES, INTENTS)
                 .iter()
@@ -793,29 +926,38 @@ mod tests {
             branches: vec![],
             otherwise: Next::Healthy,
         });
-        assert!(validate(&p, PROBES, INTENTS).contains(&Problem::Unreachable { step: 3 }));
+        assert!(validate(&p, PROBES, INTENTS).contains(&Problem::Unreachable { step: 4 }));
 
         let mut p = wifi();
-        p.steps[2].otherwise = verdict("x", Certainty::Certain, &[], None);
+        p.steps[3].otherwise = verdict("x", Certainty::Certain, &[], None);
         assert!(
             validate(&p, PROBES, INTENTS).contains(&Problem::CertainWithoutCites { cause: "x" })
         );
 
         // A cite of a probe that was never asked on this path is a made-up piece of evidence.
         let mut p = wifi();
-        p.steps[2].otherwise = verdict("x", Certainty::Likely, &["disk.free_percent"], None);
+        p.steps[3].otherwise = verdict("x", Certainty::Likely, &["disk.free_percent"], None);
         assert!(
             validate(&p, PROBES, INTENTS).contains(&Problem::CiteNotAskedOnPath {
                 cause: "x",
                 probe: "disk.free_percent"
             })
         );
+        // ... and so is one asked only on a DIFFERENT path (step 1 is not on the way to step 3).
+        let mut p = wifi();
+        p.steps[3].otherwise = verdict("x", Certainty::Likely, &["firmware.missing"], None);
+        assert!(
+            validate(&p, PROBES, INTENTS).contains(&Problem::CiteNotAskedOnPath {
+                cause: "x",
+                probe: "firmware.missing"
+            })
+        );
 
         let mut p = wifi();
-        p.steps[2].otherwise = verdict(
+        p.steps[3].otherwise = verdict(
             "x",
             Certainty::Likely,
-            &["net.driver_bound"],
+            &["net.link_up"],
             Some("disk.format"),
         );
         assert!(
@@ -838,79 +980,181 @@ mod tests {
         );
     }
 
-    /// Over EVERY combination of probe answers (and every way a probe can fail to run), a
-    /// validated playbook finishes within budget, and a `Certain` verdict only ever rests on
-    /// findings that were actually obtained. This is the property that lets a model write playbooks.
+    /// Over EVERY combination of answers (and every way a probe can fail to run), a validated
+    /// playbook finishes within budget, a `Certain` verdict only ever rests on findings that were
+    /// actually obtained, and a probe that could not run never has a finding. This is the property
+    /// that lets a model write playbooks.
     #[test]
     fn a_validated_playbook_always_ends_honestly() {
         let pb = wifi();
         assert!(validate(&pb, PROBES, INTENTS).is_empty());
-        let texts = ["", "mt7921", "other"];
+        let ifaces: [&[&str]; 2] = [&[], &["wlan0"]];
+        let missing: [&[&str]; 3] = [&[], &["mediatek/mt7922/fw.bin"], &["other.bin"]];
+        let fails = [
+            None,
+            Some("net.wifi_interfaces"),
+            Some("firmware.missing"),
+            Some("net.link_up"),
+            Some("rfkill.blocked"),
+        ];
         let mut runs = 0;
-        for link in [false, true] {
-            for bound in [false, true] {
-                for fw in texts {
-                    for fail_at in [
-                        None,
-                        Some("net.link_up"),
-                        Some("net.driver_bound"),
-                        Some("fw.missing"),
-                    ] {
-                        runs += 1;
-                        let d = run(&pb, 8, |p| {
-                            if Some(p) == fail_at {
-                                return None;
+        for i in ifaces {
+            for m in missing {
+                for link in [false, true] {
+                    for blocked in [false, true] {
+                        for fail_at in fails {
+                            runs += 1;
+                            let machine = Machine {
+                                ifaces: i,
+                                missing: m,
+                                link,
+                                blocked,
+                            };
+                            let d = run(&pb, PROBES, 8, |p| {
+                                if Some(p) == fail_at {
+                                    None
+                                } else {
+                                    answer(&machine, p)
+                                }
+                            });
+                            if let Diagnosis::Known { verdict, findings } = &d {
+                                for c in &verdict.cites {
+                                    assert!(
+                                        findings.iter().any(|(p, _)| p == c),
+                                        "cited a probe that was never run"
+                                    );
+                                }
                             }
-                            Some(match p {
-                                "net.link_up" => Value::Bool(link),
-                                "net.driver_bound" => Value::Bool(bound),
-                                _ => Value::Text(fw.into()),
-                            })
-                        });
-                        if let Diagnosis::Known { verdict, findings } = &d {
-                            for c in &verdict.cites {
+                            if let Some(f) = fail_at
+                                && let Diagnosis::Known { findings, .. }
+                                | Diagnosis::Healthy { findings } = &d
+                            {
                                 assert!(
-                                    findings.iter().any(|(p, _)| p == c),
-                                    "cited a probe that was never run"
+                                    !findings.iter().any(|(p, _)| *p == f),
+                                    "{f} could not run but has a finding"
                                 );
                             }
-                        }
-                        if let Some(f) = fail_at
-                            && let Diagnosis::Known { findings, .. }
-                            | Diagnosis::Healthy { findings } = &d
-                        {
-                            assert!(
-                                !findings.iter().any(|(p, _)| *p == f),
-                                "{f} could not run but has a finding"
-                            );
                         }
                     }
                 }
             }
         }
-        assert_eq!(runs, 2 * 2 * 3 * 4);
+        assert_eq!(runs, 2 * 3 * 2 * 2 * 5);
     }
 
     #[test]
     fn a_probe_that_cannot_run_is_unknown_never_false() {
-        let d = run(&wifi(), 8, |_| None);
+        let d = run(&wifi(), PROBES, 8, |_| None);
         assert!(
-            matches!(d, Diagnosis::Unknown { ref reason, .. } if reason.contains("net.link_up"))
+            matches!(d, Diagnosis::Unknown { ref reason, .. } if reason.contains("net.wifi_interfaces"))
         );
+        // The tempting wrong answer: treating "could not list interfaces" as "none", which would
+        // send a healthy machine down the missing-firmware branch.
+        let m = Machine {
+            ifaces: &["wlan0"],
+            missing: &["x"],
+            link: true,
+            blocked: false,
+        };
+        let d = run(&wifi(), PROBES, 8, |p| {
+            if p == "net.wifi_interfaces" {
+                None
+            } else {
+                answer(&m, p)
+            }
+        });
+        assert!(matches!(d, Diagnosis::Unknown { .. }));
     }
 
     #[test]
     fn the_probe_budget_is_a_hard_stop() {
-        let d = run(&wifi(), 1, |p| {
-            Some(if p == "fw.missing" {
-                Value::Text(String::new())
+        let m = Machine {
+            ifaces: &["wlan0"],
+            missing: &[],
+            link: false,
+            blocked: false,
+        };
+        let d = run(&wifi(), PROBES, 2, |p| answer(&m, p));
+        assert!(
+            matches!(d, Diagnosis::Unknown { ref reason, ref findings } if reason.contains("budget") && findings.len() == 2)
+        );
+    }
+
+    /// The case F1 makes possible: a trial failed, and the record says which units.
+    #[test]
+    fn a_list_can_be_searched_and_an_empty_one_is_not_a_guess() {
+        let pb = Playbook {
+            id: "boot.trial_failed",
+            steps: vec![Step {
+                probe: "boot.failed_units",
+                branches: vec![
+                    (
+                        Cond::IsEmpty,
+                        Next::Unknown("a trial failed but no failed unit was recorded"),
+                    ),
+                    (
+                        Cond::Contains("flow-shell.service".into()),
+                        verdict(
+                            "boot.shell_failed",
+                            Certainty::Certain,
+                            &["boot.failed_units"],
+                            None,
+                        ),
+                    ),
+                ],
+                otherwise: verdict(
+                    "boot.unit_failed",
+                    Certainty::Likely,
+                    &["boot.failed_units"],
+                    None,
+                ),
+            }],
+        };
+        assert_eq!(validate(&pb, PROBES, INTENTS), vec![]);
+        let units = |u: &[&str]| {
+            let v = Value::List(u.iter().map(|x| (*x).to_owned()).collect());
+            run(&pb, PROBES, 4, move |_| Some(v.clone()))
+        };
+        assert!(matches!(units(&[]), Diagnosis::Unknown { .. }));
+        match units(&["flow-shell.service", "x.service"]) {
+            Diagnosis::Known { verdict, .. } => assert_eq!(verdict.cause, "boot.shell_failed"),
+            other => panic!("expected a verdict, got {other:?}"),
+        }
+        match units(&["x.service"]) {
+            Diagnosis::Known { verdict, .. } => {
+                assert_eq!(
+                    (verdict.cause, verdict.certainty),
+                    ("boot.unit_failed", Certainty::Likely)
+                );
+            }
+            other => panic!("expected a verdict, got {other:?}"),
+        }
+    }
+
+    /// A probe that declared a bool but answers with a list would make every condition on it
+    /// quietly false. The engine must treat that as a failed probe, not as a "no".
+    #[test]
+    fn a_probe_that_answers_with_the_wrong_kind_is_unknown() {
+        let m = Machine {
+            ifaces: &["wlan0"],
+            missing: &[],
+            link: true,
+            blocked: false,
+        };
+        let d = run(&wifi(), PROBES, 8, |p| {
+            if p == "net.link_up" {
+                Some(Value::List(vec!["up".into()]))
             } else {
-                Value::Bool(false)
-            })
+                answer(&m, p)
+            }
         });
         assert!(
-            matches!(d, Diagnosis::Unknown { ref reason, ref findings } if reason.contains("budget") && findings.len() == 1)
+            matches!(d, Diagnosis::Unknown { ref reason, .. } if reason.contains("wrong kind"))
         );
+        // and a mis-kinded answer is not recorded as a finding
+        if let Diagnosis::Unknown { findings, .. } = d {
+            assert!(!findings.iter().any(|(p, _)| *p == "net.link_up"));
+        }
     }
 }
 ```

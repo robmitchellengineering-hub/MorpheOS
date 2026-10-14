@@ -569,13 +569,13 @@ every existing scenario passes unchanged.
 repair, so a corrupt line disables healing. Guard every step on this failure path (H11).
 
 ### F2 · Probes: registry, pure parsers and the first probes · proposed · needs F1
-**What:** a new library crate `crates/morph-diag`: the typed `Value` and `Finding`, a sensitivity tag, a
+**What:** a new library crate `crates/morph-diag`: the typed `Value` (bool, int, text **and list**) and `Finding`, a sensitivity tag, a
 probe registry that takes each probe's implementation, and a bounded runner (timeout, output cap, no
 write access). The first probes are those of doc 22 section 5. Each parser is a pure function over
 captured text, tested on fixtures taken from real `hwreport` folders and the VM.
 
 **Done when:** `cargo test -p morph-diag` passes on Linux, macOS and Windows; every probe has a healthy
-and a faulty fixture test; registration refuses a probe with no sensitivity tag or no timeout; the
+and a faulty fixture test; registration refuses a probe with no sensitivity tag or no timeout; the runner checks every answer against the kind the probe declared; the
 runner kills a probe that sleeps past its timeout and truncates one that floods its output (a fake
 probe for each); and the PR quotes a sabotage run for each rule.
 
@@ -589,7 +589,7 @@ budget, ported from the compiled reference in doc 22 appendix A. Six seed playbo
 **Done when:** `cargo test -p morph-diag` includes the reference's tests ported over: each defect class
 is refused with its own named error (unknown probe, wrong kind, bad jump, cycle, unreachable step,
 `Certain` without citations, a citation not asked on the path, a repair not in the catalogue); a
-validated playbook always ends within budget over the full input space; a failed probe is `Unknown`,
+validated playbook always ends within budget over the full input space; a failed probe, or one answering with the wrong kind of value, is `Unknown`,
 never false; every seed loads, validates, and is tested against a fixture machine for each of its
 verdicts plus a healthy one; and a sabotage run is quoted for each rule.
 

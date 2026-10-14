@@ -266,8 +266,10 @@ One line per piece of work: date, who, what, what's next.
   should build the judge (corpus and scorer, I3) before any resolver. Nothing is built; all tasks are
   `proposed`. Next: Rob decides D1–D7.
 - 2026-10-14 · Claude Code · Planned diagnosis ([doc 22](docs/22-diagnosis.md), F1–F10), stacked on the
-  intent engine (doc 21). Compiled and tested a playbook validator in a scratch crate (48 probe-answer
-  combinations; nine sabotages each caught) and put it in the doc as a reference. Found: `boot-check`
+  intent engine (doc 21). Compiled and tested a playbook validator in a scratch crate (120 probe-answer
+  combinations; twelve sabotages each caught) and put it in the doc as a reference. Reviewing it caught
+  two errors in my own first draft: its Wi-Fi playbook asked about a link that cannot exist when firmware
+  is missing (the likely Legion Go case), and nothing checked a probe's answer against its declared kind. Found: `boot-check`
   records `{state, status, decision}` but not *why* a trial failed (the failed units go only to the
   console); and `morph-heal` errors on any unparsable history line, so F1 must have Rust, not `sh`, write
   the evidence or one hostile journal line would disable healing. The judge's generic parts move into a
