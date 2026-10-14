@@ -29,6 +29,11 @@
 #              committed** instead of left broken. The verdict is content, not flow: the
 #              service whose failure broke the trial must be GONE from slot B's root, with
 #              the same check run before the machine boots as the control.
+#   broken-shell  the update ships a Flow shell that cannot start (its compositor exits at
+#              once): one trial, then back on A, with the shell drawing again (E11).
+#   hung-shell the update ships a shell that starts and never draws a frame: the same. This
+#              is the one a unit-state health check would miss, since the process is running;
+#              the shell is `Type=notify` and ready only once a frame is on the display.
 set -euo pipefail
 
 WORK=${1:?usage: test-fallback.sh <workdir> [good|unhealthy|crash|update|heal ...]}
@@ -41,7 +46,8 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 expected() {
     case "$1" in
         good)      printf '%s\n' a/committed/none b/trial/committed b/committed/none ;;
-        unhealthy) printf '%s\n' a/committed/none b/trial/fallback a/committed/none a/committed/none ;;
+        unhealthy|broken-shell|hung-shell)
+            printf '%s\n' a/committed/none b/trial/fallback a/committed/none a/committed/none ;;
         crash)     printf '%s\n' a/committed/none a/committed/none a/committed/none ;;
         update)    printf '%s\n' a/committed/none b/trial/committed b/committed/none ;;
         # `unhealthy`'s four boots, then the repair, then the repaired slot trialling and
@@ -144,7 +150,10 @@ for sc in "${SCENARIOS[@]}"; do
     # reaches a quarter of an hour is hung, and the only thing a longer timeout buys is a
     # longer wait to find that out. Debugging a hang against a 40-minute loop is how a
     # twenty-minute stall got read twice as "probably just slow".
-    "$HERE/run-vm.sh" "$disk" "$log" "${VM_TIMEOUT:-900}" "$payload" || { echo "VM did not power off cleanly"; fail=1; }
+    # The shell scenarios need a display for the shell to draw on.
+    gpu=0
+    case "$sc" in broken-shell|hung-shell) gpu=1 ;; esac
+    VM_GPU=$gpu "$HERE/run-vm.sh" "$disk" "$log" "${VM_TIMEOUT:-900}" "$payload" || { echo "VM did not power off cleanly"; fail=1; }
     echo "    vm time: $(( $(date +%s) - start ))s"
 
     got=$(recorded "$disk")
@@ -158,6 +167,24 @@ for sc in "${SCENARIOS[@]}"; do
     ok=1
     [ "$got" = "$want" ] || { echo "    FAIL: expected boots: $(echo $want)"; ok=0; }
     [ "$default" = "morpheos-$(expected_default "$sc").conf" ] || { echo "    FAIL: expected default slot $(expected_default "$sc")"; ok=0; }
+    case "$sc" in broken-shell|hung-shell)
+        # Slot A's shell drew (three boots of A, each ready with a frame on the display); the
+        # trial failed BECAUSE of the shell, not something else.
+        ready=$(grep -ac 'flow-compositor: first frame on the display; ready' "$log" || true)
+        if [ "$ready" -ge 3 ]; then
+            echo "    slot a's shell drew a frame on each of its boots ($ready)"
+        else
+            echo "    FAIL: slot a's shell reported a frame on the display $ready time(s), not 3"; ok=0
+        fi
+        if grep -aq 'morph-boot-check: failed unit: flow-shell.service' "$log"; then
+            echo "    the trial failed on flow-shell.service"
+        else
+            echo "    FAIL: the trial did not fail on flow-shell.service"
+            grep -a 'failed unit' "$log" | sed 's/^/      /' || true
+            ok=0
+        fi
+        ;;
+    esac
     if [ "$sc" = crash ]; then
         if grep -aq 'Kernel panic' "$log"; then
             echo "    slot b panicked as intended"

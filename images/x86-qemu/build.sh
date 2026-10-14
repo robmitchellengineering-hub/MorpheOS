@@ -24,7 +24,7 @@ set -euo pipefail
 
 WORK=${1:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
 SCENARIO=${2:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
-case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell|browser|wifi) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
+case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell|browser|wifi|broken-shell|hung-shell) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
 # `plain` is the one that leaves the CI harness behind and is meant to be booted by a person.
 # `shell` is `plain` with the Flow shell drawing the screen and taking the keyboard and mouse
 # (doc 20, E3 and E10), and the root console moved to VT2. It stays separate from `plain`
@@ -37,7 +37,13 @@ case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell|browser|wifi) ;;
 # Firefox, so it builds without Mozilla's servers.
 HARDWARE=0
 SHELL_UI=0
-case "$SCENARIO" in plain) HARDWARE=1 ;; shell|browser|wifi) HARDWARE=1; SHELL_UI=1 ;; esac
+# `broken-shell` and `hung-shell` are self-test images (the scripted A/B walk) WITH the shell:
+# slot B's update ships a shell that cannot start, or one that never draws (E11).
+case "$SCENARIO" in
+    plain) HARDWARE=1 ;;
+    shell|browser|wifi) HARDWARE=1; SHELL_UI=1 ;;
+    broken-shell|hung-shell) SHELL_UI=1 ;;
+esac
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
@@ -333,6 +339,18 @@ EOF
     printf '[Manager]\nRuntimeWatchdogSec=30s\n' > "$dir/etc/systemd/system.conf.d/50-morpheos-watchdog.conf"
     # The image is headless; nothing should wait for a network that isn't there.
     rm -f "$dir/etc/systemd/system/multi-user.target.wants/systemd-networkd-wait-online.service"
+    if [ "$slot" = b ] && [ "$SCENARIO" = broken-shell ]; then
+        # An update whose shell cannot start: its compositor exits at once.
+        printf '#!/bin/sh\necho "flow-compositor: deliberately broken (test scenario: broken-shell)" >&2\nexit 1\n' \
+            > "$dir/usr/bin/flow-compositor"
+        chmod 0755 "$dir/usr/bin/flow-compositor"
+    fi
+    if [ "$slot" = b ] && [ "$SCENARIO" = hung-shell ]; then
+        # An update whose shell starts and never draws: the process runs, nothing is shown.
+        printf '#!/bin/sh\necho "flow-compositor: deliberately hung (test scenario: hung-shell)" >&2\nexec sleep infinity\n' \
+            > "$dir/usr/bin/flow-compositor"
+        chmod 0755 "$dir/usr/bin/flow-compositor"
+    fi
     if [ "$slot" = b ] && [ "$SCENARIO" = unhealthy ]; then
         # An "update" that boots but breaks something essential.
         cat > "$dir/usr/lib/systemd/system/morph-broken.service" <<'EOF'
