@@ -33,6 +33,7 @@ what "AI-reconfigurable to stable possibilities" means in practice.
 ## Components
 
 ### 1. Intent Engine
+*(Designed in detail, with interfaces, rules and an evaluation protocol, in [doc 21](21-intent-engine.md).)*
 - Turns natural language, voice and context ("the user just plugged in a
   projector") into **intents** such as `display.present`, `call.join(link)`,
   `file.find(desc)` or `system.fix(wifi)`.

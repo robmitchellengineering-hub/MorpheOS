@@ -126,6 +126,12 @@ until Rob opens it.
   Rob holds, and somewhere to keep it (an offline machine, a hardware key): his call, as is
   whether a lost key can be replaced by an update signed with the old one.
 
+- **The intent engine plan ([doc 21](docs/21-intent-engine.md), tasks I1–I10 in doc 20).** Seven decisions
+  (D1–D7, section 11): when to open I1–I3 (recommended: now, as the lane for the days you wait on Rob's
+  hardware reports), the evaluation bar's numbers, whether Morpheus may generate the practice sentences, the
+  model-licence policy, the template syntax, vendor-registered intents, and English only. Until Rob opens
+  them, I1–I10 are `proposed`: do not build them.
+
 ## Decisions that are Rob's, not yours
 
 Write the question up (options and a recommendation) and wait:
@@ -270,3 +276,11 @@ One line per piece of work: date, who, what, what's next.
   `sign` are the builder's half. Every image carries the updater and the key, and the test
   driver installs with the image's own updater (a medium's could check nothing). Images trust
   a per-build test key; the release key and its custody are Rob's (decisions above).
+- 2026-10-14 · Claude Code · Planned the intent engine ([doc 21](docs/21-intent-engine.md), I1–I10). The
+  shell's intent bar is a search field; this designs what turns words into a safe action. Compiled and
+  tested the safety core in a scratch crate (3,750 input combinations; nine sabotages each caught; a review then closed a hole where the
+  caller could pass a lenient spec beside a risky candidate) and put
+  it in the doc as a reference. Found: the Manifest's risk tiers are path-based, so intents that are not
+  Manifest changes need their own risk, which the catalogue makes each executor declare; and that the plan
+  should build the judge (corpus and scorer, I3) before any resolver. Nothing is built; all tasks are
+  `proposed`. Next: Rob decides D1–D7.
