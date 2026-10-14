@@ -70,7 +70,7 @@ Unpack it twice, since the artifact is a zip containing an `.xz`:
 
 ```bash
 unzip morpheos-x86-usb.zip
-xz -d disk-plain.img.xz          # ~4.5 GiB when unpacked
+xz -d disk-plain.img.xz          # 3758 MiB (3.7 GiB) unpacked; the download is ~1.3 GB
 ```
 
 Find the stick first. **This is the step where the wrong disk number costs you a drive**, so
