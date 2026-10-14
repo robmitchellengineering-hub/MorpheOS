@@ -62,7 +62,7 @@ and constraints into execution across devices). See [doc 12](docs/12-radical-con
 | `docs/` | The design set (start with [00](docs/00-strategy.md)) and [ADRs](docs/adr/README.md) |
 | `crates/morph-manifest` | The Manifest: typed machine description, unbreakable invariants, risk-tiered change plans |
 | `crates/morph-boot` | A/B boot control: trial-boot an update once, commit on health, fall back automatically |
-| `crates/morph-update` | Write a new system into the inactive slot and verify what was written, before anything trials it |
+| `crates/morph-update` | Write a new system into the inactive slot and verify what was written, before anything trials it; only a payload signed by a key the image carries is accepted (ed25519 over `BLAKE3SUMS`) |
 | `crates/strata` | Strata v0: a version of every saved file, restore, folder rewind, ransomware detection ([ADR 0007](docs/adr/0007-strata-v0-watcher.md)) |
 | `crates/morph-heal` | Rebuild the spare slot from the running system after a failed trial, so a fallback does not leave the machine unredundant ([ADR 0009](docs/adr/0009-heal-ladder.md)) |
 | `crates/morph-transaction` | A state change that health-checks itself: arm a trial, apply, and commit or roll back without anyone having to notice |
