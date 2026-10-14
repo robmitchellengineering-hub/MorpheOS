@@ -434,14 +434,17 @@ removed, named test fails).
 Check each executor's current API before registering it; HANDOFF moves daily.
 
 ### I2 · The disposition policy · proposed · needs I1
-**What:** the pure function of doc 21 section 6, in `morph-intent`: `disposition(policy, spec,
-candidate, origin, planned_risk)` returning AutoRun, Confirm, NeedsPerson or Refuse. Port the
+**What:** the pure function of doc 21 section 6, in `morph-intent`: `disposition(policy, catalogue,
+candidate, origin, planned_risk)` returning AutoRun, Confirm, NeedsPerson or Refuse. It looks the spec
+up in the catalogue itself; a caller never passes one beside the candidate. Port the
 appendix A reference and its tests.
 
 **Done when:** an exhaustive test over every tier, risk, planned risk, origin, reachability and
 score band asserts that AutoRun implies risk at most ReversibleLocal, origin not Untrusted, and
 tier T0 or T1 (T1 only at or above `fuzzy_auto`); that every risk of PersistentConfig or higher is
-NeedsPerson or Refuse; and that a lower planned risk never lowers the declared one. The `match` on
+NeedsPerson or Refuse; that a lower planned risk never lowers the declared one; that a candidate is judged by its own
+intent in the catalogue, never a neighbour's; and that a candidate whose intent the catalogue does not
+hold is refused. The `match` on
 tier is under `#[deny(clippy::wildcard_enum_match_arm)]`, so `cargo clippy --all-targets -- -D
 warnings` fails if someone adds a wildcard arm. The PR quotes a sabotage run for each rule.
 

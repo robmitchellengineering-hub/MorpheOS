@@ -260,7 +260,8 @@ One line per piece of work: date, who, what, what's next.
   good, and every window deaf to the mouse; the test now ends with a click that must arrive.
 - 2026-10-14 · Claude Code · Planned the intent engine ([doc 21](docs/21-intent-engine.md), I1–I10). The
   shell's intent bar is a search field; this designs what turns words into a safe action. Compiled and
-  tested the safety core in a scratch crate (3,750 input combinations; seven sabotages each caught) and put
+  tested the safety core in a scratch crate (3,750 input combinations; nine sabotages each caught; a review then closed a hole where the
+  caller could pass a lenient spec beside a risky candidate) and put
   it in the doc as a reference. Found: the Manifest's risk tiers are path-based, so intents that are not
   Manifest changes need their own risk, which the catalogue makes each executor declare; and that the plan
   should build the judge (corpus and scorer, I3) before any resolver. Nothing is built; all tasks are
