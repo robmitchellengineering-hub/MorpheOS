@@ -303,6 +303,51 @@ pub fn unenforced_settings() -> &'static [(&'static str, &'static str)] {
             "/heal/ask_after_failed_rungs",
             "there is no heal engine yet",
         ),
+        // Found on 2026-10-14 by reading what each component reads: nothing on a machine
+        // reads the Manifest at all yet (doc 20, S11), and these had no line here.
+        (
+            "/machine/name",
+            "nothing names the machine from it yet (doc 20, S11)",
+        ),
+        ("/machine/profile", "no component reads a scaling profile"),
+        (
+            "/machine/arch",
+            "the architecture is the image's, not read from it",
+        ),
+        (
+            "/system/kernel",
+            "the kernel is the image's, not chosen from it",
+        ),
+        (
+            "/system/boot",
+            "the boot path is the image's (ADR 0006), not read from it",
+        ),
+        (
+            "/system/recovery_image",
+            "there is no recovery image yet (doc 20, S4)",
+        ),
+        (
+            "/storage/min_free_percent",
+            "nothing watches free space yet (doc 20, S7)",
+        ),
+        (
+            "/storage/replicas",
+            "nothing replicates yet (doc 20, P1); the invariants on them are checked, no more",
+        ),
+        (
+            "/storage/accept_single_copy",
+            "nothing replicates yet, so nothing can be a single copy",
+        ),
+        ("/heal/enabled", "there is no heal engine yet"),
+        (
+            "/network",
+            "NetworkManager is configured by the image, not from it",
+        ),
+        (
+            "/users",
+            "nothing creates an account from it (doc 20, S5); the invariants are checked, no more",
+        ),
+        ("/capsules", "there are no capsules yet (doc 20, M5)"),
     ]
 }
 
