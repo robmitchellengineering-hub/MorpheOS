@@ -24,7 +24,7 @@ set -euo pipefail
 
 WORK=${1:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
 SCENARIO=${2:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
-case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell|browser) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
+case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell|browser|wifi) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
 # `plain` is the one that leaves the CI harness behind and is meant to be booted by a person.
 # `shell` is `plain` with the Flow shell drawing the screen and taking the keyboard and mouse
 # (doc 20, E3 and E10), and the root console moved to VT2. It stays separate from `plain`
@@ -32,9 +32,12 @@ case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell|browser) ;; *) e
 # booting `plain` on a laptop is better served by the root console it opens on.
 # `browser` is `shell` with Firefox open on a test page instead of the demonstration window
 # (doc 20, E4).
+# `wifi` is `shell` with NetworkManager and no wired network: the Wi-Fi picker opens, and the
+# kernel's simulated radios (mac80211_hwsim) carry a WPA2 network for it to join (E5). No
+# Firefox, so it builds without Mozilla's servers.
 HARDWARE=0
 SHELL_UI=0
-case "$SCENARIO" in plain) HARDWARE=1 ;; shell|browser) HARDWARE=1; SHELL_UI=1 ;; esac
+case "$SCENARIO" in plain) HARDWARE=1 ;; shell|browser|wifi) HARDWARE=1; SHELL_UI=1 ;; esac
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
@@ -47,9 +50,10 @@ MORPH_HEAL=${MORPH_HEAL:-$REPO/target/release/morph-heal}
 SDBOOT_EFI=${SDBOOT_EFI:-/usr/lib/systemd/boot/efi/systemd-bootx64.efi}
 FLOW_COMPOSITOR=${FLOW_COMPOSITOR:-$REPO/target/release/flow-compositor}
 SOLID_WINDOW=${SOLID_WINDOW:-$REPO/target/release/solid-window}
+FLOW_WIFI=${FLOW_WIFI:-$REPO/target/release/flow-wifi}
 if [ "$SHELL_UI" = 1 ]; then
-    for b in "$FLOW_COMPOSITOR" "$SOLID_WINDOW"; do
-        [ -x "$b" ] || { echo "missing $b: run cargo build --release -p flow-compositor" >&2; exit 1; }
+    for b in "$FLOW_COMPOSITOR" "$SOLID_WINDOW" "$FLOW_WIFI"; do
+        [ -x "$b" ] || { echo "missing $b: run cargo build --release -p flow-compositor -p flow-wifi" >&2; exit 1; }
     done
 fi
 
@@ -142,6 +146,27 @@ if [ "$SCENARIO" = browser ]; then
     BASE="$BROWSER_BASE"
 fi
 
+# 1c. The Wi-Fi test base: the base, NetworkManager as the browser base has it, and the other
+# end of the simulated network: hostapd (the access point), dnsmasq (its DHCP server) and
+# iproute2 (to address it). Test-only; the access point runs only in the `wifi` scenario.
+WIFI_PKGS="$BASE_PKGS,network-manager,wpasupplicant,systemd-resolved,hostapd,dnsmasq-base,iproute2"
+WIFI_KEY="$WIFI_PKGS,(linux-modules-extra)"
+if [ "$SCENARIO" = wifi ]; then
+    WIFI_BASE="$WORK/rootfs-wifi"
+    if [ "$(cat "$WIFI_BASE/.complete" 2>/dev/null)" != "$WIFI_KEY" ]; then
+        rm -rf "$WIFI_BASE"
+        mmdebstrap --variant=apt \
+            --include="$WIFI_PKGS" \
+            --aptopt='APT::Install-Recommends "false"' \
+            --customize-hook="$MODULES_EXTRA_HOOK" \
+            "$SUITE" "$WIFI_BASE" \
+            "deb $MIRROR $SUITE main universe" \
+            "deb $MIRROR $SUITE-updates main universe"
+        echo "$WIFI_KEY" > "$WIFI_BASE/.complete"
+    fi
+    BASE="$WIFI_BASE"
+fi
+
 # 2. Slot root filesystems: base + MorpheOS overlay (+ test hook, + scenario damage for B).
 make_root() {
     local slot=$1 dir="$WORK/root-$1"
@@ -210,17 +235,23 @@ EOF
         cp -a "$HERE/overlay-shell/." "$dir/"
         install -m 0755 "$FLOW_COMPOSITOR" "$dir/usr/bin/flow-compositor"
         install -m 0755 "$SOLID_WINDOW" "$dir/usr/bin/solid-window"
-        # The shell scenario shows the demonstration window; the browser scenario, Firefox.
-        app=flow-demo-window
-        if [ "$SCENARIO" = browser ]; then
-            cp -a "$HERE/overlay-browser/." "$dir/"
-            app=flow-browser
+        install -m 0755 "$FLOW_WIFI" "$dir/usr/bin/flow-wifi"
+        # The shell scenario shows the demonstration window; the browser scenario, Firefox;
+        # the wifi scenario, only the Wi-Fi picker. Where there is NetworkManager, the picker
+        # opens by itself when the machine has no network.
+        apps=flow-demo-window
+        case "$SCENARIO" in
+            browser) apps="flow-browser NetworkManager flow-wifi" ;;
+            wifi) apps="NetworkManager flow-wifi morph-wifi-test-ap" ;;
+        esac
+        case "$SCENARIO" in browser|wifi) cp -a "$HERE/overlay-network/." "$dir/" ;; esac
+        if [ "$SCENARIO" = browser ]; then cp -a "$HERE/overlay-browser/." "$dir/"; fi
+        if [ "$SCENARIO" = wifi ]; then
+            cp -a "$HERE/overlay-wifi-test/." "$dir/"
+            # The package's own hostapd service is not the test's access point: keep it off.
+            ln -sf /dev/null "$dir/etc/systemd/system/hostapd.service"
         fi
-        if [ "$SCENARIO" = browser ]; then
-            ln -sf /usr/lib/systemd/system/NetworkManager.service \
-                "$dir/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
-        fi
-        for unit in seatd flow-shell "$app"; do
+        for unit in seatd flow-shell $apps; do
             ln -sf "/usr/lib/systemd/system/$unit.service" \
                 "$dir/etc/systemd/system/multi-user.target.wants/$unit.service"
         done

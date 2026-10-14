@@ -71,12 +71,12 @@ From a DSH shell in PowerShell, run any of them as
 
 ## Open pull requests at handover
 
-#42 to #49 (E3, E10, the handover plan, S10, E12, E4's browser and popups, E5's network) were
-merged on 2026-10-13, as merge commits so the stack merged without conflicts. Open:
+#42 to #50 (E3, E10, the handover plan, S10, E12, E4's browser and popups, E5's network, the
+laptop drivers) were merged on 2026-10-13, as merge commits so the stack merged without conflicts. Open:
 
 | # | Branch | What |
 |---|---|---|
-| (fix) | `fix/laptop-drivers` | the laptop drivers (graphics, Wi-Fi, touchscreen) were missing from every image |
+| #51 | `feat/e5-wifi-picker` | E5 (2): the Wi-Fi picker, over NetworkManager; its VM test joins a simulated WPA2 network |
 
 If CI goes red on it, it is yours to fix, on that branch. **When a pull request's base is
 another open branch** (a stack), and the base merges: if it was squash-merged, the next branch
@@ -224,3 +224,10 @@ One line per piece of work: date, who, what, what's next.
   unit is an unhealthy boot. rfkill and backlight start on any machine with a radio switch
   or a backlight (every laptop; no VM until test-wifi.sh's simulated radios showed it), so
   `plain` on a laptop could have been judged unhealthy. Their directories are tmpfs now.
+- 2026-10-13 · Claude Code · E5 (2), the Wi-Fi picker (`feat/e5-wifi-picker`): `flow-wifi`, a
+  window on the shell that lists networks, takes a password (drawn as marks, never printed)
+  and joins over NetworkManager's D-Bus API (zbus: pure Rust, no libdbus). Its model is
+  unit-tested; `tests/on_the_shell.rs` drives the real window on the compositor; the VM test
+  (`test-wifi.sh`) joins a simulated WPA2 network (`mac80211_hwsim`, hostapd, dnsmasq). Found
+  on the way: a Wayland read after `poll` can return EAGAIN (a `delete_id` alone, say), and
+  the picker took that for a lost connection and quit a second after it opened.
