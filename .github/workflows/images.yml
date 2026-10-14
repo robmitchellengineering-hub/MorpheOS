@@ -41,7 +41,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Rust, the version rust-toolchain.toml names (doc 20, S9)
         run: bash scripts/rust-toolchain.sh
-      - run: cargo build --release -p morph-boot -p strata
+      # The shell is in the image a person uses (doc 20, E4), so it is built before that image.
+      - run: cargo build --release -p morph-boot -p strata -p flow-compositor -p flow-wifi
       # The update scenario needs the updater. Built here, as a sibling of the line
       # above and for the same reason: the harness scripts run under `sudo`, whose PATH
       # has no cargo, so a binary built inside them cannot find its own toolchain.
@@ -63,7 +64,7 @@ jobs:
           # (`xz: ...: Permission denied`, which cost a run.)
           sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/img"
       - name: Boot the image a person can use
-        run: sudo images/x86-qemu/test-boot.sh "$RUNNER_TEMP/img" 150
+        run: sudo images/x86-qemu/test-boot.sh "$RUNNER_TEMP/img" 300
       # The image a person logs into must not print the Ubuntu legal notice twice. The
       # `noupdate` motd line was removed at build time (images/x86-qemu/build.sh); this is
       # the behavioural half of the guard — the serial log shows the notice printing twice

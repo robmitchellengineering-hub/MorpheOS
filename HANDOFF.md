@@ -30,7 +30,7 @@ the widening backlog (ADR 0014, lane 2) and waits.
 | The shell on a real display inside the image (E3) | **VM-proven** | `test-shell.sh`: a virtio-gpu screendump shows the shell and the window in place |
 | Real keyboard and mouse, root console on VT2 (E10) | **VM-proven** | `test-shell.sh`: a USB-tablet click and a PS/2 key change the window's colour; Ctrl+Alt+F2 and back |
 | Firefox on the shell, a local page read off the screen (E4, part) | **VM-proven** | `test-browser.sh`: the page's colours, inside the screen, boot committed. No menus yet |
-| Bootable x86 USB image for a person, with laptop firmware and a hardware report (E12) | **builds, boots in QEMU** | [HARDWARE.md](images/x86-qemu/HARDWARE.md); `test-boot.sh` reads the report back. **Never booted on real hardware** |
+| Bootable x86 USB image for a person: the shell, Firefox and the Wi-Fi picker, laptop firmware and a hardware report (E4, E12) | **builds, boots in QEMU** | [HARDWARE.md](images/x86-qemu/HARDWARE.md); `test-boot.sh` reads the screen and the report back. **Never booted on real hardware** |
 | Wi-Fi picker over NetworkManager, a WPA2 join typed on the keyboard (E5, part) | **VM-proven** | `test-wifi.sh`: simulated radios, a wrong password refused, the right one joins, the network's own DHCP log |
 | Move, fullscreen, Alt+Tab on real input paths (E9) | **tested headless** | `crates/flow-compositor/tests/move_fullscreen.rs` |
 | A shell update that cannot start, or starts and never draws, falls back (E11, part) | **VM-proven** | `test-fallback.sh broken-shell hung-shell`; the shell is `Type=notify`, ready on its first frame |
@@ -347,3 +347,13 @@ One line per piece of work: date, who, what, what's next.
   screen, and new windows were not raised). A window that would reach past the bottom now
   starts a new stack at the top, `CASCADE` further in, and a window that opens comes to the
   front; focus still waits for a click. Two `wm` tests, each failing before the fix.
+- 2026-10-14 · Claude Code · E4 done (`feat/e4-plain-shell`): `plain`, the image a person boots,
+  now boots into the shell with Firefox on a local start page and, with no network, the Wi-Fi
+  picker in front. `test-boot.sh` judges it by a screendump, as well as the boot history, the
+  console login and the hardware report. The browser overlay is split: what a person gets
+  (`overlay-browser`: policies, start page, service) and what only the browser test needs
+  (`overlay-browser-test`: its page and a drop-in). Firefox's profile and cache live on
+  `/persist/browser`, outside Strata's `/home`, and the disk cache is capped at 50 MiB, because
+  the data partition is 256 MiB. A shell that fails gives VT1 back to the console
+  (`OnFailure=`); closing Firefox reopens it; `build.sh` fails when a slot's system passes 85%
+  of `ROOT_MB`. Next: E5, the bar and the picker from it.

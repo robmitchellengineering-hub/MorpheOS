@@ -15,6 +15,16 @@
       "MoreFromMozilla": false,
       "SkipOnboarding": true
     },
-    "SkipTermsOfUse": true
+    "SkipTermsOfUse": true,
+    "Preferences": {
+      "browser.cache.disk.smart_size.enabled": {
+        "Value": false,
+        "Status": "locked"
+      },
+      "browser.cache.disk.capacity": {
+        "Value": 51200,
+        "Status": "locked"
+      }
+    }
   }
 }

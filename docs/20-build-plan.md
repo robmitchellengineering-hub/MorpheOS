@@ -227,7 +227,7 @@ user, which waits on Rob's account model (S5).
    it under Open questions and do not choose an account model yourself.
 7. **Size:** M, one PR.
 
-### E4 · A browser · in progress · needs E10
+### E4 · A browser · done · needs E10
 
 **What:** Firefox from Mozilla's own APT repository (packages.mozilla.org, pinned), running on
 Wayland (`MOZ_ENABLE_WAYLAND=1`). Then `plain` boots into the shell, with the browser in it
@@ -242,14 +242,21 @@ and the Wi-Fi picker's window (the VM has no network). The boot history on the E
 exactly `a/committed/none`, a login must still complete on the serial console, and the
 hardware report checks must still pass.
 
+**Evidence:** `images/x86-qemu/test-boot.sh` and `images/x86-qemu/test-browser.sh`. In the
+`images` workflow, `plain` boots into the shell: a screendump shows the shell's background,
+Firefox on its local start page over a quarter of the screen or more, and the Wi-Fi picker in
+front saying in red that there is no Wi-Fi; slot A is committed, a login completes on the
+serial console, and the hardware report reads back. `test-browser.sh` shows Firefox drawing a
+local page and then one the CI host serves. Writing the `plain` check found that a window
+opening under Firefox would be off the screen and behind it (`fix/new-window-in-view`).
+
 **Progress:** the first half is done and VM-proven. In `test-browser.sh`, Firefox 158
 (Mozilla's build) draws a local page on the shell and then a page the CI host serves (#47,
 #49). Popups (menus and dropdowns) are placed, drawn on top, take clicks and close on a click
 outside (`tests/popups.rs`). Step 5 (PR A) is done: the service runs `--drm auto`, which
 takes the first card in `/dev/dri` with a connected display (`src/display.rs`, unit-tested;
-`test-shell.sh` checks the compositor said which card it chose). Still to do: `plain` boots
-into the shell, and HARDWARE.md says how
-to reach the shell and the console.
+`test-shell.sh` checks the compositor said which card it chose). PR B is done too: `plain`
+boots into the shell, and HARDWARE.md says how to reach the shell and the console.
 
 **Notes:** ⚠️ Ubuntu 24.04's `firefox` and `chromium` packages are snap stubs. Firefox needs
 more protocols than E1 serves: `linux-dmabuf` (or it falls back to shm), `xdg-decoration`,
@@ -366,8 +373,8 @@ Firefox from its local page to one the CI host serves at 10.0.2.2. Part 2: the W
 itself when the machine has no network. `tests/on_the_shell.rs` drives it on the compositor
 with a fake backend; `images/x86-qemu/test-wifi.sh` joins a WPA2 network carried by the
 kernel's simulated radios (`mac80211_hwsim`) in a VM, a wrong password and then the right one
-typed on the VM's keyboard, judged by screendumps and the network's own DHCP log. Still to
-do: Firefox and the picker together in `plain` (with E4), and a way to open the picker when
+typed on the VM's keyboard, judged by screendumps and the network's own DHCP log. Firefox and the picker are together in `plain` (E4). Still to
+do: a way to open the picker when
 the machine already has a network (from the shell's bar).
 
 **Notes:**

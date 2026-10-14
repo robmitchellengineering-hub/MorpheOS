@@ -1,7 +1,8 @@
 # MorpheOS on a real x86 machine
 
-This is the image a person boots: no self-test driver, nothing that powers itself off, a root
-shell on the local console, and the tools to drive an A/B update by hand.
+This is the image a person boots: no self-test driver, nothing that powers itself off, the
+Flow shell with Firefox and a Wi-Fi picker on the screen, a root console one key away, and the
+tools to drive an A/B update by hand.
 
 > ⚠️ **It has never been booted on real hardware.** Every x86 test so far has run in QEMU, which
 > presents virtio devices and a UEFI firmware that is not the one in your laptop. The image
@@ -106,15 +107,37 @@ Expect two things that are not failures:
   not carry), so the report will list the card with no driver bound. Either way the report
   answers "does its Wi-Fi work"; an unclaimed card is not a broken boot.
 
-What should happen: kernel messages on the screen, then
+What should happen: kernel messages on the screen, then the shell's dark background with
+**Firefox** on a purple MorpheOS start page. If the machine has no network yet, the **Wi-Fi
+picker** opens in front of it: pick your network with the arrow keys, press Enter, type the
+password and press Enter (click the picker first, so it has the keyboard). On a cable, or with
+no Wi-Fi card, there is nothing to join and it says so in red.
+
+**If the screen stays dark** for more than a minute, the shell could not start on this
+machine's graphics: the console comes back on its own (the shell gives the screen back when it
+fails), or press **Ctrl+Alt+F2**. Either way the hardware report records why, and a photo of
+the screen helps.
+
+The console, on **Ctrl+Alt+F2**, shows
 
 ```
 MorpheOS: {"booted":"a","default":"a","phase":"committed"}
 ```
 
-and a root shell, with no password. The banner line comes from the machine's own boot state.
+and a root shell, with no password; **Ctrl+Alt+F1** goes back to the shell. The banner line
+comes from the machine's own boot state.
+
+⚠️ **Booting a stick made before 2026-10-14?** Those boot to the console only, which is still
+the safer first boot on a machine nobody has tried: it works when the graphics do not. A stick
+from any newer `images` run has the shell. Booting both on a new machine tells the most.
 
 ## 4. Use it
+
+In the shell: **Alt+Tab** switches windows, **Super+F** makes one fullscreen and back, and a
+window moves when you drag it by its edge (or anywhere, holding Super). Closing Firefox opens
+it again; there is no launcher yet.
+
+On the console (Ctrl+Alt+F2):
 
 ```bash
 morph-boot status                  # which slot is booted, which is committed
@@ -183,13 +206,12 @@ diagnosis, so photograph the last lines.
 
 ## What this image is not
 
-- **Not hardened.** Root, no password, autologin on the console and the serial port, no network
+- **Not hardened.** Root, no password, autologin on the console and the serial port, no firewall
   configured. It exists to be driven by hand.
 - **Not private.** The hardware report records the machine's model, its devices and their
   MAC addresses on the stick. It records no files, no accounts and nothing from the machine's
   own disk.
-- **Not a desktop, yet.** The Flow shell, Firefox and the Wi-Fi picker are built and tested in
-  VMs (the `shell`, `browser` and `wifi` images), but this image boots to a root console on
-  purpose: on a machine nobody has booted before, a console is what still works when the
-  graphics do not. It joins the shell once the hardware reports are in (doc 20, E4 and E6).
+- **Not a desktop, yet.** A shell, one browser and a Wi-Fi picker: no launcher, no settings, no
+  sound, no suspend (doc 20, M3). Everything runs as root until the account model is decided
+  (doc 20, S5). If Firefox crashes, it stays closed until the next boot.
 - **Not installable.** It runs from the stick; it does not touch the machine's own disk.
