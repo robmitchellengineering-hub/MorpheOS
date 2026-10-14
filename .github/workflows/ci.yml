@@ -91,7 +91,10 @@ jobs:
           node scripts/verify-plan.mjs --self-test
           if [ -n "$GITHUB_HEAD_REF" ]; then
             # Judge the branch against the plan it started from (see the script's header).
-            git fetch -q --depth=1 origin "$GITHUB_BASE_REF"
+            # NOT --depth=1: when main has moved since checkout (a pull request merged
+            # mid-run), a shallow fetch makes the new main a commit with no parents, so the
+            # next step's merge-base finds no common ancestor (#76, 2026-10-14).
+            git fetch -q origin "$GITHUB_BASE_REF"
             git show "origin/$GITHUB_BASE_REF:docs/20-build-plan.md" > "$RUNNER_TEMP/base-plan.md"
             node scripts/verify-plan.mjs --branch "$GITHUB_HEAD_REF" --base "$RUNNER_TEMP/base-plan.md"
           else
