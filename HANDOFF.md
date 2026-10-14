@@ -141,10 +141,12 @@ branch. If there is no `fix/` or `plan/` work worth doing, say so to Rob and sto
 - **The shell runs as root until E11**, which needs the account model (S5).
 - **The release signing key (S2).** Images trust a test key made per build. Releases need a key
   Rob holds, and somewhere to keep it (an offline machine, a hardware key): his call, as is
-  whether a lost key can be replaced by an update signed with the old one.
+  whether a lost key can be replaced by an update signed with the old one. Drafted for his
+  answer: [ADR 0019](docs/adr/0019-release-signing-key.md).
 - **Open S11** (`morphd` v0 obeys the Manifest). S7 and S8 need it.
 - **The account model (S5)**: an appliance with no password, one owner with a password
-  (recommended), or several people. E11's first half waits on it.
+  (recommended), or several people. E11's first half waits on it. Drafted for his answer:
+  [ADR 0020](docs/adr/0020-account-model.md).
 - **Where releases are served from, and when an installed update reboots (S3).**
 - **The installer (E7):** the whole internal disk or alongside Windows (recommended: whole
   disk); `/persist` encrypted or not (recommended: plain for M1); the reference laptop must not
@@ -153,7 +155,8 @@ branch. If there is no `fix/` or `plan/` work worth doing, say so to Rob and sto
   on `/persist`, until `/persist` encryption is decided).
 - **The recovery partition (S4):** its size, and whether updates refresh it.
 - **Backups (P1):** the encryption and key model (recommended: Strata's store replicated, each
-  object encrypted with `age`; the machine holds only the public half). Its first PR is an ADR.
+  object encrypted with `age`; the machine holds only the public half). Its first PR is the ADR,
+  drafted for his answer: [ADR 0018](docs/adr/0018-backup-replica.md).
 - **Open E13** (the shell on every screen, and a portrait panel) once the E6 reports show it
   is needed.
 

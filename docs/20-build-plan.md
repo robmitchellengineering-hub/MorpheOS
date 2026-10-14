@@ -874,7 +874,8 @@ updater, since one it brought could check nothing.
 
 **Notes:** the images trust a test key made per build (`build.sh`, `UPDATE_KEY` to give a real
 one). A release key, and where it is kept, is Rob's: no image a person uses should trust a key
-that lives in CI. `morph-heal`, which rebuilds a slot from the running system, signs that copy
+that lives in CI. The custody, a backup key and the release numbering are drafted for him as
+[ADR 0019](adr/0019-release-signing-key.md) (Proposed). `morph-heal`, which rebuilds a slot from the running system, signs that copy
 with a key made for the one repair, so there is still no unsigned way to open a payload.
 
 ### S3 · Updates arrive by themselves · open · needs S2
@@ -1149,7 +1150,8 @@ Also: a recovery image whose own digest does not match is refused, and nothing i
 
 **What:** an ordinary account a person logs in as, a locked root, and admin actions only
 through `morphd` transactions with the `.rob` mark (A9, ADRs 0011 and 0012). Rob chooses the
-model first. Three are laid out below.
+model first. Three are laid out below, and drafted for his answer as
+[ADR 0020](adr/0020-account-model.md) (Proposed).
 
 **Done when:** Rob has decided the account model, and a VM scenario
 (`images/x86-qemu/test-accounts.sh`) logs in as the user with the model's credentials, typed on
@@ -1169,8 +1171,8 @@ byte-identical to before (a control taken before boot), and root's password is l
    - `/home/morph/Documents` exists on the data partition but belongs to no user.
    - The Manifest has `[[users]]` (`name`, `admin`, `recovery_key`), validated
      (`INV-ADMIN`, `INV-RECOVERY-KEY`, risk tier 4 for `/users`). **Nothing creates an
-     account from it**, and it is not in `unenforced_settings()`: an H5 gap to close here,
-     or list.
+     account from it**. `/users` is listed in `unenforced_settings()` (#67); it leaves the
+     list only when something creates the account from it.
 
 2. **Three models.**
    - **(1) One person, no password: an appliance.**
@@ -1377,9 +1379,9 @@ and validated, and nothing obeys it yet (AGENTS.md H5).
    - **Never prune beyond the policy, or the newest version.** `retention.rs` promises the
      newest version of every path is always kept. If the policy cannot free enough, warn; do
      not delete more.
-   - **`storage.min_free_percent` is unenforced and not in `unenforced_settings()`.** Nothing
-     reads it, and the H5 list omits it. Obey it here (through S11's `morphd`), or add it to
-     the list in the same PR.
+   - **`storage.min_free_percent` is unenforced.** Nothing reads it, and
+     `unenforced_settings()` lists it (#67). Obey it here (through S11's `morphd`) and take it
+     off the list in the same PR.
    - The boot history lives on the ESP, not `/persist`, so the verdict survives a full data
      partition. Keep it there.
 
@@ -2131,7 +2133,8 @@ continuously": the script, the key held off the machine, the later save, and the
 the disk are new.)
 
 **Notes:**
-1. **Decide the mechanism first: an ADR (the next free number is 0018), approved by Rob.** The
+1. **Decide the mechanism first: [ADR 0018](adr/0018-backup-replica.md), drafted and
+   Proposed, approved by Rob.** The
    options:
 
    | | Mechanism | For | Against |
@@ -2166,9 +2169,9 @@ the disk are new.)
    rename, so a pulled plug leaves no half object under a real name.
 4. **How to approach it.** (a) The ADR. (b) The format as a library, with unit tests: round trip,
    a wrong identity is refused, a flipped byte is refused, a second push writes only the new
-   objects. In the same PR, add `/storage/replicas` to `unenforced_settings()` in
-   `crates/morph-manifest/src/validate.rs`: it is parsed and validated and nothing reads it,
-   which is H5. (c) The CLI and the service, and test-backup.sh written to fail before them
+   objects. `/storage/replicas` is already in `unenforced_settings()`
+   (`crates/morph-manifest/src/validate.rs`, #67): it is parsed and validated and nothing reads
+   it (H5). It stays there until `morphd` writes `replica.toml` from it. (c) The CLI and the service, and test-backup.sh written to fail before them
    (AGENTS.md H3). (d) The images workflow step. Configuration lives in the store
    (`/persist/strata/replica.toml`: the disk label and the recipient) until S11's `morphd` writes
    it from `storage.replicas[].target`, which is already a disk label in
@@ -2200,7 +2203,9 @@ the disk are new.)
    - Strata watches with inotify, and `strata watch` takes several folders: add `/persist/network`
      beside `/home`. Never a folder that contains the store (Strata refuses that, and a test
      asserts it).
-7. **Size: L.** PRs: (1) the ADR and the `unenforced_settings` line; (2) the `replica` library
+7. **Size: L.** PRs: (1) the ADR, which is drafted as
+   [ADR 0018](adr/0018-backup-replica.md) (Proposed): Rob answers its questions and it is marked
+   Accepted; (2) the `replica` library
    and its tests; (3) the CLI and the service; (4) test-backup.sh and its workflow step. Each
    leaves `main` green.
 
