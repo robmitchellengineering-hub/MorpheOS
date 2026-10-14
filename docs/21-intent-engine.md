@@ -42,7 +42,7 @@ other than English.
    Resolution = Resolved(c) | Ambiguous(top 3) | NoMatch(reason)        never silent
              │
              ▼
-   disposition(spec, candidate, origin, planned risk)    pure, total, blind to the model's claims
+   disposition(catalogue, candidate, origin, planned risk)    pure, total, blind to the model's claims
         AutoRun │ Confirm │ NeedsPerson │ Refuse(why)
              │
              ▼
@@ -131,7 +131,7 @@ The rules, in order (the first that applies wins):
 4. T0 → **AutoRun**. T1 → **AutoRun** at or above `fuzzy_auto`, else **Confirm**. T2, T3, T4 → **Confirm**.
 
 Appendix A is a compiled, tested reference of exactly this, with the safety property asserted
-over the whole input space and seven deliberate sabotages that each make a test fail. **Start I1
+over the whole input space and nine deliberate sabotages that each make a test fail. **Start I1
 and I2 from it.** The thresholds (`fuzzy_auto`) are tuned on the dev split and never on the test
 split.
 
@@ -329,15 +329,21 @@ reusable.
 
 ## Appendix A · The reference: what may run alone
 
-Compiled and tested on 2026-10-14 in a scratch crate outside the workspace (`rustc 1.97`, edition
-2024, `clippy -D warnings` clean, and re-checked on 2026-10-14 under the repository's pinned Rust 1.99.0 from S9): five tests over **3,750 input combinations**, and **seven
-deliberate sabotages** (each rule removed in turn: untrusted check, planned risk, risk gate,
-guess auto-running, fuzzy threshold, `model_reachable`, duplicate ids) each made at least one test
-fail. This is a statement about that scratch run, not about anything in `crates/`. The real
-crate re-exports `morph_manifest::plan::Risk` instead of redefining it.
+Compiled and tested on 2026-10-14 in a scratch crate outside the workspace (`rustc 1.99.0`, the version S9
+pinned; edition 2024; `clippy -D warnings` and `rustfmt --check` clean): **six tests**, including one over
+**3,750 input combinations**, and **nine deliberate sabotages** that each made a test fail (the untrusted
+check, planned risk, the risk gate, a guess auto-running, the fuzzy threshold, `model_reachable`,
+duplicate ids, taking the spec from the wrong place, and not refusing an unknown intent).
+
+Reviewing it taught one thing worth keeping. A first version took the spec as an argument *beside* the
+candidate, so a caller could pass a lenient spec next to a candidate for a risky intent and lower its risk
+without anything noticing. `disposition` now takes the catalogue and looks the spec up itself, and refuses
+an intent the catalogue does not hold, so that mistake cannot be written. This is a statement about the
+scratch run, not about anything in `crates/`. The real crate re-exports `morph_manifest::plan::Risk`
+instead of redefining it.
 
 <details>
-<summary>Show the source (about 320 lines)</summary>
+<summary>Show the source (about 370 lines)</summary>
 
 ```rust
 //! A sketch of `morph-intent`'s safety core: what may run without asking.
@@ -502,18 +508,24 @@ impl Default for Policy {
     }
 }
 
-/// What may happen to a candidate. Pure, total, and **blind to the model's own claims**:
+/// What may happen to a candidate of `cat`. Pure, total, and **blind to the model's own claims**:
 /// the risk is the larger of the declared one and the one re-derived from the plan, the
 /// score only ever moves a deterministic match between `AutoRun` and `Confirm`, and a
 /// guess (embedding, model, remote) is never auto-run in v1.
 #[deny(clippy::wildcard_enum_match_arm)]
 pub fn disposition(
     policy: Policy,
-    spec: &IntentSpec,
+    cat: &Catalogue,
     cand: &Candidate,
     origin: Origin,
     planned_risk: Risk,
 ) -> Disposition {
+    // The spec is looked up here, never passed in beside the candidate: a caller that could
+    // hand over a lenient spec next to a candidate for a different, risky intent would be able
+    // to lower the risk by mistake. An intent this catalogue does not hold is refused.
+    let Some(spec) = cat.get(cand.intent()) else {
+        return Disposition::Refuse("this catalogue holds no such intent");
+    };
     let risk = spec.risk.max(planned_risk);
 
     // Not even a proposal: content-borne text must not be able to reach a risky intent
@@ -566,7 +578,9 @@ mod tests {
                             for score in SCORES {
                                 let s = spec(risk, reach);
                                 let c = Candidate::new(&s, tier, score);
-                                let d = disposition(Policy::default(), &s, &c, origin, planned);
+                                let mut cat = Catalogue::default();
+                                cat.register(s.clone()).unwrap();
+                                let d = disposition(Policy::default(), &cat, &c, origin, planned);
                                 f(&s, &c, origin, planned, d);
                             }
                         }
@@ -608,28 +622,68 @@ mod tests {
         });
     }
 
+    fn one(spec: &IntentSpec) -> Catalogue {
+        let mut cat = Catalogue::default();
+        cat.register(spec.clone()).unwrap();
+        cat
+    }
+
     #[test]
     fn the_plan_can_raise_the_risk_but_nothing_can_lower_it() {
+        let p = Policy::default();
         let s = spec(Risk::Cosmetic, true);
         let c = Candidate::new(&s, Tier::Template, 1.0);
-        let calm = disposition(Policy::default(), &s, &c, Origin::Typed, Risk::Cosmetic);
-        let raised = disposition(
-            Policy::default(),
-            &s,
-            &c,
-            Origin::Typed,
-            Risk::DataAffecting,
-        );
+        let calm = disposition(p, &one(&s), &c, Origin::Typed, Risk::Cosmetic);
+        let raised = disposition(p, &one(&s), &c, Origin::Typed, Risk::DataAffecting);
         assert_eq!(calm, Disposition::AutoRun);
         assert_eq!(raised, Disposition::NeedsPerson);
         let s2 = spec(Risk::DataAffecting, true);
         let c2 = Candidate::new(&s2, Tier::Template, 1.0);
-        let lowered = disposition(Policy::default(), &s2, &c2, Origin::Typed, Risk::Cosmetic);
+        let lowered = disposition(p, &one(&s2), &c2, Origin::Typed, Risk::Cosmetic);
         assert_eq!(
             lowered,
             Disposition::NeedsPerson,
             "a lower planned risk must not win"
         );
+    }
+
+    /// The hole this closes: if the caller could pass a spec beside a candidate, a lenient spec
+    /// next to a candidate for a risky intent would lower its risk, and nothing would notice.
+    #[test]
+    fn a_candidate_is_judged_by_its_own_intent_never_by_a_neighbour() {
+        let p = Policy::default();
+        let calm = IntentSpec::new(
+            "calm.thing",
+            Risk::Cosmetic,
+            true,
+            &["a", "b", "c", "d", "e", "f"],
+        );
+        let risky = IntentSpec::new(
+            "risky.thing",
+            Risk::DataAffecting,
+            true,
+            &["a", "b", "c", "d", "e", "f"],
+        );
+        let mut cat = Catalogue::default();
+        cat.register(calm.clone()).unwrap();
+        cat.register(risky.clone()).unwrap();
+
+        let c_risky = Candidate::new(&risky, Tier::Template, 1.0);
+        assert_eq!(
+            disposition(p, &cat, &c_risky, Origin::Typed, Risk::Cosmetic),
+            Disposition::NeedsPerson
+        );
+        let c_calm = Candidate::new(&calm, Tier::Template, 1.0);
+        assert_eq!(
+            disposition(p, &cat, &c_calm, Origin::Typed, Risk::Cosmetic),
+            Disposition::AutoRun
+        );
+
+        // A candidate built from a real spec elsewhere, offered to a catalogue that does not hold
+        // that intent, is refused rather than waved through.
+        let elsewhere = Catalogue::default();
+        let d = disposition(p, &elsewhere, &c_calm, Origin::Typed, Risk::Cosmetic);
+        assert!(matches!(d, Disposition::Refuse(_)));
     }
 
     #[test]
