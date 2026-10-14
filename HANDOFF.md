@@ -71,12 +71,12 @@ From a DSH shell in PowerShell, run any of them as
 
 ## Open pull requests at handover
 
-#42 to #52 (E3, E10, the handover plan, S10, E12, E4's browser and popups, E5's network and
-Wi-Fi picker, the laptop drivers, the stick guide) were merged on 2026-10-13 and 14, as merge commits so the stack merged without conflicts. Open:
+#42 to #53 (E3, E10, the handover plan, S10, E12, E4's browser and popups, E5's network and
+Wi-Fi picker, the laptop drivers, the stick guide, the Rust pin) were merged on 2026-10-13 and 14, as merge commits so the stack merged without conflicts. Open:
 
 | # | Branch | What |
 |---|---|---|
-| (E9) | `feat/e9-move-fullscreen-switch` | E9: move by the edge or with Super, Alt+Tab, fullscreen (Super+F, or the client's F11) |
+| #54 | `feat/e9-move-fullscreen-switch` | E9: move by the edge or with Super, Alt+Tab, fullscreen (Super+F, or the client's F11) |
 
 If CI goes red on it, it is yours to fix, on that branch. **When a pull request's base is
 another open branch** (a stack), and the base merges: if it was squash-merged, the next branch
@@ -93,9 +93,10 @@ branch that has a pull request open.
    Make that check exist and fail *before* writing the code that makes it pass. If you cannot
    make it fail, it does not test anything (AGENTS.md H3, H9).
 4. Implement the smallest change that makes it pass.
-5. `rustup update stable && bash scripts/check.sh`. It must end with `all checks passed`. The
-   update matters: CI uses the newest stable, and an older local clippy passes code CI
-   rejects (until doc 20's S9 pins the version).
+5. `bash scripts/check.sh`. It must end with `all checks passed`. The Rust version is pinned
+   in `rust-toolchain.toml` and CI installs exactly that one (`scripts/rust-toolchain.sh`,
+   doc 20 S9), so your clippy is CI's clippy. Do not `rustup update` your way past a
+   warning; a version bump is its own pull request.
 6. Push, open a pull request, and read **every** check by name, including the `images`
    workflow (AGENTS.md H6, H10). If a VM job times out, download the serial-log artifact and
    read it before forming any theory (H11).
@@ -236,7 +237,10 @@ One line per piece of work: date, who, what, what's next.
   writing the stick from Windows (balenaEtcher), each machine's boot menu and Secure Boot
   switch, and, first, the BitLocker recovery key, since turning Secure Boot off on an
   encrypted Windows laptop makes Windows ask for it.
-
+- 2026-10-14 · Claude Code · S9 (`feat/s9-pin-rust`): Rust pinned to 1.99.0 in
+  `rust-toolchain.toml`; `scripts/rust-toolchain.sh` installs exactly that, with clippy and
+  rustfmt, and fails if any other `rustc` would run. Every workflow and `setup-linux.sh` use
+  it; `dtolnay/rust-toolchain@stable` is gone.
 - 2026-10-14 · Claude Code · E9 (`feat/e9-move-fullscreen-switch`): windows move by their
   edge, or anywhere with Super held, or by their own title bar (a client's `move` request);
   the window used comes to the front; Alt+Tab switches; Super+F, or the client's own
