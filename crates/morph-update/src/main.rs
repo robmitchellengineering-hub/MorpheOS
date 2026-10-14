@@ -15,7 +15,9 @@ usage: morph-update [options] <command>
 
 commands:
   keygen  --key FILE           make a signing key pair: FILE (secret, 0600) and FILE.pub
-  seal    --payload DIR        compute BLAKE3SUMS for a payload directory (the builder's half)
+  seal    --payload DIR --release N
+                               compute BLAKE3SUMS for a payload directory (the builder's half),
+                               saying it is release N
   sign    --payload DIR --key FILE
                                sign a sealed payload: write BLAKE3SUMS.sig
   check   --payload DIR        verify a payload's signature and its own BLAKE3SUMS, write nothing
@@ -27,6 +29,8 @@ options:
                                *.pub files, or one file (default /usr/share/morpheos/update-keys)
   --root PATH                  the slot's root, a device or a file
                                (default /dev/disk/by-partlabel/root-<slot>)
+  --release-file PATH          which release is running; nothing older is installed
+                               (default /usr/lib/morpheos/release)
 
 backend options (default: detected):
   --backend pi|sdboot
@@ -41,6 +45,8 @@ struct Opts {
     trust: PathBuf,
     slot: Option<Slot>,
     root: Option<PathBuf>,
+    release: Option<u64>,
+    release_file: PathBuf,
     backend: BackendOptions,
     rest: Vec<String>,
 }
@@ -52,6 +58,8 @@ fn parse(args: Vec<String>) -> Option<Opts> {
         trust: PathBuf::from(morph_update::TRUSTED_KEYS_DIR),
         slot: None,
         root: None,
+        release: None,
+        release_file: PathBuf::from(morph_update::RELEASE_FILE),
         backend: BackendOptions::default(),
         rest: Vec::new(),
     };
@@ -62,6 +70,8 @@ fn parse(args: Vec<String>) -> Option<Opts> {
             "--key" => o.key = Some(it.next()?.into()),
             "--trust" => o.trust = it.next()?.into(),
             "--root" => o.root = Some(it.next()?.into()),
+            "--release" => o.release = Some(it.next()?.parse().ok()?),
+            "--release-file" => o.release_file = it.next()?.into(),
             "--slot" => o.slot = Slot::parse(&it.next()?),
             "--backend" => o.backend.backend = Some(it.next()?),
             "--autoboot" => o.backend.autoboot = it.next()?.into(),
@@ -118,7 +128,8 @@ fn run(o: &Opts) -> Result<(), String> {
 
     match rest.as_slice() {
         ["seal"] => {
-            let sizes = morph_update::seal(dir).map_err(|e| e.to_string())?;
+            let release = o.release.ok_or("seal needs --release N")?;
+            let sizes = morph_update::seal(dir, release).map_err(|e| e.to_string())?;
             println!("{}", serde_json::to_string(&sizes).unwrap());
             eprintln!("sealed {}: {} file(s)", dir.display(), sizes.len());
             Ok(())
@@ -133,11 +144,13 @@ fn run(o: &Opts) -> Result<(), String> {
         }
         ["check"] => {
             let mut payload = open()?;
+            let release = payload.release();
             let sizes = payload.check().map_err(|e| e.to_string())?;
             println!(
                 "{}",
                 serde_json::json!({
                     "payload": dir.display().to_string(),
+                    "release": release,
                     "files": sizes,
                     "root_image": payload.digest_of(morph_update::ROOT_IMAGE),
                 })
@@ -154,9 +167,12 @@ fn run(o: &Opts) -> Result<(), String> {
             let root = o.root.clone().unwrap_or_else(|| {
                 PathBuf::from(format!("/dev/disk/by-partlabel/root-{}", target.as_str()))
             });
+            let running_release =
+                morph_update::read_release(&o.release_file).map_err(|e| e.to_string())?;
             let layout = Layout {
                 esp: o.backend.esp.clone(),
                 root_device: root,
+                running_release,
             };
             let outcome =
                 install(bc.as_ref(), &mut payload, &layout, o.slot).map_err(|e| e.to_string())?;

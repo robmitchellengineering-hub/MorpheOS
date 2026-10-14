@@ -20,8 +20,9 @@ The wedge, by hand
   morph-boot trial b                boot slot b once; commit it if it is healthy
 
 To try an update you need a second USB stick built by
-`images/x86-qemu/build-payload.sh` (it carries `morph-update` and a sealed
-payload). Plug it in and the tool finds it by its label:
+`images/x86-qemu/build-payload.sh` (a signed payload, from the same build as
+this stick). This machine installs it with its own `morph-update`, which refuses
+an unsigned payload, one signed by another key, and an older release:
 
   morph-update --esp /efi --root <the inactive slot's device> \
       --payload /mnt/payload install
