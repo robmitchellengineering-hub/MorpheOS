@@ -264,6 +264,9 @@ One line per piece of work: date, who, what, what's next.
   the shell is `Type=notify` and tells systemd it is ready after its first frame is on the
   display; before, a hung compositor was a running unit and the trial would have committed
   (AGENTS.md H19). Running as an ordinary user still waits on S5.
+- 2026-10-14 · Claude Code · S1 (`plan/s1-adr-systemd-pid1`): A1 recorded as ADR 0017, systemd
+  is PID 1 for v1 and `morphd` a service under it; doc 03 links it. 0015 and 0016 are left for
+  the intent-engine and diagnosis records (docs 21, 22).
 - 2026-10-14 · Claude Code · Planned the intent engine ([doc 21](docs/21-intent-engine.md), I1–I10). The
   shell's intent bar is a search field; this designs what turns words into a safe action. Compiled and
   tested the safety core in a scratch crate (3,750 input combinations; nine sabotages each caught; a review then closed a hole where the
