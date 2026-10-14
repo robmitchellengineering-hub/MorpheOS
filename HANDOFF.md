@@ -359,3 +359,9 @@ One line per piece of work: date, who, what, what's next.
   of `ROOT_MB`. That check failed its first run: slot A with Firefox is 1134 MiB of 1200 (94%,
   Measured), so `ROOT_MB` is now 1600 (71%) and the stick image about 3.7 GiB. Next: E5, the
   bar and the picker from it.
+- 2026-10-14 · Claude Code · `fix/payload-rollback`: a correctly signed OLD payload installed,
+  because nothing signed said which release it was. The manifest now carries a required
+  `release <n>` line under the signature; images say theirs in `/usr/lib/morpheos/release`;
+  `install` refuses older and allows equal (`morph-heal` reinstalls the running release). S3's
+  first step, done as a fix because it closes a hole in S2. Release numbering for real releases
+  (who picks the numbers, with the release key) is Rob's, with S2's key custody.

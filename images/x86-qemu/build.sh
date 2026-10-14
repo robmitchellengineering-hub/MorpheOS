@@ -178,6 +178,9 @@ fi
 # build-payload.sh signs with the same one. ⚠️ A real release key is Rob's to hold: never
 # commit one, and never let an image a person uses trust a key that lives in CI.
 UPDATE_KEY=${UPDATE_KEY:-$WORK/update-test.key}
+# The release number this image is (doc 20, S3). Payloads say theirs; nothing older installs.
+RELEASE=${RELEASE:-1}
+case "$RELEASE" in ''|*[!0-9]*) echo "RELEASE must be a number, not '$RELEASE'" >&2; exit 2 ;; esac
 [ -x "$MORPH_UPDATE" ] || { echo "missing $MORPH_UPDATE: run cargo build --release -p morph-update" >&2; exit 1; }
 if [ ! -f "$UPDATE_KEY.pub" ]; then
     rm -f "$UPDATE_KEY"
@@ -222,6 +225,10 @@ make_root() {
     # medium's own binary could check nothing, so the machine verifies with these (S2).
     install -m 0755 "$MORPH_UPDATE" "$dir/usr/bin/morph-update"
     install -D -m 0644 "$UPDATE_KEY.pub" "$dir/usr/share/morpheos/update-keys/build.pub"
+    # Which release this image is: morph-update refuses a payload older than it, however
+    # well signed, and morph-heal reinstalls exactly it (doc 20, S3).
+    install -D -m 0644 /dev/null "$dir/usr/lib/morpheos/release"
+    echo "$RELEASE" > "$dir/usr/lib/morpheos/release"
     install -m 0755 "$STRATA" "$dir/usr/bin/strata"
     echo "morpheos-$slot" > "$dir/etc/hostname"
     : > "$dir/etc/machine-id"
