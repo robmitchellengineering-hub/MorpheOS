@@ -149,7 +149,10 @@ e2fsck -f -n "$P/root.img" >/dev/null 2>&1 || {
 }
 echo "payload root image: $BEFORE -> $AFTER bytes ($((AFTER * 100 / BEFORE))%)"
 
-"$MORPH_UPDATE" --payload "$P" seal >/dev/null
+# The payload says which release it is, under the signature (doc 20, S3): the machine refuses
+# one older than the release it runs. Newer than build.sh's default, as a real update is.
+PAYLOAD_RELEASE=${PAYLOAD_RELEASE:-2}
+"$MORPH_UPDATE" --payload "$P" --release "$PAYLOAD_RELEASE" seal >/dev/null
 # Signed with the key the image trusts (build.sh made it, or was given it): an unsigned
 # payload is refused by the machine before anything is written (doc 20, S2).
 UPDATE_KEY=${UPDATE_KEY:-$WORK/update-test.key}

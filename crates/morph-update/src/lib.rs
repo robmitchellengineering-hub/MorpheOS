@@ -63,6 +63,29 @@ pub const SIGNATURE: &str = "BLAKE3SUMS.sig";
 /// Where an image keeps the public keys it accepts updates from, one `*.pub` file each.
 pub const TRUSTED_KEYS_DIR: &str = "/usr/share/morpheos/update-keys";
 const REQUIRED: [&str; 3] = [ROOT_IMAGE, KERNEL, INITRD];
+/// Where an image says which release it is: one decimal number, written by the image build.
+/// A payload older than it is refused, so an old release with a hole the new one fixed cannot
+/// be put back on the machine, however correctly it was signed.
+pub const RELEASE_FILE: &str = "/usr/lib/morpheos/release";
+
+/// The release the running system says it is, from `path` ([`RELEASE_FILE`]). An image that
+/// does not say cannot tell an old payload from a new one, so this is an error, not 0.
+pub fn read_release(path: &Path) -> Result<u64> {
+    let text = std::fs::read_to_string(path).map_err(|e| {
+        Error::Policy(format!(
+            "{}: {e}; the running system does not say which release it is, so an older \
+             payload could not be told from a newer one",
+            path.display()
+        ))
+    })?;
+    text.trim().parse().map_err(|_| {
+        Error::Policy(format!(
+            "{} says '{}', not a release number",
+            path.display(),
+            text.trim()
+        ))
+    })
+}
 
 /// Marker left in a slot's boot directory while an update to it is incomplete.
 pub const INCOMPLETE: &str = ".morph-incomplete";
@@ -280,6 +303,8 @@ pub fn sign(dir: &Path, secret_hex: &str) -> Result<()> {
 #[derive(Debug)]
 pub struct Payload {
     dir: PathBuf,
+    /// The release it says it is (its manifest's `release <n>` line, signed with the rest).
+    release: u64,
     /// name -> BLAKE3 hex digest, as declared.
     digests: BTreeMap<String, String>,
     /// name -> size in bytes, measured when the manifest was checked.
@@ -321,9 +346,28 @@ impl Payload {
         let text = String::from_utf8(bytes)
             .map_err(|_| Error::BadPayload(format!("{} is not text", manifest.display())))?;
         let mut digests = BTreeMap::new();
+        let mut release = None;
         for (n, line) in text.lines().enumerate() {
             let line = line.trim();
             if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            // "release <n>": which release this is. Required, once; it is under the same
+            // signature as the digests, so it cannot be changed without the check failing.
+            if let Some(number) = line.strip_prefix("release ") {
+                let number = number.trim().parse::<u64>().map_err(|_| {
+                    Error::BadPayload(format!(
+                        "{}:{}: '{line}' is not 'release <number>'",
+                        manifest.display(),
+                        n + 1
+                    ))
+                })?;
+                if release.replace(number).is_some() {
+                    return Err(Error::BadPayload(format!(
+                        "{}: more than one release line",
+                        manifest.display()
+                    )));
+                }
                 continue;
             }
             // "<hex>  <name>" — the format coreutils writes, so an operator can check
@@ -353,6 +397,12 @@ impl Payload {
                 )));
             }
         }
+        let release = release.ok_or_else(|| {
+            Error::BadPayload(format!(
+                "{}: no 'release <number>' line, so an old payload could not be told from a new one",
+                manifest.display()
+            ))
+        })?;
         for want in REQUIRED {
             if !digests.contains_key(want) {
                 return Err(Error::BadPayload(format!(
@@ -369,6 +419,7 @@ impl Payload {
         }
         Ok(Payload {
             dir: dir.to_path_buf(),
+            release,
             digests,
             sizes: BTreeMap::new(),
         })
@@ -404,6 +455,11 @@ impl Payload {
         &self.dir
     }
 
+    /// The release this payload says it is.
+    pub fn release(&self) -> u64 {
+        self.release
+    }
+
     pub fn size_of(&self, name: &str) -> Option<u64> {
         self.sizes.get(name).copied()
     }
@@ -422,9 +478,9 @@ impl Payload {
 /// **The tests deliberately do not use this to build their fixtures.** They compute the
 /// digests independently, so a mistake shared by `seal` and `check` cannot cancel itself
 /// out and pass — the failure mode of testing a verifier with its own signer.
-pub fn seal(dir: &Path) -> Result<BTreeMap<String, u64>> {
+pub fn seal(dir: &Path, release: u64) -> Result<BTreeMap<String, u64>> {
     let mut sizes = BTreeMap::new();
-    let mut text = String::new();
+    let mut text = format!("release {release}\n");
     for name in REQUIRED {
         let path = dir.join(name);
         if !readable(&path) {
@@ -449,6 +505,8 @@ pub struct Layout {
     pub esp: PathBuf,
     /// The inactive slot's root, as a block device or (in tests) a plain file.
     pub root_device: PathBuf,
+    /// The release the running system is ([`read_release`]): nothing older is installed.
+    pub running_release: u64,
 }
 
 impl Layout {
@@ -466,6 +524,7 @@ impl Layout {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Outcome {
     pub slot: Slot,
+    pub release: u64,
     pub root_bytes: u64,
     pub root_digest: String,
     pub kernel_bytes: u64,
@@ -531,6 +590,17 @@ pub fn install(
         )));
     }
 
+    // An older release is refused before the slot is touched. The same release is allowed:
+    // `morph-heal` rebuilds the spare from the running system, which is that release.
+    if payload.release() < layout.running_release {
+        return Err(Error::Refused(format!(
+            "the payload is release {}, older than the running release {}: an old release \
+             may carry a hole a newer one fixed, so it is not put back",
+            payload.release(),
+            layout.running_release
+        )));
+    }
+
     let marker = layout.marker(target);
     if marker.exists() {
         return Err(Error::Incomplete(format!(
@@ -591,6 +661,7 @@ pub fn install(
 
     Ok(Outcome {
         slot: target,
+        release: payload.release(),
         root_bytes,
         root_digest: root_got,
         kernel_bytes: payload.size_of(KERNEL).unwrap_or(0),

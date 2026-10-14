@@ -23,6 +23,7 @@ options:
   --history PATH             boot history (default <esp>/morph-boot/history.jsonl)
   --report PATH              where repairs are recorded (default <esp>/morph-boot/repairs.json)
   --stage PATH               scratch space for the image being assembled (default /run/morph-heal)
+  --release-file PATH        which release is running (default /usr/lib/morpheos/release)
   --root-running PATH        the running slot's root (default /dev/disk/by-partlabel/root-<slot>)
   --root-spare PATH          the failed slot's root (default /dev/disk/by-partlabel/root-<slot>)
 
@@ -37,6 +38,7 @@ struct Opts {
     history: Option<PathBuf>,
     report: Option<PathBuf>,
     stage: Option<PathBuf>,
+    release_file: Option<PathBuf>,
     root_running: Option<PathBuf>,
     root_spare: Option<PathBuf>,
     backend: BackendOptions,
@@ -51,6 +53,7 @@ impl Default for Opts {
             history: None,
             report: None,
             stage: None,
+            release_file: None,
             root_running: None,
             root_spare: None,
             backend: BackendOptions::default(),
@@ -73,6 +76,7 @@ fn parse(args: Vec<String>) -> Option<Opts> {
             "--history" => o.history = Some(it.next()?.into()),
             "--report" => o.report = Some(it.next()?.into()),
             "--stage" => o.stage = Some(it.next()?.into()),
+            "--release-file" => o.release_file = Some(it.next()?.into()),
             "--root-running" => o.root_running = Some(it.next()?.into()),
             "--root-spare" => o.root_spare = Some(it.next()?.into()),
             "--dry-run" => o.dry_run = true,
@@ -97,6 +101,9 @@ fn run(o: &Opts) -> Result<(), String> {
     }
     if let Some(r) = &o.report {
         heal.report = r.clone();
+    }
+    if let Some(r) = &o.release_file {
+        heal.release_file = r.clone();
     }
     if let Some(s) = &o.stage {
         heal.stage = s.clone();

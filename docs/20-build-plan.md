@@ -888,6 +888,13 @@ read off the disk after the VM stops, and from the server's request log:
   no marker and no `.morph-incomplete`, and the server log shows that the files *were*
   downloaded, so the refusal came from the check and not from a failed fetch.
 
+**Progress:** step 3.1 is done (`fix/payload-rollback`): the signed manifest carries a
+required `release <n>` line, every image says its release in `/usr/lib/morpheos/release`
+(`RELEASE` in `build.sh`, default 1; payloads default to 2), and `install` refuses an older
+release before anything is written and allows an equal one (`morph-heal` seals at the running
+release). `tests/install.rs` covers older, equal, newer, a missing, doubled or malformed release
+line, and a missing release file; removing the check fails the older-release test.
+
 **Notes:**
 
 1. **Files.**
