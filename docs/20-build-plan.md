@@ -1476,8 +1476,8 @@ its own rather than a part of S8.
    - `crates/strata`: `strata prune` reads a policy file that `morphd` writes
      (`/persist/morph/strata-retention.json`) when no flags are given, and a new
      `strata policy` prints the policy in force.
-   - `crates/morph-manifest/src/validate.rs`: remove `/storage/retention` from
-     `unenforced_settings()`. Its test (and the `W-UNENFORCED` count) changes with it.
+   - `crates/morph-manifest/src/validate.rs`: remove `/storage/retention` and `/machine/name`
+     from `unenforced_settings()`. Its test (and the `W-UNENFORCED` count) changes with it.
    - `images/common/overlay`: `morphd.service` (`Type=oneshot`, `RemainAfterExit=yes`,
      `RequiresMountsFor=/persist`, `Before=strata.service`).
    - `build.sh`: installs `morphd`, and seeds generation 1 into `DATADIR/morph/` with the host's
