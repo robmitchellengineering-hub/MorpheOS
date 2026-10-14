@@ -270,3 +270,8 @@ One line per piece of work: date, who, what, what's next.
   `sign` are the builder's half. Every image carries the updater and the key, and the test
   driver installs with the image's own updater (a medium's could check nothing). Images trust
   a per-build test key; the release key and its custody are Rob's (decisions above).
+- 2026-10-14 · Claude Code · Picking up S8 found it blocked: nothing on the machine reads the
+  Manifest (H5), so there is no Manifest-managed setting to corrupt, and ADR 0009 forbids H2
+  before the transactional apply exists. Proposed S11 (`plan/s11-manifest-obeyed`): `morphd` v0
+  applies `machine.name` and `storage.retention` through `morph-transaction`. It unblocks S8
+  and S7's pruning. Rob opens it or not; meanwhile S2 (signed updates, with a test key).
