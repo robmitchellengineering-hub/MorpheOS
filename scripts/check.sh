@@ -30,6 +30,13 @@ EOF
 fi
 
 step() { printf '\n== %s\n' "$*"; }
+
+# The docs and plan checks are Node. Ubuntu 24.04's apt gives 18; nothing here needs newer.
+node_major=$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)
+if [ "$node_major" -lt 18 ]; then
+    echo "check.sh: Node 18 or newer is needed (found: $(node --version 2>/dev/null || echo none)); run bash scripts/setup-linux.sh" >&2
+    exit 2
+fi
 trap 'printf "\nFAILED at: %s\n" "${BASH_COMMAND}" >&2' ERR
 
 step "format";   cargo fmt --all --check
@@ -58,8 +65,14 @@ if [ "$branch" = HEAD ]; then
     echo "detached HEAD: switch to your branch (git switch <branch>) so the branch checks can run" >&2
     exit 1
 fi
-git show origin/main:docs/20-build-plan.md > "${TMPDIR:-/tmp}/base-plan.md"
-node scripts/verify-plan.mjs --branch "$branch" --base "${TMPDIR:-/tmp}/base-plan.md"
+if [ "$branch" = main ]; then
+    # Nothing to judge a branch by: the plan's own rules only, as CI does on main. (A fresh
+    # clone is on main, and HANDOFF.md's first step is this script, so it must pass here.)
+    node scripts/verify-plan.mjs
+else
+    git show origin/main:docs/20-build-plan.md > "${TMPDIR:-/tmp}/base-plan.md"
+    node scripts/verify-plan.mjs --branch "$branch" --base "${TMPDIR:-/tmp}/base-plan.md"
+fi
 step "pull request carries its log; scenarios are wired"
 bash scripts/verify-pr.sh --self-test
 if [ "$branch" = main ]; then

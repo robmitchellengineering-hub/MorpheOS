@@ -77,7 +77,8 @@ From a DSH shell in PowerShell, run any of them as
 ## Open pull requests
 
 **Look at GitHub, not at a table here:** the repository's *Pull requests* tab (or
-`gh pr list`) is the only list that is never out of date. Before you start, read every open
+`gh pr list`; `setup-linux.sh` installs `gh`, and `gh auth login` needs the GitHub login Rob
+gives you) is the only list that is never out of date. Before you start, read every open
 pull request's title. **If an open `plan/` pull request changes the rules** (this file,
 AGENTS.md, doc 20 or `scripts/`), ask Rob to merge it first, or base your branch on it and say
 so in your pull request; otherwise you work to rules that are about to change.
@@ -90,12 +91,15 @@ branch that has a pull request open.
 
 ## How to work (every task, every time)
 
-1. `git fetch origin && git switch -c <type>/<slug> origin/main`. Never commit to `main`.
-2. Run `node scripts/task.mjs --next`: the open tasks that can start now (their `needs` done,
-   their milestone current). Take the one the milestone's **Order of work** in
-   [doc 20](docs/20-build-plan.md) puts first, and read its card: `node scripts/task.mjs <ID>`
-   prints its recipe, whether its needs are done, the hazards it cites in full, which paths it
-   names exist, and whether it waits on a decision of Rob's. Put its ID in the branch name (`feat/e2-classic-windows`). One task per branch.
+1. Run `node scripts/task.mjs --next`: the open tasks that can start now (their `needs` done,
+   their milestone current; ⛔ marks one waiting on Rob). Take the one the milestone's **Order
+   of work** in [doc 20](docs/20-build-plan.md) puts first, and read its card:
+   `node scripts/task.mjs <ID>` prints its recipe, whether its needs are done, the hazards it
+   cites in full, which paths it names exist, and what in it waits on Rob. If nothing is free,
+   see "While you wait" below.
+2. `git fetch origin && git switch -c feat/<id>-<slug> origin/main` (`fix/<slug>` or
+   `plan/<slug>` for those). One task per branch, and its ID in the name
+   (`feat/e2-classic-windows`). Never commit to `main`.
 3. **Write the check first.** Every task's "Done when" names something a machine verifies.
    Make that check exist and fail *before* writing the code that makes it pass. If you cannot
    make it fail, it does not test anything (AGENTS.md H3, H9).
@@ -119,57 +123,53 @@ evidence; rename a required CI job without saying so in the PR (H10); edit an ac
 **A new idea** goes into doc 20 as a `proposed` task in a `plan/` pull request. Don't build it
 until Rob opens it.
 
+**A test that fails once and then passes is a bug, not luck** (H13, H14: timing). Rerun it
+once, to see whether it repeats. Either way, paste the failing output into your log file and
+fix it on a `fix/` branch. If the fix is not yours to make now, add a `proposed` task for it.
+Never rerun until green and say nothing: that is how a real race is hidden. (Example: #73.)
+
 **When stuck for more than two attempts:** stop. Write what you tried and what you saw under
 **Open questions** below, in a `plan/` pull request (with its log file), and ask Rob. A clear
 question beats a third guess.
 
 ## Decisions waiting for Rob now
 
-Each item names the task that waits on it; the task's **Notes** in doc 20 lay out the options
-and a recommendation. Ask the one that blocks your next task, once.
+**`node scripts/task.mjs --rob` prints them**, from doc 20's three Rob fields (`**Waiting on
+Rob:**`, `**Ask Rob to open:**`, `**Rob decides before <step>:**`; doc 20, "How this doc
+works"). That is the only list: this file does not keep a copy, so it cannot go stale. Each
+task's **Notes** lay out the options and a recommendation, and three are drafted as Proposed
+ADRs for his answer: [0018](docs/adr/0018-backup-replica.md) (backups, P1),
+[0019](docs/adr/0019-release-signing-key.md) (the release key, S3) and
+[0020](docs/adr/0020-account-model.md) (accounts, S5).
 
-**While you wait** you may do `fix/` work (a bug in something built), `plan/` work (check a
-`verify:` fact and correct its note, make a check stricter, correct a stale line), and nothing
-else: **do not start a task** that `node scripts/task.mjs --next` does not list, and do not
-start one it lists with a warning that it waits on Rob. `verify-plan.mjs` refuses such a
-branch. If there is no `fix/` or `plan/` work worth doing, say so to Rob and stop.
+### While you wait
 
-- **The reference laptop.** Candidates: the Windows laptop at home, the Legion Go, the 2015
-  Mac at work. The E12 report from one boot on each decides it (E6).
-- **`plain` boots into the shell at E4, not E10.** Until the browser lands, the root console
-  serves a person on the laptop better than an empty shell (doc 20, E10's notes).
-- **The shell runs as root until E11**, which needs the account model (S5).
-- **The release signing key (S2).** Images trust a test key made per build. Releases need a key
-  Rob holds, and somewhere to keep it (an offline machine, a hardware key): his call, as is
-  whether a lost key can be replaced by an update signed with the old one. Drafted for his
-  answer: [ADR 0019](docs/adr/0019-release-signing-key.md).
-- **Open S11** (`morphd` v0 obeys the Manifest). S7 and S8 need it.
-- **The account model (S5)**: an appliance with no password, one owner with a password
-  (recommended), or several people. E11's first half waits on it. Drafted for his answer:
-  [ADR 0020](docs/adr/0020-account-model.md).
-- **Where releases are served from, and when an installed update reboots (S3).**
-- **The installer (E7):** the whole internal disk or alongside Windows (recommended: whole
-  disk); `/persist` encrypted or not (recommended: plain for M1); the reference laptop must not
-  be `win`, the machine the builder works on.
-- **Where saved Wi-Fi passwords live (E5)** (recommended: as now, in NetworkManager's keyfiles
-  on `/persist`, until `/persist` encryption is decided).
-- **The recovery partition (S4):** its size, and whether updates refresh it.
-- **Backups (P1):** the encryption and key model (recommended: Strata's store replicated, each
-  object encrypted with `age`; the machine holds only the public half). Its first PR is the ADR,
-  drafted for his answer: [ADR 0018](docs/adr/0018-backup-replica.md).
-- **Open E13** (the shell on every screen, and a portrait panel) once the E6 reports show it
-  is needed.
+This is the one place that says what to do when nothing you may start is free
+(`node scripts/task.mjs --next` ends with "Nothing you may start is free").
 
-- **The intent engine plan ([doc 21](docs/21-intent-engine.md), tasks I1–I10 in doc 20).** Seven decisions
-  (D1–D7, section 11): when to open I1–I3 (recommended: now, as the lane for the days you wait on Rob's
-  hardware reports), the evaluation bar's numbers, whether Morpheus may generate the practice sentences, the
-  model-licence policy, the template syntax, vendor-registered intents, and English only. Until Rob opens
-  them, I1–I10 are `proposed`: do not build them.
-- **The diagnosis plan ([doc 22](docs/22-diagnosis.md), tasks F1–F10 in doc 20, stacked on doc 21).** Six
-  decisions (D1–D6, section 12). The one worth acting on soon is **F1** (D1): when a trial boot fails, the
-  history does not say why, because the failed units go only to the console log. F1 records them, serves
-  the wedge directly, is small, and is provable in the existing VM suite. Until Rob opens them, F1–F10 are
-  `proposed`: do not build them.
+1. **Ask Rob, once, the question that blocks the next task** in the milestone's Order of work.
+   - **How:** Rob is the person who runs you. Ask him in the session, in one message: the
+     task, the question, the options from its Notes, and your recommendation. If he is not
+     there, put the same text under **For Rob:** in your next pull request's description
+     (the PR template has the heading).
+   - **Record that you asked:** append ` Asked: <date>, <in the session | in #<PR>>.` to
+     that field's line in doc 20, in a `plan/` pull request. The next session then sees it
+     was asked and does not ask again.
+2. **When he answers,** the branch that acts on it records his words in its own log file,
+   one line per task: `Rob on <ID>: <what he said, and when>`. It then removes or rewrites
+   the field. `verify-plan.mjs` refuses, on any branch, a task opened, marked `parallel`, or
+   freed from **Waiting on Rob:** without that line. So a pull request cannot do Rob's part
+   for him.
+3. **Meanwhile, only `fix/` and `plan/` work.**
+   - `fix/` is a bug in something built.
+   - `plan/` is checking a `verify:` fact and correcting its note, making a check stricter,
+     or correcting a stale line. No code under `crates/` or `images/`: `verify-pr.sh`
+     refuses that on a `plan/` branch.
+   - Do not start a task that `--next` does not list, or one it marks ⛔: `verify-plan.mjs`
+     refuses both.
+   - Ready-made `plan/` work, if you want a first one: give `scripts/verify-docs.mjs` a
+     real `--self-test` (doc 20, E6, note 3).
+4. **If there is no `fix/` or `plan/` work worth doing,** say so to Rob and stop.
 
 ## Decisions that are Rob's, not yours
 
@@ -189,10 +189,15 @@ Write the question up (options and a recommendation) and wait:
 - the settled architecture (A1–A9: decisions you do not reopen without an ADR Rob approves);
 - every task, M1 to M5, each with a **Done when:** check.
 
-`scripts/verify-plan.mjs` enforces its format in CI, and refuses a pull request whose branch
-names no task that may start: one whose needs are not done, or in a later milestone and not
-marked `parallel`, is refused with the reason. Use `fix/…` for bugs in built things and
-`plan/…` for plan changes; those two are not tied to a task.
+`scripts/verify-plan.mjs` enforces its format in CI. It refuses, with the reason:
+- a `feat/` branch that does not name exactly one task that may start, meaning one whose
+  needs are not done, one in a later milestone not marked `parallel`, or one marked **Waiting
+  on Rob:**;
+- any branch that is not `feat/`, `fix/` or `plan/`;
+- on any branch, a change that is Rob's to make without his words in the log.
+
+Use `fix/…` for bugs in built things and `plan/…` for plan and check changes; those two are
+not tied to a task.
 
 **Current milestone: M1, the express road.** Each milestone opens with an **Order of work**
 paragraph: follow it rather than picking by number. Every unfinished task has **Notes** that

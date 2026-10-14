@@ -27,3 +27,6 @@ after it's accepted. A later ADR supersedes it instead.
 A **Proposed** record is a draft for a decision that is Rob's. It may be edited until he
 answers its "What Rob decides" questions. It is then marked Accepted with his answers and the
 date, and from then on it is never edited.
+
+ADR 0014 cites "the workspace `BACKLOG.md`". That file is not in this repository: it was a
+planning file outside it. Doc 20 replaced it as the only task list. Read the citation that way.

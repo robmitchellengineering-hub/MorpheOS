@@ -8,12 +8,13 @@
 //
 //   node scripts/task.mjs E7          # the card
 //   node scripts/task.mjs --next      # the open tasks that can start now (needs done, milestone current)
+//   node scripts/task.mjs --rob       # every question waiting on Rob: the only list of them
 //   node scripts/task.mjs --self-test # proves the card finds what it should
 
 import { readFileSync, existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parse, startable } from './verify-plan.mjs';
+import { parse, startable, robLines } from './verify-plan.mjs';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -56,8 +57,11 @@ export function card(id, plan, agents, exists = (p) => existsSync(join(REPO, p))
     .filter((h) => hz.has(h))
     .sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)));
   const named = paths(task.body).map((p) => ({ path: p, exists: exists(p) }));
-  const rob = /Rob('s)? decision|Rob decides|Rob opens|waits on Rob/i.test(task.body);
-  return { task, needs, ready, cited: cited.map((h) => hz.get(h)), named, rob };
+  // What the scripts act on is the three Rob fields (verify-plan.mjs, robLines). Prose that
+  // names a decision of Rob's is only pointed at: it never clears, so it cannot gate.
+  const rob = robLines(task);
+  const mentions = /Rob('s)? decisions?\b|Rob decides/i.test(task.body);
+  return { task, needs, ready, cited: cited.map((h) => hz.get(h)), named, rob, mentions };
 }
 
 function print(c) {
@@ -66,12 +70,15 @@ function print(c) {
   console.log(`${t.id} · ${t.title} · ${t.status}`);
   console.log(line);
   if (t.status === 'proposed') console.log('⚠️  PROPOSED: only Rob opens it. Do not build it.');
+  for (const w of c.rob.askOpen) console.log(`   Ask Rob to open it: ${w}`);
   if (t.status === 'done') console.log('This task is done; its Evidence line says where.');
   if (c.needs.length) {
     console.log(`needs: ${c.needs.map((n) => `${n.id} (${n.status})`).join(', ')}`);
     console.log(c.ready ? 'every need is done: it can start' : '⚠️  a need is not done: it cannot start yet');
   }
-  if (c.rob) console.log("⚠️  it names a decision that is Rob's: ask it before building past it");
+  for (const w of c.rob.waiting) console.log(`⛔ WAITING ON ROB: ${w}\n   verify-plan refuses a feat/ branch for it until his answer is recorded (HANDOFF.md, "While you wait")`);
+  for (const b of c.rob.before) console.log(`⚠️  Rob decides before ${b.step}: ${b.text}`);
+  if (c.mentions) console.log("ℹ️  its Notes name decisions of Rob's: read them, and ask each before the step it names");
   console.log(line);
   console.log(t.body.trim());
   console.log(line);
@@ -97,7 +104,9 @@ function selfTest() {
     '**Evidence:** `scripts/task.mjs`',
     '### A2 · Next · open · needs A1',
     '**Done when:** y. Watch H2 and H9; touch `crates/nowhere/x.rs` and `scripts/task.mjs`.',
-    "Rob's decision: which disk.",
+    '**Waiting on Rob:** which disk.',
+    '**Rob decides before step 2:** the size.',
+    "Notes: Rob's decision on colours.",
     '### A3 · Later · open · needs A2',
     '**Done when:** z.',
     '## M2 · y',
@@ -117,7 +126,14 @@ function selfTest() {
     ['cites only those named', () => card('A2', plan, agents, exists).cited.length === 2],
     ['a path that exists', () => card('A2', plan, agents, exists).named.some((p) => p.path === 'scripts/task.mjs' && p.exists)],
     ['a path that does not', () => card('A2', plan, agents, exists).named.some((p) => p.path === 'crates/nowhere/x.rs' && !p.exists)],
-    ["Rob's decision flagged", () => card('A2', plan, agents, exists).rob === true],
+    ['waiting on Rob is read', () => card('A2', plan, agents, exists).rob.waiting[0] === 'which disk.'],
+    ['a decision before a step is read', () => card('A2', plan, agents, exists).rob.before[0]?.step === 'step 2'],
+    ["prose naming Rob's decision is pointed at", () => card('A2', plan, agents, exists).mentions === true],
+    ['nothing about Rob: nothing flagged', () => {
+      const c = card('A3', plan, agents, exists);
+      return c.rob.waiting.length + c.rob.before.length === 0 && !c.mentions;
+    }],
+    ['--rob lists the waiting question', () => robList(plan).some((l) => l.includes('A2') && l.includes('which disk'))],
     ['next: ready, in the current milestone, or parallel', () => next(plan).map((t) => t.id).join() === 'A2,B2'],
   ];
   let failed = 0;
@@ -136,22 +152,49 @@ export function next(plan) {
   return startable(plan);
 }
 
+/** Every question waiting on Rob, from the three Rob fields of doc 20: the only list. */
+export function robList(plan) {
+  const out = [];
+  for (const t of parse(plan)) {
+    if (t.status === 'done') continue;
+    const r = robLines(t);
+    for (const w of r.waiting) out.push(`⛔ ${t.id} (${t.status}) waits on: ${w}`);
+    for (const w of r.askOpen) out.push(`   ${t.id} (proposed) open it? ${w}`);
+    for (const b of r.before) out.push(`   ${t.id} (${t.status}) before ${b.step}: ${b.text}`);
+  }
+  return out;
+}
+
+const WAIT = 'Nothing you may start is free. Do what HANDOFF.md, "While you wait", says: ask Rob the\n' +
+  'question that blocks the next task (node scripts/task.mjs --rob), once, and record that you\n' +
+  'asked; meanwhile only fix/ and plan/ work.';
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const arg = process.argv[2];
   const plan = readFileSync(join(REPO, 'docs/20-build-plan.md'), 'utf8');
   const agents = readFileSync(join(REPO, 'AGENTS.md'), 'utf8');
+  const usage = 'usage: node scripts/task.mjs <ID> | --next | --rob | --self-test';
   if (arg === '--self-test') {
     selfTest();
+  } else if (arg === '-h' || arg === '--help') {
+    console.log(usage);
+  } else if (arg === '--rob') {
+    console.log('waiting on Rob (from docs/20-build-plan.md; ⛔ blocks the task from starting):');
+    for (const l of robList(plan)) console.log(`  ${l}`);
   } else if (arg === '--next') {
     const ready = next(plan);
     console.log('open tasks that can start now (the milestone\'s Order of work says which first):');
+    const free = [];
     for (const t of ready) {
-      const rob = card(t.id, plan, agents).rob ? "   ⚠️ names a decision that is Rob's" : '';
-      console.log(`  ${t.id} · ${t.title}${rob}`);
+      const waiting = card(t.id, plan, agents).rob.waiting;
+      console.log(`  ${t.id} · ${t.title}${waiting.length ? '   ⛔ waiting on Rob: ' + waiting.join(' ') : ''}`);
+      if (!waiting.length) free.push(t);
     }
-    if (ready.length === 0) console.log('  none: ask Rob which to open (HANDOFF.md, "Decisions waiting for Rob now")');
-    else if (ready.every((t) => card(t.id, plan, agents).rob))
-      console.log('\nEvery one waits on Rob. Ask him the question in its Notes, once, rather than starting\nwork he has not opened (doc 20, the milestone\'s Order of work).');
+    if (ready.length === 0) console.log('  none');
+    if (free.length === 0) console.log(`\n${WAIT}`);
+  } else if (arg?.startsWith('-')) {
+    console.error(usage);
+    process.exit(2);
   } else if (arg) {
     const c = card(arg.toUpperCase(), plan, agents);
     if (c.error) {

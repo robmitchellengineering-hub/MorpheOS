@@ -12,10 +12,19 @@ pick up without having to guess. `scripts/verify-plan.mjs` checks it in CI.
   can check, never "it works". A `done` task also has an **Evidence:** line: a pull request,
   a CI run, an artifact or a file in this repository.
 - **Statuses:** `proposed` (an idea, not approved), `open`, `in progress`, `blocked`, `done`.
-  Only Rob turns `proposed` into `open`.
-- **Branches carry the task ID** (`feat/e2-classic-windows`). CI refuses a pull request whose
-  branch names no open task. The exceptions are `fix/…` (a bug in something already built)
-  and `plan/…` (changes to this doc).
+  Only Rob turns `proposed` into `open`, or marks a task `parallel`. `verify-plan.mjs` refuses
+  either change, on any branch, unless the branch's log file carries his words as a line
+  `Rob on <ID>: <what he said, and when>`.
+- **What waits on Rob is written in three fields**, and nowhere else: `**Waiting on Rob:**`
+  (the task may not start until he answers: `verify-plan.mjs` refuses a `feat/` branch for it),
+  `**Ask Rob to open:**` (a proposed task worth opening now, and why), and
+  `**Rob decides before <step>:**` (it may start; that step waits). `node scripts/task.mjs
+  --rob` prints them all: it is the only list. When he answers, the branch that acts on it
+  records his words (`Rob on <ID>: ...`) and removes or rewrites the line.
+- **Branches carry the task ID** (`feat/e2-classic-windows`): exactly one task, one that may
+  start. CI refuses any other `feat/` branch, and any branch that is not `feat/`, `fix/…` (a
+  bug in something already built) or `plan/…` (changes to this doc and to the checks; no
+  code under `crates/` or `images/`, which `verify-pr.sh` refuses).
 - **New idea?** Add it as a `proposed` task under the milestone it serves, in a `plan/`
   pull request, and don't build it. That is how nothing is lost and nothing jumps the queue.
 - **A milestone starts** when the one before it is done, except tasks marked *parallel*. The
@@ -24,7 +33,8 @@ pick up without having to guess. `scripts/verify-plan.mjs` checks it in CI.
 - **Every 10 merged pull requests**, re-anchor: compare the HANDOFF state table with the north
   star below, write one paragraph in a log file of its own (`docs/log/<date>-re-anchor.md`, in
   a `plan/` pull request, which also fixes any task that has drifted). Count from the last
-  re-anchor file.
+  re-anchor file; until there is one, from pull request #71, so the first is due once #81
+  has merged.
 
 ## The north star: what "finished" means
 
@@ -86,21 +96,11 @@ continues at step 4, which waits on Rob's reports.
 8. **E8, the builder's half: media, a runbook and a ransomware demo for the laptop** (M); then
    Rob runs it.
 
-**Waiting on Rob:**
-- E6: booting the stick on `win`, `win-2` and the 2015 Mac, sending the report folders back,
-  and choosing the reference laptop.
-- S5, the account model (it is `proposed`): E11's first half waits on it.
-- Opening E13 (it is `proposed`).
-- E7: whether the installer wipes the whole internal disk; whether `/persist` is encrypted;
-  and that the reference laptop is not `win`, the machine the builder works on.
-- E5: where saved Wi-Fi passwords are kept.
-- E4: what page Firefox opens on in `plain`.
-- E8: running it. And merging every pull request.
+**What waits on Rob** is printed by `node scripts/task.mjs --rob`, from the tasks' own fields
+("How this doc works"). He also merges every pull request.
 
-**If the builder runs out of M1 work** (after step 3, with E6, S5 and E13 still waiting), stop
-and ask Rob one question, and do not start a task he has not opened; `fix/` and `plan/` work
-(HANDOFF.md, "While you wait") is fine. The options to offer: open
-E13; let E7's VM half start before E6 is done; or take one M2 task early.
+**If the builder runs out of M1 work,** HANDOFF.md's "While you wait" says what to do. It is
+the one place that says it.
 ### E1 · The shell becomes a real Wayland compositor (headless) · done
 
 **What:** `crates/flow-compositor`: a Smithay compositor, headless with the pixman renderer,
@@ -481,7 +481,8 @@ the same stick on several machines collects all of them.
 ### E6 · First boot on real machines, and the reference laptop · open · needs E12
 
 **What:** Rob boots the `plain` stick ([HARDWARE.md](../images/x86-qemu/HARDWARE.md)) on each
-candidate machine, from harness-mesh's `MACHINES.md`: the Windows laptop at home (`win`), the
+candidate machine (this list is the one the repository uses; it comes from a private list of
+Rob's): the Windows laptop at home (`win`), the
 Lenovo Legion Go (`win-2`: AMD graphics, MediaTek Wi-Fi, a portrait panel) and the 2015 Mac
 at work (Broadcom Wi-Fi). He sends back the report folders. The reference laptop is Rob's
 choice, made with those reports in hand. Intel Wi-Fi and Intel graphics have the fewest
@@ -491,6 +492,12 @@ firmware surprises on Linux.
 report (display, keyboard, touchpad, Wi-Fi, sound, firmware missing), and the reference
 laptop is recorded here. Every failure becomes a task.
 
+**Waiting on Rob:** the report folders from one boot of the newest `plain` stick on each of
+`win`, `win-2` and `mac-2015` (HARDWARE.md). The builder's half starts on the first folder
+he sends; record it in that branch's log as "Rob on E6: <which reports, and when>".
+
+**Rob decides before E6 is done:** the reference laptop (note 6).
+
 **Notes:** moved ahead of E4 on 2026-10-13 (Rob): the riskiest unknown is the hardware, and
 finding it while the browser is being built costs nothing. Suspend and sound wait for M3;
 note what the report shows of them.
@@ -499,12 +506,12 @@ The builder's half (Rob does the booting):
 1. **Before Rob boots,** give him the number of the newest green `images` run on `main`
    (GitHub, the repository's *Actions* tab, workflow `images`, filtered to branch `main`; or
    `gh run list --workflow images.yml --branch main`). Its `morpheos-x86-usb` artefact is the
-   stick to use, and it is kept for 30 days. Say whether it
-   is the console stick (before E4's PR B) or the shell stick (after). Recommendation: boot
-   both. The console stick works even when the graphics do not. The shell stick is the only
-   way to find out whether the touchpad, the keyboard in a window and the compositor's
-   display work, because a console has no pointer. Every boot adds a numbered folder, so one
-   stick collects every machine.
+   stick to use, and it is kept for 30 days. Since E4 there is one stick: it boots into the
+   shell, and when the shell cannot draw it falls back to a console on `tty1` by itself
+   (`flow-shell.service`, `OnFailure=getty@tty1.service`); VT2 (Ctrl+Alt+F2) is a console
+   either way. So it shows whether the touchpad, the keyboard in a window and the
+   compositor's display work, and still reports when they do not. Every boot adds a numbered
+   folder, so one stick collects every machine.
 2. **Files:** create `docs/hardware/` with one file per machine (`win.md`, `win-2.md`,
    `mac-2015.md`). Each has the same headings: Machine, Boot path (boot menu, Secure Boot,
    anything that went wrong), Display, Keyboard, Touchpad, Wi-Fi, Wired, Sound, Firmware
@@ -518,18 +525,19 @@ The builder's half (Rob does the booting):
    a claim about the repository is a test): extend `scripts/verify-docs.mjs` so that every
    `docs/hardware/*.md` has the headings above and contains no MAC address
    (`([0-9a-f]{2}:){5}[0-9a-f]{2}`, case-insensitive). ⚠️ `verify-docs.mjs` has no self-test
-   mode yet (`--self-test` is ignored and it exits 0): add one, with a case that fails, and
-   run it in `check.sh` and CI.
+   mode yet (`--self-test` is refused with exit 2, like any argument it does not know): add
+   one, with a case that fails, and run it in `check.sh` and CI. That much is `plan/` work
+   that needs no report, so it can be done while waiting for the first one.
 4. **Every failure becomes a task, in a `plan/` PR.** A firmware file or a driver that is
-   missing for a machine in MACHINES.md is a bug in E12. Fix it on a `fix/` branch: add the
+   missing for one of the machines this task names (`win`, `win-2`, `mac-2015`) is a bug in E12. Fix it on a `fix/` branch: add the
    package to `BASE_PKGS` and the module name to `build.sh`'s laptop driver list (H18).
    Anything new goes in as a `proposed` task under M1, with the report line that shows it. A
    portrait or broken internal screen is E13, so link it there; do not add a second task.
 5. **Traps:** the 2015 Mac's Wi-Fi may be a BCM4360, which has no open driver (HARDWARE.md
    says so). That is a "no driver" line, not a broken boot. If a machine reaches no shell,
    there is no report; work from Rob's photo of the screen, and make that its own task.
-6. **Rob's decisions:** the reference laptop, recorded in this task and in HANDOFF's
-   "Decisions waiting" list. Weigh this in it: E7 wipes the reference laptop's internal disk
+6. **Rob's decisions:** the reference laptop, recorded in this task (its
+   **Rob decides before E6 is done:** line, then his words in the log). Weigh this in it: E7 wipes the reference laptop's internal disk
    (see E7), and `win` is the machine the builder works on.
 7. **Size:** S for each batch of reports.
 
@@ -549,6 +557,10 @@ the first alone to a committed slot. It refuses to touch the disk it booted from
 - (3) The second boot, from the target disk alone, records exactly `a/committed/none` in the
   **target's** `morph-boot/history.jsonl`, read with `mtype`, and writes a hardware report to
   the target's ESP.
+
+**Waiting on Rob:** note 8's three choices: the whole internal disk or alongside Windows;
+`/persist` encrypted or plain (which also settles E5's open question, where saved Wi-Fi
+passwords live); and that the reference laptop is not `win`.
 
 **Notes:**
 1. **The layout,** derived from `images/x86-qemu/build.sh` (the stick: `esp` 300 MiB FAT32;
@@ -680,6 +692,9 @@ on the Legion Go the panel is natively portrait. Show the shell on every connect
 **Done when:** a QEMU scenario with two virtio-gpu heads (`max_outputs=2`) takes a
 screendump of each (`screendump` takes `head`) and finds the shell on both.
 
+**Ask Rob to open:** once an E6 report shows the reference laptop's internal screen is
+broken or portrait (the Legion Go's is portrait). It then comes before E7 and E8.
+
 **Notes:** not started. It is `proposed`, so Rob opens it. Open it before E7 and E8 if the
 reference laptop's own panel is broken or portrait: without this task, the shell may not be
 on the screen Rob is looking at.
@@ -743,6 +758,8 @@ own: that is the path a keyboard takes. Firefox's title-bar drag arrives as the 
 **What:** Rob runs the steps the VM suite covers, on the real machine.
 
 **Done when:** results are in `docs/hardware/`, and every failure is a task.
+
+**Rob decides before the hardware run:** when to run it, and on which machine (note 6).
 
 **Notes:** Rob does the running. The builder makes it possible to run, on the laptop's
 internal disk (E7):
@@ -906,6 +923,12 @@ release before anything is written and allows an equal one (`morph-heal` seals a
 release). `tests/install.rs` covers older, equal, newer, a missing, doubled or malformed release
 line, and a missing release file; removing the check fails the older-release test.
 
+**Rob decides before step 3.3 (the fetch):** where releases are hosted, and when an
+installed update reboots (note 6).
+
+**Rob decides before the first real release:** the release key's custody, a backup key and
+the release numbering, drafted for his answer as [ADR 0019](adr/0019-release-signing-key.md).
+
 **Notes:**
 
 1. **Files.**
@@ -1048,6 +1071,9 @@ the disk after the VM stops:
 
 Also: a recovery image whose own digest does not match is refused, and nothing is written.
 
+**Rob decides before the recovery image ships:** its size, and whether an update may refresh
+it (note 5). Neither blocks the VM proof.
+
 **Notes:**
 
 1. **What exists.**
@@ -1158,6 +1184,9 @@ model first. Three are laid out below, and drafted for his answer as
 the VM's keyboard. As that user it cannot write the slots: writing `/dev/vda2`, `/dev/vda3` or
 `/efi/loader/loader.conf` fails. Read off the disk afterwards, slot B and `loader.conf` are
 byte-identical to before (a control taken before boot), and root's password is locked.
+
+**Ask Rob to open:** E11's first half (the shell not as root) waits on the account model,
+drafted for his answer as [ADR 0020](adr/0020-account-model.md).
 
 **Notes:**
 
@@ -1478,6 +1507,8 @@ longer lists `/storage/retention`. Made exact: in `images/x86-qemu/test-manifest
 writes the kernel's hostname (`/proc/sys/kernel/hostname`) and the policy Strata itself reports
 to a file on the ESP after each step. The test reads that file with `mtype`, and reads the
 store's `current` off the data partition.
+
+**Ask Rob to open:** S7 and S8 need it, and nothing inside it changes the security model.
 
 **Notes:** proposed 2026-10-14 by Claude Code, while picking up S8. It unblocks S8 (a
 Manifest-managed setting to corrupt) and S7 (Strata pruning by `storage.retention`). Rob opens
@@ -2132,6 +2163,9 @@ disk attached is healthy too. (Sharpened from "replicates `/persist` to a second
 continuously": the script, the key held off the machine, the later save, and the boot without
 the disk are new.)
 
+**Waiting on Rob:** his answers to [ADR 0018](adr/0018-backup-replica.md): the mechanism,
+the key model and the recovery code's form. Step (a), marking it Accepted, is the first PR.
+
 **Notes:**
 1. **Decide the mechanism first: [ADR 0018](adr/0018-backup-replica.md), drafted and
    Proposed, approved by Rob.** The
@@ -2405,6 +2439,10 @@ the catalogue serialises to a JSON schema whose enum of ids equals the registere
 one more changes the schema); and the PR description quotes a sabotage run for each rule (rule
 removed, named test fails).
 
+**Ask Rob to open:** I1–I3, as the lane for the days the builder waits on his hardware
+reports ([doc 21](21-intent-engine.md), D1). They sit under M5, so opening them is not enough:
+he also marks each `parallel`, or they still cannot start.
+
 **Notes:** traps T3 and T4. `IntentSpec::new` must give `risk` and `model_reachable` no default.
 Check each executor's current API before registering it; HANDOFF moves daily.
 
@@ -2542,6 +2580,9 @@ and non-UTF-8 bytes produces a history line that still parses, and `morph-heal`'
 reads the file; a planted failure to read the journal still records the decision and the boot still
 falls back correctly; a journal flooded with 1 MiB of errors still yields a record under the cap; and
 every existing scenario passes unchanged.
+
+**Ask Rob to open:** F1 is the one worth acting on soon ([doc 22](22-diagnosis.md), D1). It
+sits under M5, so he also marks it `parallel`, or it still cannot start.
 
 **Notes:** traps T7, T8, T13. `morph-heal` errors on any unparsable history line and then refuses to
 repair, so a corrupt line disables healing. Guard every step on this failure path (H11).
