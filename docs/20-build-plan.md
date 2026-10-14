@@ -393,8 +393,145 @@ Approved direction, not yet ordered. Each becomes `open` when Rob orders it.
 ### W2 · Android apps (Waydroid) · proposed
 **Done when:** one Android app runs in a VM scenario.
 
-### W3 · The intent bar with a local model (AI proposes, deterministic code decides) · proposed
+### W3 · The intent bar with a local model (AI proposes, deterministic code decides) · proposed · needs I10
+**What:** put into the image whichever tiers I10 adopted. The design, rules and evaluation are
+[doc 21](21-intent-engine.md); I1–I10 below are this task expanded. If I10 finds a model does not
+earn its place, this task closes with that result.
+
 **Done when:** the top 20 tasks of doc 02 are measured, with and without the model.
+
+### I1 · The catalogue and the registry (`morph-intent`, types only) · proposed
+**What:** a new library crate `crates/morph-intent`: no I/O, and it must build and test on Linux,
+macOS and Windows alike (AGENTS H9, H16). It holds `IntentSpec`, `SlotSpec`, `Catalogue` and a
+registry that builds the catalogue only from registered executors. An executor has three parts: its
+spec, the live entities for each `Entity` slot, and `plan(slots)`, which returns the action to take (a
+Manifest diff, or typed command arguments) so that R3 can re-derive the risk from it. `Risk` is re-exported from
+`morph-manifest`, never redefined. Start from the compiled reference in doc 21 appendix A. Register
+the v1 intents of doc 21 section 4 as specs (wiring them to run is I7).
+
+**Done when:** `cargo test -p morph-intent` passes with tests that registration refuses a
+duplicate id, an empty id, fewer than 6 distinct examples, and an intent with no executor; that
+the catalogue serialises to a JSON schema whose enum of ids equals the registered ids (registering
+one more changes the schema); and the PR description quotes a sabotage run for each rule (rule
+removed, named test fails).
+
+**Notes:** traps T3 and T4. `IntentSpec::new` must give `risk` and `model_reachable` no default.
+Check each executor's current API before registering it; HANDOFF moves daily.
+
+### I2 · The disposition policy · proposed · needs I1
+**What:** the pure function of doc 21 section 6, in `morph-intent`: `disposition(policy, spec,
+candidate, origin, planned_risk)` returning AutoRun, Confirm, NeedsPerson or Refuse. Port the
+appendix A reference and its tests.
+
+**Done when:** an exhaustive test over every tier, risk, planned risk, origin, reachability and
+score band asserts that AutoRun implies risk at most ReversibleLocal, origin not Untrusted, and
+tier T0 or T1 (T1 only at or above `fuzzy_auto`); that every risk of PersistentConfig or higher is
+NeedsPerson or Refuse; and that a lower planned risk never lowers the declared one. The `match` on
+tier is under `#[deny(clippy::wildcard_enum_match_arm)]`, so `cargo clippy --all-targets -- -D
+warnings` fails if someone adds a wildcard arm. The PR quotes a sabotage run for each rule.
+
+**Notes:** trap T5. The reference was verified to catch seven sabotages; port those checks too.
+
+### I3 · The judge: corpus validator, scorer and corpus v0 · proposed · needs I1, I2
+**What:** `crates/morph-intent-eval` (library and binary) per doc 21 section 8: the corpus and
+predictions formats, `validate`, a group-aware split with a leakage check, and `score`, which
+recomputes the disposition itself with I2's function and exits 0, 1 or 2. Commit corpus v0: at
+least 12 hand-written seeds for each v1 intent, at least 60 out-of-scope and near-miss strings and
+at least 30 injection strings, all tagged `seed`.
+
+**Done when:** `validate` fails on an unknown intent id, a duplicate id, a missing provenance, a
+group split across splits, and a test utterance whose normalised text is in train or dev (each has
+its own planted-defect test); `score` fed a synthetic predictions file with a known number of wrong
+AutoRuns reports exactly that number and ignores a prediction's own claim of AutoRun; exit codes 0,
+1 and 2 each have a test; and the scorer refuses a predictions file whose catalogue hash differs.
+
+**Notes:** Rob reads the seed list before this merges: it defines what people say. No resolver
+exists yet; that is the point (R8, trap T1).
+
+### I4 · Corpus v1: practice sentences, expanded and reviewed · proposed · needs I3
+**What:** grow corpus v0 into the corpus the experiments need (doc 21 section 8.1): at least 100
+in-scope utterances per v1 intent, out-of-scope and near-miss at least 40% of the whole, at least
+100 injection strings, across the registers of 8.1 (terse, polite, typo-laden, non-native phrasing,
+simulated speech-to-text confusions). Generated paraphrases are tagged `synthetic`, keep their
+generating prompt in the repo, and share their seed's `group`. Splits are by group.
+
+**Done when:** `morph-intent-eval validate` passes on the corpus; a committed report counts
+utterances by intent, scope, provenance and split and meets the sizes above; a human-reviewed sample
+of at least 10% of the synthetic rows is recorded with the fraction rejected; and no generated row is
+tagged `seed`.
+
+**Notes:** needs Rob's decision D3 first (whether Morpheus may generate the sentences). Synthetic
+text is kinder than real people, so every later number is reported by provenance and labelled
+Simulated until real, consented utterances exist. Trap T2: the validator's leakage check is the guard.
+
+### I5 · Tier 0: the template matcher · proposed · needs I1, I4
+**What:** the template language of doc 21 section 5 (alternatives, optional words, slots) and an
+exact matcher over normalised text, with entity lists supplied at run time. Registration rejects two
+intents whose templates can produce the same sentence, and lists the collision.
+
+**Done when:** every template expansion resolves to its own intent; a registered collision is
+refused with both intents named; `morph-intent-eval score` for arm A on the dev split is committed
+under `docs/intent/results/` as the baseline, with the corpus provenance mix stated; and a
+measured p95 resolve time for 200 synthetic intents is reported and asserted under 50 ms in the profile
+CI runs.
+
+**Notes:** if the timing assertion flakes, say so and ask; do not delete or loosen it. Do not start from
+a model or a library that needs a runtime. Pure Rust, no new
+dependency without a line of justification in the PR.
+
+### I6 · Tier 1: normaliser and fuzzy matcher · proposed · needs I5
+**What:** the normaliser (case, punctuation, number words, units, contractions), token-level edit
+distance against template expansions, fuzzy entity matching, and the margin rule.
+
+**Done when:** arm B is scored against arm A on dev and the report is committed; the typo and
+speech-noise tagged subset improves; wrong AutoRun does not rise; no near-miss resolves; and a test
+shows an Ambiguous result (not a guess) when two entities are within the margin.
+
+**Notes:** tune thresholds on dev only. The test split is not opened until I10's decision.
+
+### I7 · The intent bar runs intents (T0 and T1 only) · proposed · needs I2, I6
+**What:** replace `match_query` in `flow-shell` with the resolver. Enter resolves; AutoRun runs;
+Confirm shows one line ("Open Wi-Fi? Enter / Esc"); NeedsPerson shows the plan and waits for a
+person (and places `.rob`); Ambiguous shows up to three; NoMatch paints "no match" as today. Origin
+is `Typed` for the bar. Existing session-focus behaviour becomes the `session.focus` intent.
+
+**Done when:** the existing `match_query` tests still pass or are migrated with a stated reason; a
+VM scenario by scripted input types "wifi" and a frame shows the Wi-Fi picker; types a phrase outside
+the catalogue and the frame says "no match"; and types a NeedsPerson intent and nothing runs until a
+confirm is scripted.
+
+**Notes:** schedule after E4 and E5 settle; `flow-shell` is busy. Trap T6: typing must not wait.
+
+### I8 · The embedding arm (offline experiment) · proposed · needs I4, I6
+**What:** arm C of doc 21 section 8, run on a laptop with no image change. Choose a small
+sentence-embedding model, verify and record its licence, size and quantisation. Report the residual
+after arm B first (section 8.6).
+
+**Done when:** `docs/intent/results/I8-<date>.md` holds the residual, then arm C against arm B on the
+test split, once, judged by the pre-registered bar (B1 to B6), with latency and memory on named
+hardware labelled as an x86 proxy where it is not a Pi.
+
+**Notes:** the test split is touched once for this decision. Rob sets the bar numbers first (D2).
+
+### I9 · The small-model arm (offline experiment) · proposed · needs I4, I6
+**What:** arm D, with a grammar generated from the catalogue, temperature 0 and no chain-of-thought,
+at least two model sizes (one fine-tuned on the train split, one general), plus arm E (a large
+remote model, offline) as the ceiling. Verify and record each model's licence.
+
+**Done when:** either `docs/intent/results/I9-<date>.md` judges arm D against arm C by the bar, or
+the file records that the residual after arm C was under 5 points and arm D was therefore not run
+(section 8.6). Each needs the pinned header of section 8.2.
+
+**Notes:** trap T2. Fine-tune on train only; thresholds on dev only; test once.
+
+### I10 · Decide and record · proposed · needs I8, I9
+**What:** ADR 0015 records which tiers ship, their thresholds, the model-licence policy and what
+runs out of process, with the numbers from I8 and I9 and their labels.
+
+**Done when:** ADR 0015 is `Accepted` by Rob and indexed in `docs/adr/README.md`, and W3's text
+matches it.
+
+**Notes:** Rob decides. If the answer is "T0 and T1 are enough", that is a good result.
 
 ### W4 · Pi 5 parity · proposed
 **Done when:** the Pi image boots on a Pi 5 with the same A/B, Strata and heal behaviour.

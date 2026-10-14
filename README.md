@@ -45,6 +45,7 @@ needs, then gets out of the way.
 18. [Flow Learning](docs/18-flow-learning.md): learning how you work, so the next step is ready before you ask
 19. [Any Hardware](docs/19-any-hardware.md): adapting existing drivers or building new ones, without risking the machine
 20. [Build Plan](docs/20-build-plan.md): **the only task list.** What "finished" means, the settled architecture, and every task to get there
+21. [The Intent Engine](docs/21-intent-engine.md): words to a safe action; the catalogue, the tiers, what may run alone, and the evaluation that decides which tiers earn their place (tasks I1–I10)
 
 ## The big reframe
 

@@ -121,6 +121,12 @@ until Rob opens it.
   serves a person on the laptop better than an empty shell (doc 20, E10's notes).
 - **The shell runs as root until E11**, which needs the account model (S5).
 
+- **The intent engine plan ([doc 21](docs/21-intent-engine.md), tasks I1–I10 in doc 20).** Seven decisions
+  (D1–D7, section 11): when to open I1–I3 (recommended: now, as the lane for the days you wait on Rob's
+  hardware reports), the evaluation bar's numbers, whether Morpheus may generate the practice sentences, the
+  model-licence policy, the template syntax, vendor-registered intents, and English only. Until Rob opens
+  them, I1–I10 are `proposed`: do not build them.
+
 ## Decisions that are Rob's, not yours
 
 Write the question up (options and a recommendation) and wait:
@@ -231,3 +237,10 @@ One line per piece of work: date, who, what, what's next.
   (`test-wifi.sh`) joins a simulated WPA2 network (`mac80211_hwsim`, hostapd, dnsmasq). Found
   on the way: a Wayland read after `poll` can return EAGAIN (a `delete_id` alone, say), and
   the picker took that for a lost connection and quit a second after it opened.
+- 2026-10-14 · Claude Code · Planned the intent engine ([doc 21](docs/21-intent-engine.md), I1–I10). The
+  shell's intent bar is a search field; this designs what turns words into a safe action. Compiled and
+  tested the safety core in a scratch crate (3,750 input combinations; seven sabotages each caught) and put
+  it in the doc as a reference. Found: the Manifest's risk tiers are path-based, so intents that are not
+  Manifest changes need their own risk, which the catalogue makes each executor declare; and that the plan
+  should build the judge (corpus and scorer, I3) before any resolver. Nothing is built; all tasks are
+  `proposed`. Next: Rob decides D1–D7.

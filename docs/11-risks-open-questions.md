@@ -33,6 +33,6 @@
 - [ ] Cold vs warm Wine capsule launch time using CoW snapshot clones
 - [ ] Strata-on-FUSE overhead vs native btrfs for typical desktop workloads
 - [ ] A boot-to-session time under 3 s on the reference laptop with I/O replay
-- [ ] Intent Engine accuracy on the top 20 tasks, with deterministic matchers only and with a 3B model
+- [ ] Intent Engine accuracy on the top 20 tasks, with deterministic matchers only and with a 3B model (protocol: [doc 21](21-intent-engine.md) section 8; tasks I3–I10)
 - [ ] Studio audio round-trip latency with the PipeWire RT profile on a Pi 5 and on a laptop
 - [ ] Pi Zero 2 W Seed image idle RAM under 64 MB
