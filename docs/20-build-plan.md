@@ -249,13 +249,24 @@ on the Legion Go the panel is natively portrait. Show the shell on every connect
 **Done when:** a QEMU scenario with two virtio-gpu heads (`max_outputs=2`) takes a
 screendump of each (`screendump` takes `head`) and finds the shell on both.
 
-### E9 · Move, fullscreen, and the switch shortcut, on real input · open · needs E3
+### E9 · Move, fullscreen, and the switch shortcut, on real input · done · needs E3
 
 **What:** what E2 left for real input: drag a window by its edge, fullscreen and back, and
 Alt+Tab running `wm::Manager::cycle`. Decisions go in `wm.rs` with unit tests first.
 
 **Done when:** the headless script gains `drag`, `fullscreen` and `key` commands through
 the same handlers real input uses, and a test asserts each in the frame.
+
+**Evidence:** `crates/flow-compositor/tests/move_fullscreen.rs` and `crates/flow-compositor/src/wm.rs`.
+The window manager decides (moving by the edge or with Super, staying reachable, raising,
+one fullscreen window that returns to its place and size; unit-tested), and the test
+drives the compositor through the script's `drag` and `key`:
+an edge drag and a Super+drag move windows without the window seeing the button, Alt+Tab
+switches and raises without the window seeing the Tab, Super+F and a client's own request
+(Firefox's F11) go fullscreen and back, and a plain click still reaches its window at the
+end. Fullscreen is the Super+F chord through `key` rather than a `fullscreen` command of its
+own: that is the path a keyboard takes. Firefox's title-bar drag arrives as the client's own
+`move` request, which starts the same move.
 
 ### E8 · Try to break it, on the laptop · open · needs E7
 

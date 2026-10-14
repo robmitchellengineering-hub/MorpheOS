@@ -71,12 +71,12 @@ From a DSH shell in PowerShell, run any of them as
 
 ## Open pull requests at handover
 
-#42 to #52 (E3, E10, the handover plan, S10, E12, E4's browser and popups, E5's network and
-Wi-Fi picker, the laptop drivers, the stick guide) were merged on 2026-10-13 and 14, as merge commits so the stack merged without conflicts. Open:
+#42 to #53 (E3, E10, the handover plan, S10, E12, E4's browser and popups, E5's network and
+Wi-Fi picker, the laptop drivers, the stick guide, the Rust pin) were merged on 2026-10-13 and 14, as merge commits so the stack merged without conflicts. Open:
 
 | # | Branch | What |
 |---|---|---|
-| #53 | `feat/s9-pin-rust` | S9: Rust pinned to 1.99.0, locally and in CI |
+| #54 | `feat/e9-move-fullscreen-switch` | E9: move by the edge or with Super, Alt+Tab, fullscreen (Super+F, or the client's F11) |
 
 If CI goes red on it, it is yours to fix, on that branch. **When a pull request's base is
 another open branch** (a stack), and the base merges: if it was squash-merged, the next branch
@@ -241,3 +241,9 @@ One line per piece of work: date, who, what, what's next.
   `rust-toolchain.toml`; `scripts/rust-toolchain.sh` installs exactly that, with clippy and
   rustfmt, and fails if any other `rustc` would run. Every workflow and `setup-linux.sh` use
   it; `dtolnay/rust-toolchain@stable` is gone.
+- 2026-10-14 · Claude Code · E9 (`feat/e9-move-fullscreen-switch`): windows move by their
+  edge, or anywhere with Super held, or by their own title bar (a client's `move` request);
+  the window used comes to the front; Alt+Tab switches; Super+F, or the client's own
+  request, goes fullscreen and back to the same place and size. Found while sabotaging the
+  test: a press passed to a window whose release is not leaves the pointer grabbed for
+  good, and every window deaf to the mouse; the test now ends with a click that must arrive.
