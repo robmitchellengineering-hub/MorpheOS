@@ -136,6 +136,13 @@ whose update ships a compositor that fails to start.
 **Done when:** the shell scenario passes with the compositor not running as root, and the
 broken-shell update is trialled once and falls back, like `unhealthy`.
 
+**Progress:** the second half is done. `test-fallback.sh broken-shell hung-shell` trials an
+update whose shell cannot start, and one whose shell starts and never draws; each is
+trialled once and falls back to A, whose shell draws on every boot. The hung case is why the
+shell is `Type=notify`, ready only once its first frame is on the display: a running
+compositor that shows nothing was a healthy unit. Still to do: the compositor as an ordinary
+user, which waits on Rob's account model (S5).
+
 ### E4 · A browser · in progress · needs E10
 
 **What:** Firefox from Mozilla's own APT repository (packages.mozilla.org, pinned), running on
@@ -559,3 +566,22 @@ matches it.
 
 ### W6 · Fleet (paid) · proposed
 **Done when:** revenue-gated (doc 00). Rob decides.
+
+### W7 · Vendor layers, driver trials and a change freeze · proposed · needs E6
+**What:** three generic extension points, so a vendor can ship its own appliance image on top of
+MorpheOS without forking it (ADR 0006: *"MorpheOS adds layers on top"*; doc 01 principle 7):
+(1) build an image from a pinned MorpheOS commit plus a layer directory that is not in this
+repository; (2) trial a kernel and driver set as one A/B unit (doc 15, doc 19 section 4), with a
+health check that a layer can extend; (3) a change-freeze flag that makes updates refuse and log
+(doc 12 section 13: *"during studio sessions ... never run updates"*).
+
+**Done when:** a VM scenario builds an image with a stand-in layer that adds one health-check unit;
+a deliberately failing check makes the trial fall back (`b/trial/fallback`) and a passing one
+commits (`b/trial/committed`); and with the freeze flag set `morph-update` refuses with a logged
+reason, and without it proceeds.
+
+**Notes:** proposed 2026-10-13. Not started: Rob opens it. Nothing in this repository may depend on
+any particular vendor or layer. Open question: can a layer be added to a finished image, or must the
+image be rebuilt from the pinned commit? ADR 0006 applies layers at build time, so the second is
+the likelier. The signing key for a vendor's own updates is the vendor's (A4 and doc 20 S2 cover
+MorpheOS's), so this task needs Rob's decision on the security model before it is opened.

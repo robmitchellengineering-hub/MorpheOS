@@ -105,6 +105,11 @@ jobs:
         run: |
           cargo build --release -p flow-compositor -p flow-wifi
           sudo images/x86-qemu/test-shell.sh "$RUNNER_TEMP/img"
+      # Doc 20, E11: an update whose shell cannot start, or starts and never draws, is
+      # trialled once and falls back, like `unhealthy`. The second is why the shell is
+      # Type=notify and ready only with a frame on the display.
+      - name: A broken or hung shell update falls back
+        run: sudo images/x86-qemu/test-fallback.sh "$RUNNER_TEMP/img" broken-shell hung-shell
       # Doc 20, E4: Firefox (Mozilla's own build, from packages.mozilla.org) on the shell,
       # showing a local page; the verdict is the page's colours in a screendump.
       - name: A browser on the Flow shell
