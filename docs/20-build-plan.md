@@ -45,7 +45,7 @@ the ADR as the first task of the milestone named.
 
 | | Decision | Why |
 |---|---|---|
-| **A1** | **systemd is PID 1 for v1.** `morphd` (transactions, Manifest, service graph: `morph-transaction`, `morph-graph`) is a service under it, not init. *(record in M2; supersedes doc 03's "PID 1")* | Both images already run systemd; replacing init is years of work that serves nothing in the north star |
+| **A1** | **systemd is PID 1 for v1.** `morphd` (transactions, Manifest, service graph: `morph-transaction`, `morph-graph`) is a service under it, not init. *(recorded: [ADR 0017](adr/0017-systemd-is-pid-1.md))* | Both images already run systemd; replacing init is years of work that serves nothing in the north star |
 | **A2** | **The userland base is Ubuntu 24.04, built with `mmdebstrap`**, pinned. | Drivers, firmware and packages for a real laptop, now |
 | **A3** | **Immutable A/B system slots; everything mutable lives on the data partition** (`/persist`: `/home`, the Strata store, app data, machine settings). Nothing writes to a slot except `morph-update`. | It is what makes N2 possible, and it is built (ADRs 0006, 0008) |
 | **A4** | **Updates are whole slot images, signed.** A `BLAKE3SUMS` manifest (as today) signed with **ed25519** by an offline key that Rob holds, served as static files over HTTPS. The device checks the signature **before** `morph-update` writes anything. | Integrity exists today; authenticity does not. Static files need no server code |
@@ -285,10 +285,12 @@ own: that is the path a keyboard takes. Firefox's title-bar drag arrives as the 
 
 Exit: N2 holds in full, and updates arrive and apply by themselves, safely.
 
-### S1 · Record A1 as an ADR · open · parallel
+### S1 · Record A1 as an ADR · done · parallel
 
 **Done when:** an ADR states that systemd is PID 1 for v1 and that `morphd` is a service,
 superseding doc 03's claim; doc 03 links it.
+
+**Evidence:** `docs/adr/0017-systemd-is-pid-1.md`, indexed, and doc 03's `morphd` section links it.
 
 ### S10 · The whole bar on the builder's Windows laptop (WSL2) · done · parallel
 
