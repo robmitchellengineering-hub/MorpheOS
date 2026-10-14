@@ -175,6 +175,13 @@ for sc in "${SCENARIOS[@]}"; do
             echo "    slot a's shell drew a frame on each of its boots ($ready)"
         else
             echo "    FAIL: slot a's shell reported a frame on the display $ready time(s), not 3"; ok=0
+            # Say WHY in the job log itself: the serial-log artifact is not always readable
+            # (a proxy can block its storage host), and this failed once on a docs-only pull
+            # request (#75) with the boot history otherwise right. Each boot's slot line and
+            # every shell line, in order, show which boot lacked the line and what it said.
+            echo "      the boots and the shell's lines, in order:"
+            grep -an 'morph\.slot=\|flow-compositor\|flow-shell\|first frame' "$log" \
+                | cut -c1-200 | tail -n 60 | sed 's/^/        /' || true
         fi
         if grep -aq 'morph-boot-check: failed unit: flow-shell.service' "$log"; then
             echo "    the trial failed on flow-shell.service"
