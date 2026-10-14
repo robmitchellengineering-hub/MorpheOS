@@ -19,3 +19,4 @@ after it's accepted. A later ADR supersedes it instead.
 | [0012](0012-the-name-in-the-machine.md) | The name goes in the machine: `generations/<n>.rob` is written and read by the store, and the frame check loses its name | Accepted |
 | [0013](0013-flow-shell-feels.md) | The shell's feel is a property of the session; a Desktop session is first-class | Accepted |
 | [0014](0014-express-road-first.md) | Express road: a general user drives it first, the rest re-sequences behind it (nothing dropped) | Accepted |
+| [0017](0017-systemd-is-pid-1.md) | systemd is PID 1 for v1; `morphd` is a service under it (A1). 0015 and 0016 are reserved for docs 21 and 22 | Accepted |

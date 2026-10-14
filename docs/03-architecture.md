@@ -42,8 +42,13 @@ because our core services talk to it through a narrow internal API (`morph-hal`)
 
 ## Core services
 
-### `morphd`: the state and transaction daemon (PID 1)
-- Replaces init, service manager, package manager and settings store.
+### `morphd`: the state and transaction daemon
+
+> **Superseded in part by [ADR 0017](adr/0017-systemd-is-pid-1.md):** systemd is PID 1 for v1, and
+> `morphd` is a service under it. It does not replace init or the service manager; what follows
+> about the Manifest and transactions stands.
+
+- Replaces the package manager and settings store, and drives the service manager.
 - The whole machine is described by a **Manifest**, a typed, declarative document
   (the schema language is still open: Nickel, KCL, CUE or our own).
 - Every state change is a **Transaction**: `plan → validate → snapshot → apply → health-check → commit | rollback`.

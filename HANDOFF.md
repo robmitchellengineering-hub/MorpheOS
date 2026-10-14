@@ -247,3 +247,6 @@ One line per piece of work: date, who, what, what's next.
   request, goes fullscreen and back to the same place and size. Found while sabotaging the
   test: a press passed to a window whose release is not leaves the pointer grabbed for
   good, and every window deaf to the mouse; the test now ends with a click that must arrive.
+- 2026-10-14 · Claude Code · S1 (`plan/s1-adr-systemd-pid1`): A1 recorded as ADR 0017, systemd
+  is PID 1 for v1 and `morphd` a service under it; doc 03 links it. 0015 and 0016 are left for
+  the intent-engine and diagnosis records (docs 21, 22).
