@@ -71,12 +71,12 @@ From a DSH shell in PowerShell, run any of them as
 
 ## Open pull requests at handover
 
-#42 to #50 (E3, E10, the handover plan, S10, E12, E4's browser and popups, E5's network, the
-laptop drivers) were merged on 2026-10-13, as merge commits so the stack merged without conflicts. Open:
+#42 to #51 (E3, E10, the handover plan, S10, E12, E4's browser and popups, E5's network and
+Wi-Fi picker, the laptop drivers) were merged on 2026-10-13 and 14, as merge commits so the stack merged without conflicts. Open:
 
 | # | Branch | What |
 |---|---|---|
-| #51 | `feat/e5-wifi-picker` | E5 (2): the Wi-Fi picker, over NetworkManager; its VM test joins a simulated WPA2 network |
+| (E6) | `feat/e6-stick-guide` | HARDWARE.md for Rob's three machines: writing the stick on Windows, each machine's boot menu, the BitLocker warning |
 
 If CI goes red on it, it is yours to fix, on that branch. **When a pull request's base is
 another open branch** (a stack), and the base merges: if it was squash-merged, the next branch
@@ -237,6 +237,11 @@ One line per piece of work: date, who, what, what's next.
   (`test-wifi.sh`) joins a simulated WPA2 network (`mac80211_hwsim`, hostapd, dnsmasq). Found
   on the way: a Wayland read after `poll` can return EAGAIN (a `delete_id` alone, say), and
   the picker took that for a lost connection and quit a second after it opened.
+- 2026-10-14 · Claude Code · #50 and #51 merged (CI ran the Wi-Fi test: PASS, 74 s). E6 is
+  next and it is Rob's: HARDWARE.md now covers his three machines (`feat/e6-stick-guide`):
+  writing the stick from Windows (balenaEtcher), each machine's boot menu and Secure Boot
+  switch, and, first, the BitLocker recovery key, since turning Secure Boot off on an
+  encrypted Windows laptop makes Windows ask for it.
 - 2026-10-14 · Claude Code · Planned the intent engine ([doc 21](docs/21-intent-engine.md), I1–I10). The
   shell's intent bar is a search field; this designs what turns words into a safe action. Compiled and
   tested the safety core in a scratch crate (3,750 input combinations; seven sabotages each caught) and put
