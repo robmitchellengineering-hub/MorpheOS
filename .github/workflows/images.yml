@@ -39,7 +39,8 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust, the version rust-toolchain.toml names (doc 20, S9)
+        run: bash scripts/rust-toolchain.sh
       - run: cargo build --release -p morph-boot -p strata
       # The update scenario needs the updater. Built here, as a sibling of the line
       # above and for the same reason: the harness scripts run under `sudo`, whose PATH
@@ -136,7 +137,8 @@ jobs:
       RPI_IMAGE_GEN_REF: b7077549890ed8a3854ebb136e9458e5b1658391
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust, the version rust-toolchain.toml names (doc 20, S9)
+        run: bash scripts/rust-toolchain.sh
       - name: Build morph-boot (native aarch64)
         run: cargo build --release -p morph-boot
       - name: Fetch rpi-image-gen (pinned)
