@@ -44,6 +44,7 @@ step "plan"
 node scripts/verify-plan.mjs --self-test
 git show origin/main:docs/20-build-plan.md > "${TMPDIR:-/tmp}/base-plan.md"
 node scripts/verify-plan.mjs --branch "$(git rev-parse --abbrev-ref HEAD)" --base "${TMPDIR:-/tmp}/base-plan.md"
+step "task cards";       node scripts/task.mjs --self-test
 step "console text"
 node scripts/verify-console-text.mjs --self-test
 node scripts/verify-console-text.mjs

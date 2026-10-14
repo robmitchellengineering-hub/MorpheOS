@@ -90,8 +90,11 @@ branch that has a pull request open.
 ## How to work (every task, every time)
 
 1. `git fetch origin && git switch -c <type>/<slug> origin/main`. Never commit to `main`.
-2. Take the **lowest-numbered open task** in [doc 20](docs/20-build-plan.md) whose `needs` are
-   done. Put its ID in the branch name (`feat/e2-classic-windows`). One task per branch.
+2. Run `node scripts/task.mjs --next`: the open tasks that can start now (their `needs` done,
+   their milestone current). Take the one the milestone's **Order of work** in
+   [doc 20](docs/20-build-plan.md) puts first, and read its card: `node scripts/task.mjs <ID>`
+   prints its recipe, whether its needs are done, the hazards it cites in full, which paths it
+   names exist, and whether it waits on a decision of Rob's. Put its ID in the branch name (`feat/e2-classic-windows`). One task per branch.
 3. **Write the check first.** Every task's "Done when" names something a machine verifies.
    Make that check exist and fail *before* writing the code that makes it pass. If you cannot
    make it fail, it does not test anything (AGENTS.md H3, H9).

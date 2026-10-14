@@ -108,6 +108,9 @@ jobs:
         run: |
           bash scripts/verify-embedded-python.sh --self-test
           bash scripts/verify-embedded-python.sh
+      # One task's recipe, needs and hazards on one page (scripts/task.mjs); its rules can fail.
+      - name: Prove the task cards find what they should
+        run: node scripts/task.mjs --self-test
       - name: Prove the console can draw what the machine prints on it
         run: |
           node scripts/verify-console-text.mjs --self-test
