@@ -58,19 +58,9 @@ else
     echo "== system packages: all present"
 fi
 
-# Rust: rustup's stable, with the components the bar runs. A toolchain that is already
-# there (CI's) is left alone; `rustup update stable` is the builder's job before each
-# pull request (HANDOFF.md), because CI uses the newest stable.
-if ! command -v cargo > /dev/null; then
-    [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
-fi
-if ! command -v cargo > /dev/null; then
-    echo "== installing Rust (rustup, stable)"
-    curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --component rustfmt,clippy
-    . "$HOME/.cargo/env"
-else
-    echo "== Rust: $(cargo --version)"
-fi
+# Rust: exactly the version rust-toolchain.toml names, with clippy and rustfmt, the same one
+# CI installs (doc 20, S9). Installs rustup first if there is none.
+bash "$(dirname "$0")/rust-toolchain.sh"
 
 if [ "$IMAGES" = 1 ]; then
     # KVM makes the VM suite minutes instead of most of an hour. The harness runs QEMU under

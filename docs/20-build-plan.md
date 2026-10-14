@@ -249,13 +249,24 @@ on the Legion Go the panel is natively portrait. Show the shell on every connect
 **Done when:** a QEMU scenario with two virtio-gpu heads (`max_outputs=2`) takes a
 screendump of each (`screendump` takes `head`) and finds the shell on both.
 
-### E9 · Move, fullscreen, and the switch shortcut, on real input · open · needs E3
+### E9 · Move, fullscreen, and the switch shortcut, on real input · done · needs E3
 
 **What:** what E2 left for real input: drag a window by its edge, fullscreen and back, and
 Alt+Tab running `wm::Manager::cycle`. Decisions go in `wm.rs` with unit tests first.
 
 **Done when:** the headless script gains `drag`, `fullscreen` and `key` commands through
 the same handlers real input uses, and a test asserts each in the frame.
+
+**Evidence:** `crates/flow-compositor/tests/move_fullscreen.rs` and `crates/flow-compositor/src/wm.rs`.
+The window manager decides (moving by the edge or with Super, staying reachable, raising,
+one fullscreen window that returns to its place and size; unit-tested), and the test
+drives the compositor through the script's `drag` and `key`:
+an edge drag and a Super+drag move windows without the window seeing the button, Alt+Tab
+switches and raises without the window seeing the Tab, Super+F and a client's own request
+(Firefox's F11) go fullscreen and back, and a plain click still reaches its window at the
+end. Fullscreen is the Super+F chord through `key` rather than a `fullscreen` command of its
+own: that is the path a keyboard takes. Firefox's title-bar drag arrives as the client's own
+`move` request, which starts the same move.
 
 ### E8 · Try to break it, on the laptop · open · needs E7
 
@@ -291,7 +302,7 @@ through (so every pull request runs it on a fresh Ubuntu 24.04 runner, and the `
 then passes `test-shell.sh`); `scripts/test-images.sh`; and the `ci` step "Prove check.sh
 refuses a partial bar off Linux".
 
-### S9 · Pin the exact Rust version, locally and in CI · open · parallel
+### S9 · Pin the exact Rust version, locally and in CI · done · parallel
 
 **What:** `rust-toolchain.toml` names an exact version, and the workflows honour it (drop
 `dtolnay/rust-toolchain@stable`, which overrides the file). Bump it deliberately, in its own PR.
@@ -299,6 +310,10 @@ refuses a partial bar off Linux".
 **Done when:** CI prints the same `rustc --version` as `rust-toolchain.toml`. Found on
 2026-10-13: CI's newer stable clippy rejected code that passed `scripts/check.sh` locally
 (`clippy::chunks_exact_to_as_chunks`), so the local bar was not CI's bar.
+
+**Evidence:** `rust-toolchain.toml` (1.99.0) and `scripts/rust-toolchain.sh`, which every
+workflow job and `scripts/setup-linux.sh` run: it installs the pinned toolchain and fails
+unless `rustc --version` is that version, and the job logs print it.
 
 ### S2 · Signed updates (A4) · open · parallel
 

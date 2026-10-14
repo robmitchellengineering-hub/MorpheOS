@@ -45,7 +45,9 @@ use smithay::input::{Seat, SeatHandler, SeatState};
 use smithay::output::{Mode as OutputMode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
-use smithay::reexports::wayland_server::protocol::{wl_buffer, wl_seat, wl_surface::WlSurface};
+use smithay::reexports::wayland_server::protocol::{
+    wl_buffer, wl_output, wl_seat, wl_surface::WlSurface,
+};
 use smithay::reexports::wayland_server::{Client, Display, ListeningSocket};
 use smithay::utils::{
     Buffer, Logical, Physical, Point, Rectangle, SERIAL_COUNTER, Serial, Size, Transform,
@@ -117,6 +119,8 @@ struct App {
     asked: Vec<(u32, (i32, i32))>,
     /// The screen's size, which windows are kept inside.
     screen: (i32, i32),
+    /// Where the pointer is, for a client that asks to be moved from it (its title bar).
+    pointer: (i32, i32),
     next_id: u32,
 }
 
@@ -199,6 +203,37 @@ impl XdgShellHandler for App {
     fn popup_destroyed(&mut self, surface: PopupSurface) {
         self.popups.retain(|(p, _)| *p != surface);
     }
+
+    // MOVE AND FULLSCREEN ASKED FOR BY THE CLIENT (E9). A toolkit that draws its own title
+    // bar (GTK, and so Firefox) asks to be moved when it is dragged by it, and asks to be
+    // fullscreen on F11. The window manager decides; these only carry the request to it.
+    fn move_request(&mut self, surface: ToplevelSurface, _seat: wl_seat::WlSeat, _serial: Serial) {
+        if let Some(id) = self.id_of(surface.wl_surface()) {
+            let (x, y) = self.pointer;
+            self.wm.begin_move(id, x, y);
+        }
+    }
+    fn fullscreen_request(
+        &mut self,
+        surface: ToplevelSurface,
+        _output: Option<wl_output::WlOutput>,
+    ) {
+        match self.id_of(surface.wl_surface()) {
+            Some(id) if self.wm.set_fullscreen(id, true) => self.tell_fullscreen(),
+            // Nothing changed, but a request must be answered with a configure.
+            _ => {
+                surface.send_configure();
+            }
+        }
+    }
+    fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
+        match self.id_of(surface.wl_surface()) {
+            Some(id) if self.wm.set_fullscreen(id, false) => self.tell_fullscreen(),
+            _ => {
+                surface.send_configure();
+            }
+        }
+    }
 }
 
 impl ShmHandler for App {
@@ -252,6 +287,7 @@ impl App {
 
     /// Bring the window manager in line with the windows that exist now.
     fn refresh(&mut self) {
+        self.wm.set_screen(self.screen.0, self.screen.1);
         let drawn = self.drawn_toplevels();
         self.ids.retain(|(s, _)| drawn.contains(s));
         let mut current = Vec::new();
@@ -282,13 +318,16 @@ impl App {
             .unwrap_or_else(|| Rectangle::from_size(size));
             self.offsets.retain(|(i, _)| *i != id);
             self.offsets.push((id, (geometry.loc.x, geometry.loc.y)));
-            // Too big for the screen: ask it to fit, once per size asked for.
-            if let Some(size) = wm::fit(
-                geometry.size.w,
-                geometry.size.h,
-                self.screen.0,
-                self.screen.1,
-            ) && !self.asked.contains(&(id, size))
+            // Too big for the screen: ask it to fit, once per size asked for. (A fullscreen
+            // window is exactly the screen's size, and asked to be.)
+            if self.wm.fullscreen() != Some(id)
+                && let Some(size) = wm::fit(
+                    geometry.size.w,
+                    geometry.size.h,
+                    self.screen.0,
+                    self.screen.1,
+                )
+                && !self.asked.contains(&(id, size))
                 && let Some(toplevel) = self
                     .xdg_shell_state
                     .toplevel_surfaces()
@@ -395,6 +434,45 @@ impl App {
         (placed.x - dx, placed.y - dy)
     }
 
+    fn id_of(&self, surface: &WlSurface) -> Option<u32> {
+        self.ids.iter().find(|(s, _)| s == surface).map(|(_, i)| *i)
+    }
+
+    /// Tell every window whose fullscreen state the window manager changed: fullscreen at
+    /// the screen's size, or back to the size it had before.
+    fn tell_fullscreen(&mut self) {
+        let full = self.wm.fullscreen();
+        for (surface, id) in self.ids.clone() {
+            let Some(toplevel) = self
+                .xdg_shell_state
+                .toplevel_surfaces()
+                .iter()
+                .find(|t| *t.wl_surface() == surface)
+                .cloned()
+            else {
+                continue;
+            };
+            let want = full == Some(id);
+            let has = toplevel
+                .with_pending_state(|state| state.states.contains(xdg_toplevel::State::Fullscreen));
+            if want == has {
+                continue;
+            }
+            let screen = self.screen;
+            let before = self.wm.size_before_fullscreen(id);
+            toplevel.with_pending_state(|state| {
+                if want {
+                    state.states.set(xdg_toplevel::State::Fullscreen);
+                    state.size = Some(screen.into());
+                } else {
+                    state.states.unset(xdg_toplevel::State::Fullscreen);
+                    state.size = before.map(Into::into);
+                }
+            });
+            toplevel.send_configure();
+        }
+    }
+
     fn surface(&self, id: u32) -> Option<WlSurface> {
         self.ids
             .iter()
@@ -405,6 +483,13 @@ impl App {
 
 /// The pointer's size on screen, in pixels.
 pub const CURSOR: i32 = 12;
+
+/// A key combination the shell keeps for itself.
+enum Shortcut {
+    Vt(i32),
+    Cycle,
+    Fullscreen,
+}
 
 /// The left mouse button's code (linux/input-event-codes.h `BTN_LEFT`).
 pub const BTN_LEFT: u32 = 0x110;
@@ -422,6 +507,9 @@ pub struct Server {
     /// The window the keyboard was last given to, so focus follows the window manager
     /// when a window goes away on its own.
     keyboard_on: Option<u32>,
+    /// A button press started a move the shell made (an edge, or Super): its release is the
+    /// shell's too, not the window's.
+    drag_button: Option<u32>,
     /// When the server started (frame-callback timestamps count from it), and when the
     /// visible surfaces were last told their frame was shown.
     started: Instant,
@@ -538,6 +626,10 @@ impl Server {
         let y = y.clamp(0.0, f64::from(self.height) - 1.0);
         self.pointer_at = (x, y).into();
         self.pointer_moved = true;
+        self.state.pointer = (x as i32, y as i32);
+        if self.state.wm.dragging() {
+            self.state.wm.drag_to(x as i32, y as i32);
+        }
         let on_popup = self
             .state
             .popup_at(x as i32, y as i32)
@@ -573,6 +665,33 @@ impl Server {
     /// A mouse button. Pressing focuses the window under the pointer (the Classic feel:
     /// click to focus), and the window gets the button either way.
     pub fn pointer_button(&mut self, button: u32, pressed: bool, time: u32) {
+        // A move the shell started: its buttons are the shell's, not the window's (E9).
+        if !pressed && self.drag_button == Some(button) {
+            self.drag_button = None;
+            self.state.wm.end_drag();
+            return;
+        }
+        if pressed && button == BTN_LEFT {
+            let at = self.pointer_at;
+            let with_super = self.keyboard.modifier_state().logo;
+            if self.state.popup_at(at.x as i32, at.y as i32).is_none()
+                && self
+                    .state
+                    .wm
+                    .begin_drag(at.x as i32, at.y as i32, with_super)
+                    .is_some()
+            {
+                self.state.dismiss_popups();
+                self.drag_button = Some(button);
+                self.apply_focus();
+                return;
+            }
+        }
+        // A client's own move (its title bar) ends when its button comes up; the window
+        // saw the press, so it sees the release too.
+        if !pressed && self.state.wm.dragging() {
+            self.state.wm.end_drag();
+        }
         if pressed {
             let at = self.pointer_at;
             if self.state.popup_at(at.x as i32, at.y as i32).is_none() {
@@ -603,8 +722,11 @@ impl Server {
     }
 
     /// A key, by its Linux input code (`KEY_A` is 30). The focused window gets it, except
-    /// Ctrl+Alt+F1..F12, which the shell keeps: it returns the virtual terminal to switch
-    /// to, so a person can always reach the root console on VT2.
+    /// the shell's own shortcuts, which it keeps:
+    ///   * Ctrl+Alt+F1..F12: returns the virtual terminal to switch to, so a person can
+    ///     always reach the root console on VT2;
+    ///   * Alt+Tab: the next window, in front (E9);
+    ///   * Super+F: the focused window fullscreen, and back (E9).
     pub fn key(&mut self, code: u32, pressed: bool, time: u32) -> Option<i32> {
         let state = if pressed {
             KeyState::Pressed
@@ -619,20 +741,44 @@ impl Server {
                 state,
                 serial,
                 time,
-                |_, _, keysym| {
+                |_, modifiers, keysym| {
                     let sym = keysym.modified_sym().raw();
                     let (first, last) = (
                         Keysym::XF86_Switch_VT_1.raw(),
                         Keysym::XF86_Switch_VT_12.raw(),
                     );
-                    if pressed && (first..=last).contains(&sym) {
-                        FilterResult::Intercept(Some((sym - first + 1) as i32))
+                    // The unmodified symbol, so Shift or a layout does not hide the letter.
+                    let plain = keysym.raw_latin_sym_or_raw_current_sym().map(|k| k.raw());
+                    if !pressed {
+                        FilterResult::Forward
+                    } else if (first..=last).contains(&sym) {
+                        FilterResult::Intercept(Shortcut::Vt((sym - first + 1) as i32))
+                    } else if modifiers.alt && plain == Some(Keysym::Tab.raw()) {
+                        FilterResult::Intercept(Shortcut::Cycle)
+                    } else if modifiers.logo && plain == Some(Keysym::f.raw()) {
+                        FilterResult::Intercept(Shortcut::Fullscreen)
                     } else {
                         FilterResult::Forward
                     }
                 },
             )
-            .flatten()
+            .and_then(|shortcut| match shortcut {
+                Shortcut::Vt(n) => Some(n),
+                Shortcut::Cycle => {
+                    self.state.wm.cycle();
+                    self.apply_focus();
+                    None
+                }
+                Shortcut::Fullscreen => {
+                    if let Some(id) = self.state.wm.focused() {
+                        let on = self.state.wm.fullscreen() != Some(id);
+                        if self.state.wm.set_fullscreen(id, on) {
+                            self.state.tell_fullscreen();
+                        }
+                    }
+                    None
+                }
+            })
     }
 
     /// Give keyboard focus to the window the window manager says has it.
@@ -688,6 +834,31 @@ impl Server {
                 }
                 for &code in codes.iter().rev() {
                     self.key(code, false, 0);
+                }
+            }
+            // A drag with the left button, in steps, as a hand moves a mouse; `super` holds
+            // the Super key through it.
+            ["drag", _, _, _, _, rest @ ..] => {
+                let with_super = rest == ["super"];
+                if !rest.is_empty() && !with_super {
+                    return Err(format!("script: `{line}`: drag x0 y0 x1 y1 [super]"));
+                }
+                const KEY_LEFTMETA: u32 = 125;
+                if with_super {
+                    self.key(KEY_LEFTMETA, true, 0);
+                }
+                let (x0, y0, x1, y1) = (num(1)?, num(2)?, num(3)?, num(4)?);
+                self.pointer_to(f64::from(x0), f64::from(y0), 0);
+                self.pointer_button(BTN_LEFT, true, 0);
+                for i in 1..=8 {
+                    let x = x0 + (x1 - x0) * i / 8;
+                    let y = y0 + (y1 - y0) * i / 8;
+                    self.pointer_to(f64::from(x), f64::from(y), 0);
+                    self.settle(Duration::from_millis(5))?;
+                }
+                self.pointer_button(BTN_LEFT, false, 0);
+                if with_super {
+                    self.key(KEY_LEFTMETA, false, 0);
                 }
             }
             ["cycle"] => {
@@ -772,6 +943,7 @@ impl Server {
             popups: Vec::new(),
             asked: Vec::new(),
             screen: (width as i32, height as i32),
+            pointer: (width as i32 / 2, height as i32 / 2),
             next_id: 0,
         };
         state.output.create_global::<App>(&dh);
@@ -789,6 +961,7 @@ impl Server {
             pointer_at: (f64::from(width) / 2.0, f64::from(height) / 2.0).into(),
             pointer_moved: false,
             keyboard_on: None,
+            drag_button: None,
             started: Instant::now(),
             last_frames: Instant::now(),
             width,
@@ -909,9 +1082,11 @@ fn render(
             ));
         }
     }
+    // No border on a fullscreen window: it has the whole screen, edge to edge.
     let focus_border = state
         .wm
         .focused()
+        .filter(|id| state.wm.fullscreen() != Some(*id))
         .and_then(|id| layout.iter().find(|p| p.id == id))
         .map(|p| {
             Rectangle::new(

@@ -1,19 +1,17 @@
-# The toolchain CI and a contributor share.
+# The toolchain CI and a contributor share: one exact version (doc 20, S9).
 #
-# WHY THIS EXISTS: `.github/workflows/ci.yml` uses `dtolnay/rust-toolchain@stable`
-# with the rustfmt and clippy components, while nothing in the repo said so — so a
-# contributor with a distro `rustc`, or without clippy, discovered the difference
-# only when CI rejected them. This file makes the channel and the components part
-# of the repo, so `cargo fmt --check`, `cargo clippy -- -D warnings` and
-# `cargo test --all` mean the same thing locally and in CI.
+# WHY EXACT. `stable` meant "whatever was newest when each machine last updated", and CI
+# updated every run: on 2026-10-13 CI's newer clippy rejected code that had passed
+# `scripts/check.sh` on the builder's machine (`clippy::chunks_exact_to_as_chunks`), so the
+# local bar was not CI's bar. Now both install exactly this version, through
+# `scripts/rust-toolchain.sh`, which fails if the `rustc` in use is any other.
 #
-# ⚠️ KNOWN LIMIT, stated rather than papered over: `dtolnay/rust-toolchain@stable`
-# in the workflow OVERRIDES this file's channel, so this pins the components and
-# documents the channel but does not yet pin an exact version. Pinning one (and
-# having the workflow honour it by dropping `@stable`) is the right next step and
-# is deliberately not smuggled into this change — it needs a CI run to prove it.
+# BUMPING IT is a pull request of its own: change the version here, run `scripts/check.sh`,
+# fix what the new compiler and clippy say, and let CI prove it. Never in passing.
 #
-# Edition 2024 (workspace `Cargo.toml`) requires Rust 1.85 or newer.
+# Edition 2024 (workspace `Cargo.toml`) requires Rust 1.85 or newer; the code uses
+# let-chains and `as_chunks` (1.88).
 [toolchain]
-channel = "stable"
+channel = "1.99.0"
 components = ["rustfmt", "clippy"]
+profile = "minimal"
