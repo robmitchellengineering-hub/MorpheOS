@@ -324,13 +324,25 @@ refuses a partial bar off Linux".
 workflow job and `scripts/setup-linux.sh` run: it installs the pinned toolchain and fails
 unless `rustc --version` is that version, and the job logs print it.
 
-### S2 · Signed updates (A4) · open · parallel
+### S2 · Signed updates (A4) · done · parallel
 
 **What:** `morph-update` refuses a payload whose `BLAKE3SUMS` lacks a valid ed25519
 signature by a key baked into the image. Key custody is Rob's.
 
 **Done when:** tests show an unsigned, wrongly signed or tampered payload is refused before
 any write, and the `update` VM scenario passes with a signed payload.
+
+**Evidence:** `crates/morph-update/tests/install.rs` (unsigned, signed by another key, a manifest
+changed after signing, a garbage signature, and no trusted keys are each refused with the slot
+untouched; sabotaging the check fails three of them) and the `update` scenario of
+`images/x86-qemu/test-fallback.sh`, whose payload is signed by `build-payload.sh` and installed
+by the image's OWN `morph-update` against the key in its own root: the medium carries no
+updater, since one it brought could check nothing.
+
+**Notes:** the images trust a test key made per build (`build.sh`, `UPDATE_KEY` to give a real
+one). A release key, and where it is kept, is Rob's: no image a person uses should trust a key
+that lives in CI. `morph-heal`, which rebuilds a slot from the running system, signs that copy
+with a key made for the one repair, so there is still no unsigned way to open a payload.
 
 ### S3 · Updates arrive by themselves · open · needs S2
 

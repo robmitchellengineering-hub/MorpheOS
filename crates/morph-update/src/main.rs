@@ -8,18 +8,23 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use morph_boot::{BackendOptions, Slot};
-use morph_update::{Layout, Payload, install};
+use morph_update::{Layout, Payload, TrustedKeys, install};
 
 const USAGE: &str = "\
 usage: morph-update [options] <command>
 
 commands:
+  keygen  --key FILE           make a signing key pair: FILE (secret, 0600) and FILE.pub
   seal    --payload DIR        compute BLAKE3SUMS for a payload directory (the builder's half)
-  check   --payload DIR        verify a payload against its own BLAKE3SUMS, write nothing
+  sign    --payload DIR --key FILE
+                               sign a sealed payload: write BLAKE3SUMS.sig
+  check   --payload DIR        verify a payload's signature and its own BLAKE3SUMS, write nothing
   install --payload DIR        write the payload into the inactive slot and verify it
           [--slot a|b]         assert which slot that should be (refused if wrong)
 
 options:
+  --trust PATH                 the public keys updates may be signed by: a directory of
+                               *.pub files, or one file (default /usr/share/morpheos/update-keys)
   --root PATH                  the slot's root, a device or a file
                                (default /dev/disk/by-partlabel/root-<slot>)
 
@@ -32,6 +37,8 @@ backend options (default: detected):
 
 struct Opts {
     payload: Option<PathBuf>,
+    key: Option<PathBuf>,
+    trust: PathBuf,
     slot: Option<Slot>,
     root: Option<PathBuf>,
     backend: BackendOptions,
@@ -41,6 +48,8 @@ struct Opts {
 fn parse(args: Vec<String>) -> Option<Opts> {
     let mut o = Opts {
         payload: None,
+        key: None,
+        trust: PathBuf::from(morph_update::TRUSTED_KEYS_DIR),
         slot: None,
         root: None,
         backend: BackendOptions::default(),
@@ -50,6 +59,8 @@ fn parse(args: Vec<String>) -> Option<Opts> {
     while let Some(a) = it.next() {
         match a.as_str() {
             "--payload" => o.payload = Some(it.next()?.into()),
+            "--key" => o.key = Some(it.next()?.into()),
+            "--trust" => o.trust = it.next()?.into(),
             "--root" => o.root = Some(it.next()?.into()),
             "--slot" => o.slot = Slot::parse(&it.next()?),
             "--backend" => o.backend.backend = Some(it.next()?),
@@ -63,7 +74,35 @@ fn parse(args: Vec<String>) -> Option<Opts> {
     Some(o)
 }
 
+fn keygen(o: &Opts) -> Result<(), String> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let path = o.key.as_ref().ok_or("keygen needs --key FILE")?;
+    let (secret, public) = morph_update::keygen().map_err(|e| e.to_string())?;
+    // Created 0600 and only if absent: a key is never overwritten by accident.
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)
+        .and_then(|mut f| f.write_all(format!("{secret}\n").as_bytes()))
+        .map_err(|e| format!("writing {}: {e}", path.display()))?;
+    let public_path = PathBuf::from(format!("{}.pub", path.display()));
+    std::fs::write(&public_path, format!("{public}\n"))
+        .map_err(|e| format!("writing {}: {e}", public_path.display()))?;
+    println!("{public}");
+    eprintln!(
+        "secret key in {} (keep it; it can update every machine that trusts {})",
+        path.display(),
+        public_path.display()
+    );
+    Ok(())
+}
+
 fn run(o: &Opts) -> Result<(), String> {
+    if o.rest.as_slice() == ["keygen"] {
+        return keygen(o);
+    }
     let dir = o
         .payload
         .as_ref()
@@ -72,13 +111,24 @@ fn run(o: &Opts) -> Result<(), String> {
 
     // `seal` runs before a manifest exists, so the payload cannot be opened up here —
     // every other command opens it as its first act.
-    let open = || Payload::open(dir).map_err(|e| e.to_string());
+    let open = || {
+        let trusted = TrustedKeys::load(&o.trust).map_err(|e| e.to_string())?;
+        Payload::open(dir, &trusted).map_err(|e| e.to_string())
+    };
 
     match rest.as_slice() {
         ["seal"] => {
             let sizes = morph_update::seal(dir).map_err(|e| e.to_string())?;
             println!("{}", serde_json::to_string(&sizes).unwrap());
             eprintln!("sealed {}: {} file(s)", dir.display(), sizes.len());
+            Ok(())
+        }
+        ["sign"] => {
+            let key = o.key.as_ref().ok_or("sign needs --key FILE")?;
+            let secret = std::fs::read_to_string(key)
+                .map_err(|e| format!("reading {}: {e}", key.display()))?;
+            morph_update::sign(dir, &secret).map_err(|e| e.to_string())?;
+            eprintln!("signed {}", dir.display());
             Ok(())
         }
         ["check"] => {

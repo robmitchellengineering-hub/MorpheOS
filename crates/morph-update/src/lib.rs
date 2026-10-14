@@ -25,6 +25,19 @@
 //! A failure at any point leaves the marker in place and the inactive slot untouched or
 //! incomplete — never silently usable. The running system is unaffected throughout.
 //!
+//! # Signed: the payload must come from someone the image trusts (doc 20, S2)
+//!
+//! A digest manifest proves a payload is intact, not that it is *wanted*: anyone can write a
+//! root image and a matching `BLAKE3SUMS`. So `BLAKE3SUMS.sig` is an ed25519 signature over
+//! the manifest's exact bytes, and [`Payload::open`] takes the image's [`TrustedKeys`] and
+//! checks it before it even parses the manifest. The manifest pins every file by digest, so
+//! one signature covers the whole payload. There is no way to open a payload without keys:
+//! an unsigned path would be the one an attacker takes.
+//!
+//! ⚠️ THE VERIFIER MUST BE THE IMAGE'S OWN. An update medium can carry any binary it likes,
+//! including a `morph-update` that checks nothing, so the check is only worth something when
+//! the machine runs the copy in its own read-only root, with the keys in its own root.
+//!
 //! # Why BLAKE3 and not SHA-256
 //!
 //! `crates/strata` already content-addresses every stored chunk by BLAKE3. One hash
@@ -45,6 +58,10 @@ pub const ROOT_IMAGE: &str = "root.img";
 pub const KERNEL: &str = "vmlinuz";
 pub const INITRD: &str = "initrd.img";
 pub const MANIFEST: &str = "BLAKE3SUMS";
+/// The ed25519 signature over [`MANIFEST`]'s bytes, as 128 hex characters.
+pub const SIGNATURE: &str = "BLAKE3SUMS.sig";
+/// Where an image keeps the public keys it accepts updates from, one `*.pub` file each.
+pub const TRUSTED_KEYS_DIR: &str = "/usr/share/morpheos/update-keys";
 const REQUIRED: [&str; 3] = [ROOT_IMAGE, KERNEL, INITRD];
 
 /// Marker left in a slot's boot directory while an update to it is incomplete.
@@ -59,6 +76,10 @@ pub enum Error {
     /// The payload does not match its own manifest: missing file, or a digest
     /// that disagrees. Caught before anything is written.
     BadPayload(String),
+    /// The payload is not signed by a key this machine trusts: no signature, a bad one, a
+    /// key not on the list, or a manifest changed after it was signed. Caught before
+    /// anything is written, and before the manifest is even read.
+    Untrusted(String),
     /// The payload was written and what came back off the device does not match it.
     VerifyFailed(String),
     /// Policy says this slot must not be written to.
@@ -76,6 +97,7 @@ impl fmt::Display for Error {
         match self {
             Error::Io { what, source } => write!(f, "{what}: {source}"),
             Error::BadPayload(m) => write!(f, "payload is not usable: {m}"),
+            Error::Untrusted(m) => write!(f, "payload is not trusted: {m}"),
             Error::VerifyFailed(m) => write!(f, "verification failed: {m}"),
             Error::Refused(m) => write!(f, "refused: {m}"),
             Error::Policy(m) => write!(f, "boot policy: {m}"),
@@ -142,6 +164,118 @@ fn hash_prefix(path: &Path, len: u64) -> Result<String> {
     Ok(digest)
 }
 
+fn unhex<const N: usize>(text: &str) -> Option<[u8; N]> {
+    let text = text.trim();
+    if text.len() != 2 * N {
+        return None;
+    }
+    let mut out = [0u8; N];
+    for (i, b) in out.iter_mut().enumerate() {
+        *b = u8::from_str_radix(text.get(2 * i..2 * i + 2)?, 16).ok()?;
+    }
+    Some(out)
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// The public keys an image accepts updates from.
+#[derive(Debug, Clone)]
+pub struct TrustedKeys {
+    keys: Vec<(String, ed25519_dalek::VerifyingKey)>,
+}
+
+impl TrustedKeys {
+    /// Every `*.pub` file in `dir` (or `dir` itself, if it is one file): a 64-hex-character
+    /// ed25519 public key on the first line that is not a `#` comment. **No keys is an
+    /// error**, not "trust everything": a machine with an empty list accepts nothing.
+    pub fn load(path: &Path) -> Result<TrustedKeys> {
+        let files: Vec<PathBuf> = if path.is_dir() {
+            let mut v: Vec<PathBuf> = std::fs::read_dir(path)
+                .map_err(io(format!("reading {}", path.display())))?
+                .filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|p| p.extension().is_some_and(|e| e == "pub"))
+                .collect();
+            v.sort();
+            v
+        } else {
+            vec![path.to_path_buf()]
+        };
+        let mut keys = Vec::new();
+        for f in files {
+            let text =
+                std::fs::read_to_string(&f).map_err(io(format!("reading {}", f.display())))?;
+            let line = text
+                .lines()
+                .map(str::trim)
+                .find(|l| !l.is_empty() && !l.starts_with('#'))
+                .unwrap_or("");
+            let key = unhex::<32>(line)
+                .and_then(|b| ed25519_dalek::VerifyingKey::from_bytes(&b).ok())
+                .ok_or_else(|| {
+                    Error::Untrusted(format!("{} is not an ed25519 public key", f.display()))
+                })?;
+            keys.push((f.display().to_string(), key));
+        }
+        if keys.is_empty() {
+            return Err(Error::Untrusted(format!(
+                "no trusted update keys in {}: this machine accepts no update",
+                path.display()
+            )));
+        }
+        Ok(TrustedKeys { keys })
+    }
+
+    /// Exactly one key, given as hex: for a caller that signs its own payload with a key it
+    /// made a moment ago (`morph-heal`, staging the running system), so that it opens the
+    /// payload through the same signature check as everyone else.
+    pub fn from_public_hex(name: &str, public_hex: &str) -> Result<TrustedKeys> {
+        let key = unhex::<32>(public_hex)
+            .and_then(|b| ed25519_dalek::VerifyingKey::from_bytes(&b).ok())
+            .ok_or_else(|| Error::Untrusted(format!("{name} is not an ed25519 public key")))?;
+        Ok(TrustedKeys {
+            keys: vec![(name.to_string(), key)],
+        })
+    }
+
+    /// Check a signature over `message` against every trusted key; the name of the key
+    /// that made it, if one did.
+    fn verify(&self, message: &[u8], signature: &ed25519_dalek::Signature) -> Option<&str> {
+        self.keys
+            .iter()
+            .find(|(_, k)| k.verify_strict(message, signature).is_ok())
+            .map(|(name, _)| name.as_str())
+    }
+}
+
+/// A new signing key pair: the secret seed and the public key, both hex. The seed comes from
+/// the kernel's random source. **The secret is the whole of the trust**: whoever holds it can
+/// update every machine whose image carries the public key.
+pub fn keygen() -> Result<(String, String)> {
+    let mut seed = [0u8; 32];
+    std::fs::File::open("/dev/urandom")
+        .and_then(|mut f| f.read_exact(&mut seed))
+        .map_err(io("reading /dev/urandom"))?;
+    let key = ed25519_dalek::SigningKey::from_bytes(&seed);
+    Ok((hex(&seed), hex(key.verifying_key().as_bytes())))
+}
+
+/// Sign a sealed payload: write `BLAKE3SUMS.sig` over its `BLAKE3SUMS`, with the secret seed
+/// in `secret_hex` (as [`keygen`] wrote it).
+pub fn sign(dir: &Path, secret_hex: &str) -> Result<()> {
+    use ed25519_dalek::Signer;
+    let seed = unhex::<32>(secret_hex)
+        .ok_or_else(|| Error::Untrusted("the signing key is not a 64-hex-character seed".into()))?;
+    let key = ed25519_dalek::SigningKey::from_bytes(&seed);
+    let manifest = dir.join(MANIFEST);
+    let bytes = std::fs::read(&manifest).map_err(io(format!("reading {}", manifest.display())))?;
+    let sig = key.sign(&bytes);
+    let out = dir.join(SIGNATURE);
+    std::fs::write(&out, format!("{}\n", hex(&sig.to_bytes())))
+        .map_err(io(format!("writing {}", out.display())))
+}
+
 /// A payload directory: the new system, described by its own digest manifest.
 #[derive(Debug)]
 pub struct Payload {
@@ -153,14 +287,39 @@ pub struct Payload {
 }
 
 impl Payload {
-    /// Read `<dir>/BLAKE3SUMS` and check it covers exactly the three required files.
+    /// Check `<dir>/BLAKE3SUMS` is signed by one of `trusted`, then read it and check it
+    /// covers exactly the three required files.
     ///
-    /// This does **not** hash them — [`Payload::check`] does, and that is a separate
-    /// call so that the cheap structural check can happen anywhere.
-    pub fn open(dir: &Path) -> Result<Payload> {
+    /// The signature comes first: a manifest from someone the machine does not trust is not
+    /// parsed at all. This does **not** hash the files — [`Payload::check`] does, and that
+    /// is a separate call so that the cheap checks can happen anywhere.
+    pub fn open(dir: &Path, trusted: &TrustedKeys) -> Result<Payload> {
         let manifest = dir.join(MANIFEST);
-        let text = std::fs::read_to_string(&manifest)
+        let bytes = std::fs::read(&manifest)
             .map_err(|e| Error::BadPayload(format!("{}: {e}", manifest.display())))?;
+        let sig_path = dir.join(SIGNATURE);
+        let sig_text = std::fs::read_to_string(&sig_path).map_err(|e| {
+            Error::Untrusted(format!(
+                "{}: {e} (an unsigned payload is refused)",
+                sig_path.display()
+            ))
+        })?;
+        let signature = unhex::<64>(&sig_text)
+            .map(|b| ed25519_dalek::Signature::from_bytes(&b))
+            .ok_or_else(|| {
+                Error::Untrusted(format!(
+                    "{} is not an ed25519 signature",
+                    sig_path.display()
+                ))
+            })?;
+        if trusted.verify(&bytes, &signature).is_none() {
+            return Err(Error::Untrusted(format!(
+                "{} is not signed by a trusted key: signed by another key, or changed after signing",
+                manifest.display()
+            )));
+        }
+        let text = String::from_utf8(bytes)
+            .map_err(|_| Error::BadPayload(format!("{} is not text", manifest.display())))?;
         let mut digests = BTreeMap::new();
         for (n, line) in text.lines().enumerate() {
             let line = line.trim();

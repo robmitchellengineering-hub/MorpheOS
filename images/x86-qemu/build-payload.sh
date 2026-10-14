@@ -3,8 +3,9 @@
 #
 #   images/x86-qemu/build-payload.sh <workdir> <payload.img>
 #
-# It produces a small disk holding the `morph-update` binary and a sealed payload —
-# the new root image, a kernel, an initramfs, and `BLAKE3SUMS` over all three. The VM
+# It produces a small disk holding a sealed, signed payload: the new root image, a kernel, an
+# initramfs, `BLAKE3SUMS` over all three, and `BLAKE3SUMS.sig` (doc 20, S2). No updater: the
+# machine installs it with its own. The VM
 # attaches it read-only as a second drive, which is how the update reaches a running
 # system: NOT through a special path baked into the image.
 #
@@ -33,7 +34,7 @@ REPO=$(cd "$HERE/../.." && pwd)
 MORPH_UPDATE=${MORPH_UPDATE:-$REPO/target/release/morph-update}
 MORPH_HEAL=${MORPH_HEAL:-$REPO/target/release/morph-heal}
 
-# Which medium: `update` carries the updater and a sealed payload; `heal` carries only the
+# Which medium: `update` carries a signed payload; `heal` carries only the
 # healer. The in-image driver tells them apart by what it finds on the medium rather than by
 # being told, so a scenario cannot be handed the wrong one and quietly do nothing.
 KIND=${3:-update}
@@ -149,7 +150,13 @@ e2fsck -f -n "$P/root.img" >/dev/null 2>&1 || {
 echo "payload root image: $BEFORE -> $AFTER bytes ($((AFTER * 100 / BEFORE))%)"
 
 "$MORPH_UPDATE" --payload "$P" seal >/dev/null
-cp "$MORPH_UPDATE" "$STAGE/morph-update"
+# Signed with the key the image trusts (build.sh made it, or was given it): an unsigned
+# payload is refused by the machine before anything is written (doc 20, S2).
+UPDATE_KEY=${UPDATE_KEY:-$WORK/update-test.key}
+[ -f "$UPDATE_KEY" ] || { echo "no signing key at $UPDATE_KEY: run build.sh first" >&2; exit 1; }
+"$MORPH_UPDATE" --payload "$P" --key "$UPDATE_KEY" sign
+# No updater on the medium: the machine installs with its own, which checks the signature
+# against its own keys. A medium's binary could check nothing.
 
 rm -f "$OUT"
 mkfs.ext4 -q -L payload -d "$STAGE" "$OUT" 1500M

@@ -33,7 +33,7 @@
 use std::path::{Path, PathBuf};
 
 use morph_boot::{BootControl, Slot};
-use morph_update::{Layout, Payload};
+use morph_update::{Layout, Payload, TrustedKeys};
 
 pub use morph_update::Outcome;
 
@@ -264,8 +264,14 @@ impl Heal {
                 .map_err(io(format!("reading {}", from.display())))?;
         }
         morph_update::seal(&stage)?;
-
-        let mut payload = Payload::open(&stage)?;
+        // There is no unsigned way to open a payload (doc 20, S2), and this one needs no
+        // vendor's signature: it is the machine's own running system, read from its own
+        // read-only root. So it is signed with a key made for this one repair and opened
+        // trusting only that key, which proves the manifest is the one written just above.
+        let (secret, public) = morph_update::keygen()?;
+        morph_update::sign(&stage, &secret)?;
+        let trusted = TrustedKeys::from_public_hex("this repair's own key", &public)?;
+        let mut payload = Payload::open(&stage, &trusted)?;
         let layout = Layout {
             esp: self.esp.clone(),
             root_device: spare_root.to_path_buf(),

@@ -133,8 +133,13 @@ morph-update --esp /efi --root /dev/disk/by-partlabel/root-<the slot that is NOT
     --payload /mnt/payload install
 ```
 
-The payload is verified before anything is written, the write is read back and hashed, and only
-then is the slot allowed to look ready to trial.
+The payload's signature is checked against the keys in the image, then its contents against its
+own digests, all before anything is written; the write is read back and hashed, and only then is
+the slot allowed to look ready to trial.
+
+⚠️ **The stick accepts only payloads signed by the key it was built with** (doc 20, S2). An image
+from CI carries a throwaway test key made for that one build, so a payload from any other build is
+refused, as it should be. Signing real releases waits on a release key, which is Rob's to hold.
 
 ## 5. Send back what happened
 
