@@ -365,6 +365,18 @@ One line per piece of work: date, who, what, what's next.
   nothing on a machine runs yet): the machine, kernel, boot, recovery image, free space,
   replicas, single-copy, heal's switch, the network, the users and the capsules are now listed
   too (H5). S11's notes say to remove `/machine/name` with `/storage/retention`.
+- 2026-10-14 · Claude Code · E5 done (`feat/e5-wifi-bar`): a bar along the bottom of the screen
+  with a Wi-Fi button; it and Super+W open the picker (`--launch-wifi`), only ever one, and an
+  open one comes to the front with the keyboard. Windows are sized and stacked to leave the bar
+  clear (GTK's bounds on 1024 x 768 are now 992 x 704). `on_the_shell.rs` drives it headless,
+  sabotaged twice; `test-wifi.sh` closes the picker after joining and reopens it from the bar.
+  Next in M1: E6's reports (Rob), then E7.
+- 2026-10-14 · Claude Code · #66's VM run found two mistakes of mine. The bar's Wi-Fi icon used
+  `palette::TEXT`, the colour `test-shell.sh` finds the pointer by (now `palette::BAR_ICON`), and
+  an edit left stale lines in `test-wifi.sh`'s embedded Python, an IndentationError that
+  `bash -n` cannot see. New guard: `scripts/verify-embedded-python.sh` compiles every
+  `<<'PY'` program in the image tests (in `check.sh` and the `ci` workflow; its self-test and
+  the broken file both fail it).
 - 2026-10-14 · Claude Code · `fix/payload-rollback`: a correctly signed OLD payload installed,
   because nothing signed said which release it was. The manifest now carries a required
   `release <n>` line under the signature; images say theirs in `/usr/lib/morpheos/release`;
