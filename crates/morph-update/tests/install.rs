@@ -8,12 +8,18 @@
 //! Every refusal below is asserted as hard as a success, and each one also asserts what
 //! it was protecting: **a refused update must leave the inactive slot exactly as it
 //! found it**, because a half-written slot is worse than no update at all.
+//!
+//! Payloads are signed (doc 20, S2) with a fixed test key, and the fixtures sign with the
+//! ed25519 crate directly rather than with `morph_update::sign`, for the same reason they
+//! do not build manifests with `seal`: a mistake shared by signer and verifier must not be
+//! able to cancel itself out.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use ed25519_dalek::{Signer, SigningKey};
 use morph_boot::{BootControl, Slot};
-use morph_update::{Error, Layout, Payload, install};
+use morph_update::{Error, Layout, Payload, TrustedKeys, install};
 
 static N: AtomicU32 = AtomicU32::new(0);
 
@@ -47,6 +53,44 @@ fn write_manifest(dir: &Path) {
         text.push_str(&format!("{}  {name}\n", digest(&bytes)));
     }
     std::fs::write(dir.join("BLAKE3SUMS"), text).unwrap();
+    sign_with(dir, &trusted_key());
+}
+
+/// The key the test machine trusts, and one it does not.
+fn trusted_key() -> SigningKey {
+    SigningKey::from_bytes(&[7u8; 32])
+}
+fn other_key() -> SigningKey {
+    SigningKey::from_bytes(&[9u8; 32])
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Sign `<dir>/BLAKE3SUMS` as it is now, with `key`.
+fn sign_with(dir: &Path, key: &SigningKey) {
+    let manifest = std::fs::read(dir.join("BLAKE3SUMS")).unwrap();
+    let sig = key.sign(&manifest);
+    std::fs::write(
+        dir.join("BLAKE3SUMS.sig"),
+        format!("{}\n", hex(&sig.to_bytes())),
+    )
+    .unwrap();
+}
+
+/// The machine's list of trusted keys: a directory holding the trusted key's public half.
+fn trust() -> TrustedKeys {
+    let dir = scratch("keys");
+    std::fs::write(
+        dir.join("test.pub"),
+        format!(
+            "# the test key\n{}\n",
+            hex(trusted_key().verifying_key().as_bytes())
+        ),
+    )
+    .unwrap();
+    TrustedKeys::load(&dir).unwrap()
 }
 
 /// The device starts full of a pattern, so "was it touched?" is a byte comparison.
@@ -75,7 +119,7 @@ impl Fixture {
     }
 
     fn open(&self) -> Payload {
-        Payload::open(&self.payload_dir).unwrap()
+        Payload::open(&self.payload_dir, &trust()).unwrap()
     }
 
     fn device_bytes(&self) -> Vec<u8> {
@@ -188,8 +232,10 @@ fn a_manifest_that_is_not_exactly_the_three_files_is_refused() {
     let mut text = std::fs::read_to_string(f.payload_dir.join("BLAKE3SUMS")).unwrap();
     text.push_str(&format!("{}  something-else\n", digest(b"x")));
     std::fs::write(f.payload_dir.join("BLAKE3SUMS"), &text).unwrap();
+    // Signed as it now is, so what is refused is the manifest, not the signature.
+    sign_with(&f.payload_dir, &trusted_key());
     assert!(matches!(
-        Payload::open(&f.payload_dir),
+        Payload::open(&f.payload_dir, &trust()),
         Err(Error::BadPayload(_))
     ));
 
@@ -201,8 +247,9 @@ fn a_manifest_that_is_not_exactly_the_three_files_is_refused() {
         .map(|l| format!("{l}\n"))
         .collect();
     std::fs::write(f.payload_dir.join("BLAKE3SUMS"), &text).unwrap();
+    sign_with(&f.payload_dir, &trusted_key());
     assert!(matches!(
-        Payload::open(&f.payload_dir),
+        Payload::open(&f.payload_dir, &trust()),
         Err(Error::BadPayload(_))
     ));
 }
@@ -278,7 +325,8 @@ fn a_payload_file_that_is_a_device_is_read_not_called_missing() {
     std::fs::write(dir.join("initrd.img"), b"i").unwrap();
 
     morph_update::seal(&dir).expect("a device is a readable payload file, not a missing one");
-    let mut payload = Payload::open(&dir).unwrap();
+    sign_with(&dir, &trusted_key());
+    let mut payload = Payload::open(&dir, &trust()).unwrap();
     let sizes = payload.check().expect("and it still checks");
     assert_eq!(
         sizes["root.img"], 0,
@@ -294,4 +342,102 @@ fn check_reports_the_files_without_writing_anything() {
     assert_eq!(sizes["root.img"], NEW_ROOT.len() as u64);
     assert_eq!(sizes.len(), 3);
     assert_eq!(f.device_bytes(), PATTERN, "check must not write");
+}
+
+// SIGNATURES (doc 20, S2). Each refusal is checked to come before any write: the device
+// still holds its pattern and no slot is marked, because `open` is where it stops.
+
+fn assert_untouched(f: &Fixture) {
+    assert_eq!(
+        f.device_bytes(),
+        PATTERN,
+        "a refused payload must not touch the slot"
+    );
+    assert!(
+        !f.layout.marker(Slot::B).exists(),
+        "nothing should have been marked"
+    );
+}
+
+#[test]
+fn an_unsigned_payload_is_refused_before_any_write() {
+    let f = Fixture::new(NEW_ROOT);
+    std::fs::remove_file(f.payload_dir.join("BLAKE3SUMS.sig")).unwrap();
+    let err = Payload::open(&f.payload_dir, &trust()).unwrap_err();
+    assert!(matches!(err, Error::Untrusted(_)), "got {err}");
+    assert_untouched(&f);
+}
+
+#[test]
+fn a_payload_signed_by_a_key_the_machine_does_not_trust_is_refused() {
+    let f = Fixture::new(NEW_ROOT);
+    sign_with(&f.payload_dir, &other_key());
+    let err = Payload::open(&f.payload_dir, &trust()).unwrap_err();
+    assert!(matches!(err, Error::Untrusted(_)), "got {err}");
+    assert_untouched(&f);
+}
+
+#[test]
+fn a_manifest_changed_after_it_was_signed_is_refused() {
+    // The attack the signature exists for: a new root image and a manifest to match it,
+    // under the old signature.
+    let f = Fixture::new(NEW_ROOT);
+    std::fs::write(f.payload_dir.join("root.img"), b"an attacker's root").unwrap();
+    let mut text = String::new();
+    for name in ["root.img", "vmlinuz", "initrd.img"] {
+        let bytes = std::fs::read(f.payload_dir.join(name)).unwrap();
+        text.push_str(&format!("{}  {name}\n", digest(&bytes)));
+    }
+    std::fs::write(f.payload_dir.join("BLAKE3SUMS"), text).unwrap();
+    let err = Payload::open(&f.payload_dir, &trust()).unwrap_err();
+    assert!(matches!(err, Error::Untrusted(_)), "got {err}");
+    assert_untouched(&f);
+}
+
+#[test]
+fn a_signature_that_is_not_a_signature_is_refused() {
+    let f = Fixture::new(NEW_ROOT);
+    std::fs::write(f.payload_dir.join("BLAKE3SUMS.sig"), "not a signature\n").unwrap();
+    let err = Payload::open(&f.payload_dir, &trust()).unwrap_err();
+    assert!(matches!(err, Error::Untrusted(_)), "got {err}");
+    assert_untouched(&f);
+}
+
+#[test]
+fn a_machine_with_no_trusted_keys_accepts_nothing() {
+    let empty = scratch("no-keys");
+    let err = TrustedKeys::load(&empty).unwrap_err();
+    assert!(matches!(err, Error::Untrusted(_)), "got {err}");
+    let bad = scratch("bad-key");
+    std::fs::write(bad.join("x.pub"), "not a key\n").unwrap();
+    assert!(matches!(TrustedKeys::load(&bad), Err(Error::Untrusted(_))));
+}
+
+#[test]
+fn a_key_made_by_keygen_signs_a_payload_its_public_half_accepts() {
+    // The builder's tools, end to end: keygen, seal, sign; then the machine's open.
+    let (secret, public) = morph_update::keygen().unwrap();
+    let keys = scratch("keygen");
+    std::fs::write(keys.join("release.pub"), format!("{public}\n")).unwrap();
+    let trusted = TrustedKeys::load(&keys).unwrap();
+
+    let base = scratch("signed");
+    let dir = base.join("payload");
+    std::fs::create_dir_all(&dir).unwrap();
+    for (name, bytes) in [
+        ("root.img", NEW_ROOT),
+        ("vmlinuz", b"k".as_slice()),
+        ("initrd.img", b"i"),
+    ] {
+        std::fs::write(dir.join(name), bytes).unwrap();
+    }
+    morph_update::seal(&dir).unwrap();
+    morph_update::sign(&dir, &secret).unwrap();
+    let mut payload = Payload::open(&dir, &trusted).expect("its own signature is accepted");
+    payload.check().unwrap();
+    // And not by a machine that trusts only the fixtures' key.
+    assert!(matches!(
+        Payload::open(&dir, &trust()),
+        Err(Error::Untrusted(_))
+    ));
 }

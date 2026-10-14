@@ -122,6 +122,9 @@ until Rob opens it.
 - **`plain` boots into the shell at E4, not E10.** Until the browser lands, the root console
   serves a person on the laptop better than an empty shell (doc 20, E10's notes).
 - **The shell runs as root until E11**, which needs the account model (S5).
+- **The release signing key (S2).** Images trust a test key made per build. Releases need a key
+  Rob holds, and somewhere to keep it (an offline machine, a hardware key): his call, as is
+  whether a lost key can be replaced by an update signed with the old one.
 
 ## Decisions that are Rob's, not yours
 
@@ -261,3 +264,9 @@ One line per piece of work: date, who, what, what's next.
 - 2026-10-14 · Claude Code · S1 (`plan/s1-adr-systemd-pid1`): A1 recorded as ADR 0017, systemd
   is PID 1 for v1 and `morphd` a service under it; doc 03 links it. 0015 and 0016 are left for
   the intent-engine and diagnosis records (docs 21, 22).
+- 2026-10-14 · Claude Code · S2, signed updates (`feat/s2-signed-updates`): `morph-update`
+  opens a payload only if `BLAKE3SUMS.sig` is an ed25519 signature by a key in the image
+  (`/usr/share/morpheos/update-keys`), checked before the manifest is parsed; `keygen` and
+  `sign` are the builder's half. Every image carries the updater and the key, and the test
+  driver installs with the image's own updater (a medium's could check nothing). Images trust
+  a per-build test key; the release key and its custody are Rob's (decisions above).
