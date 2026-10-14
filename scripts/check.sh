@@ -44,6 +44,13 @@ step "plan"
 node scripts/verify-plan.mjs --self-test
 git show origin/main:docs/20-build-plan.md > "${TMPDIR:-/tmp}/base-plan.md"
 node scripts/verify-plan.mjs --branch "$(git rev-parse --abbrev-ref HEAD)" --base "${TMPDIR:-/tmp}/base-plan.md"
+step "pull request carries its log; scenarios are wired"
+bash scripts/verify-pr.sh --self-test
+if [ "$(git rev-parse --abbrev-ref HEAD)" = main ]; then
+    bash scripts/verify-pr.sh
+else
+    bash scripts/verify-pr.sh --branch "$(git rev-parse --abbrev-ref HEAD)" --base origin/main
+fi
 step "console text"
 node scripts/verify-console-text.mjs --self-test
 node scripts/verify-console-text.mjs

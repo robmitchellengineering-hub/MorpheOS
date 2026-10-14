@@ -22,7 +22,7 @@ pick up without having to guess. `scripts/verify-plan.mjs` checks it in CI.
   first pull request of a milestone is a `plan/` PR that expands its tasks (engineering notes,
   traps, the exact check) the way M1's are expanded.
 - **Every 10 merged pull requests**, re-anchor: compare the HANDOFF state table with the north
-  star below, write one paragraph in the HANDOFF session log, and fix any task that has
+  star below, write one paragraph in the session log (`docs/log/`), and fix any task that has
   drifted.
 
 ## The north star: what "finished" means

@@ -56,7 +56,7 @@ import json, socket, sys, time
 
 qmp_path, work, log_path = sys.argv[1], sys.argv[2], sys.argv[3]
 # The picker's colours (crates/flow-wifi/src/picker.rs, `colours`).
-SELECTED, FIELD = (0x2a, 0x5c, 0xaa), (0x0e, 0x11, 0x16)
+SELECTED, FIELD = (0x2a, 0x5c, 0xaa), (0x08, 0x0a, 0x0e)
 FAIL, OK = (0xc0, 0x32, 0x32), (0x1e, 0xa0, 0x5a)
 WINDOW = (16, 16, 480, 360)      # where the window manager puts the first window
 ROW = 480 * 36                   # one row or status line across the window, in pixels

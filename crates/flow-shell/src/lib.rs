@@ -155,7 +155,7 @@ pub mod palette {
     /// The terminal's text.
     pub const TEXT: Colour = Colour::rgb(0xd8, 0xde, 0xe9);
     /// The intent bar (the search field) background.
-    pub const INTENT_BAR: Colour = Colour::rgb(0x1f, 0x24, 0x2e);
+    pub const INTENT_BAR: Colour = Colour::rgb(0x24, 0x2a, 0x34);
     /// The shelf that lists the focused session's openables.
     pub const SHELF: Colour = Colour::rgb(0x15, 0x19, 0x1f);
     /// A query that matched nothing, so the frame says so rather than faking a result.
