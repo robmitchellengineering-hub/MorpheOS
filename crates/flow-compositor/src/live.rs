@@ -100,6 +100,26 @@ impl Live {
     }
 }
 
+/// Tell systemd the shell is up (`sd_notify(READY=1)`), when it started us as `Type=notify`.
+/// Without `$NOTIFY_SOCKET` (a test, or a person running it by hand) there is nobody to tell.
+fn notify_ready() {
+    use std::os::linux::net::SocketAddrExt;
+    use std::os::unix::net::{SocketAddr, UnixDatagram};
+    let Some(path) = std::env::var_os("NOTIFY_SOCKET") else {
+        return;
+    };
+    let bytes = std::os::unix::ffi::OsStrExt::as_bytes(path.as_os_str());
+    // An address starting with '@' is in the abstract namespace.
+    let addr = match bytes.split_first() {
+        Some((b'@', name)) => SocketAddr::from_abstract_name(name),
+        _ => SocketAddr::from_pathname(&path),
+    };
+    let sent = addr.and_then(|addr| UnixDatagram::unbound()?.send_to_addr(b"READY=1", &addr));
+    if let Err(e) = sent {
+        eprintln!("flow-compositor: could not tell systemd it is ready: {e}");
+    }
+}
+
 /// Say which input devices the shell is using, so a log shows what it found.
 fn announce(device: &smithay::reexports::input::Device) {
     let kinds: Vec<&str> = [
@@ -193,6 +213,7 @@ pub fn run(server: Server, device: &Path) -> Result<(), String> {
     }
 
     let mut shown = None;
+    let mut ready = false;
     loop {
         let started = Instant::now();
         event_loop
@@ -207,6 +228,16 @@ pub fn run(server: Server, device: &Path) -> Result<(), String> {
         {
             let frame = live.server.render(output.width, output.height, true)?;
             output.show(frame.pixels())?;
+            // ⚠️ READY MEANS A PICTURE IS ON THE SCREEN, NOT THAT THE PROCESS STARTED (E11).
+            // The health check judges a trial by its units, and a compositor that starts
+            // and never draws (stuck on the display, or hung before its first frame) was a
+            // running unit: the trial would be committed with a black screen. So the unit
+            // is `Type=notify`, and is only started once the first frame has been shown.
+            if !ready {
+                notify_ready();
+                eprintln!("flow-compositor: first frame on the display; ready");
+                ready = true;
+            }
         }
         // One line when the picture changes in kind, so a log (and a test) can follow it.
         let count = live.server.windows();
