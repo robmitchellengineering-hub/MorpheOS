@@ -342,3 +342,8 @@ One line per piece of work: date, who, what, what's next.
   and the choice are pure and unit-tested (`display.rs`; sorting by name instead of number is
   caught); `build.sh` says when simpledrm is built in; `test-shell.sh` checks the choice was
   logged. Next: E4 PR B, `plain` boots into the shell.
+- 2026-10-14 · Claude Code · `fix/new-window-in-view`: writing E4's `plain` check showed the Wi-Fi
+  picker would open off the screen and behind Firefox (stacked under a window that fills the
+  screen, and new windows were not raised). A window that would reach past the bottom now
+  starts a new stack at the top, `CASCADE` further in, and a window that opens comes to the
+  front; focus still waits for a click. Two `wm` tests, each failing before the fix.

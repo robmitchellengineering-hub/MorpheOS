@@ -8,8 +8,9 @@
 //! this module and its tests first.
 //!
 //! Layout: windows are stacked down the screen in the order they opened, `MARGIN` apart, at
-//! their own size, but never larger than the screen ([`fit`]). A window a person has moved
-//! stays where they put it. The focused window is drawn with a border of `BORDER` pixels.
+//! their own size, but never larger than the screen ([`fit`]); one that would reach past the
+//! bottom starts a new stack at the top, `CASCADE` further in. A window that opens comes to
+//! the front. A window a person has moved stays where they put it. The focused window is drawn with a border of `BORDER` pixels.
 //!
 //! What a person can do with them (E2, then E9 for real input):
 //!   * click a window to focus it, and it comes to the front;
@@ -24,6 +25,9 @@
 
 /// Gap between windows and the screen edges, in pixels.
 pub const MARGIN: i32 = 16;
+/// How far right and down a new stack starts from the last one, when a window would open
+/// below the bottom of the screen ([`Manager::layout`]).
+pub const CASCADE: i32 = 2 * MARGIN;
 /// Width of the focus border drawn around the focused window, in pixels.
 pub const BORDER: i32 = 3;
 /// The strip round a window, outside it, that a press grabs to move the window: half the
@@ -132,7 +136,12 @@ impl Manager {
         for c in current {
             match self.windows.iter_mut().find(|w| w.id == c.id) {
                 Some(w) => *w = *c,
-                None => self.windows.push(*c),
+                // A window that opens comes to the front: the Wi-Fi picker opening over
+                // Firefox is drawn over it. (Focus still waits for a click, ADR 0013.)
+                None => {
+                    self.windows.push(*c);
+                    self.raise(c.id);
+                }
             }
         }
         if self
@@ -151,14 +160,23 @@ impl Manager {
     /// Where every window goes, back to front: the last one is in front.
     #[must_use]
     pub fn layout(&self) -> Vec<Placed> {
-        let mut y = MARGIN;
+        let (mut x, mut y) = (MARGIN, MARGIN);
         let mut placed: Vec<Placed> = self
             .windows
             .iter()
             .map(|w| {
+                // A window that would reach past the bottom of the screen starts a new stack
+                // at the top, CASCADE right and down from the last one: under a window that
+                // fills the screen (Firefox) it would otherwise open where nobody can see it.
+                // Not the first of a stack: a window taller than the screen is asked to fit.
+                let bottom = self.screen.1;
+                if bottom > 0 && y > x && y + w.h > bottom {
+                    x += CASCADE;
+                    y = x;
+                }
                 let mut p = Placed {
                     id: w.id,
-                    x: MARGIN,
+                    x,
                     y,
                     w: w.w,
                     h: w.h,
@@ -352,6 +370,36 @@ mod tests {
         let l = m.layout();
         assert_eq!((l[0].x, l[0].y), (MARGIN, MARGIN));
         assert_eq!((l[1].x, l[1].y), (MARGIN, MARGIN + 50 + MARGIN));
+    }
+
+    #[test]
+    fn a_window_that_would_open_below_the_screen_starts_a_new_stack_at_the_top() {
+        // `plain` with no network: Firefox fills the screen, then the Wi-Fi picker opens.
+        // Stacked under Firefox it would start below the bottom edge, where nobody sees it.
+        let mut m = Manager::default();
+        m.set_screen(1280, 800);
+        m.sync(&[win(1, 1248, 768), win(2, 480, 360)]);
+        let p = m.layout().into_iter().find(|p| p.id == 2).unwrap();
+        assert!(p.y + p.h <= 800, "the picker is on the screen: {p:?}");
+        assert_eq!((p.x, p.y), (MARGIN + CASCADE, MARGIN + CASCADE));
+        // A third one cascades on from there rather than landing on the second.
+        m.sync(&[win(1, 1248, 768), win(2, 480, 360), win(3, 480, 360)]);
+        assert_eq!(
+            at(&m, 3),
+            (MARGIN + CASCADE, MARGIN + CASCADE + 360 + MARGIN)
+        );
+    }
+
+    #[test]
+    fn a_window_that_opens_comes_to_the_front() {
+        // The picker opening over Firefox must be drawn over it, not behind it.
+        let mut m = Manager::default();
+        m.set_screen(1280, 800);
+        m.sync(&[win(1, 1248, 768)]);
+        m.sync(&[win(1, 1248, 768), win(2, 480, 360)]);
+        let order: Vec<u32> = m.layout().iter().map(|p| p.id).collect();
+        assert_eq!(order, [1, 2], "back to front: the new window is in front");
+        assert_eq!(m.hit(MARGIN + CASCADE + 10, MARGIN + CASCADE + 10), Some(2));
     }
 
     #[test]
