@@ -3,7 +3,7 @@
 //! The pure logic lives here, with no Wayland, no renderer and no command execution, so it is
 //! tested anywhere in microseconds. The window a person sees is `src/main.rs` (Linux only).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// One entry in a folder, as the view shows it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,6 +45,52 @@ pub fn list_dir(path: &Path) -> Result<Vec<Entry>, String> {
 pub fn open_command(path: &Path) -> String {
     let quoted = path.to_string_lossy().replace('\'', "'\\''");
     format!("xdg-open '{quoted}'")
+}
+
+/// What a click on an entry does.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Action {
+    /// Enter a folder (the view now shows it).
+    Enter(PathBuf),
+    /// Open a file (with the default handler).
+    Open(PathBuf),
+    /// The click hit nothing.
+    None,
+}
+
+/// The view's state: the folder it is showing, and its entries.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct View {
+    pub path: PathBuf,
+    pub entries: Vec<Entry>,
+}
+
+impl View {
+    /// Show a folder: list it. A folder that cannot be read is an error.
+    pub fn show(path: PathBuf) -> Result<View, String> {
+        let entries = list_dir(&path)?;
+        Ok(View { path, entries })
+    }
+
+    /// A click on entry `i` (0-based): enter a folder, open a file, or nothing. An unreadable
+    /// folder is not a crash — the view stays where it is.
+    pub fn click(&mut self, i: usize) -> Action {
+        let Some(entry) = self.entries.get(i) else {
+            return Action::None;
+        };
+        let target = self.path.join(&entry.name);
+        if entry.is_dir {
+            match View::show(target.clone()) {
+                Ok(v) => {
+                    *self = v;
+                    Action::Enter(target)
+                }
+                Err(_) => Action::None,
+            }
+        } else {
+            Action::Open(target)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -109,5 +155,31 @@ mod tests {
             open_command(Path::new("/persist/home/rob/it's.txt")),
             "xdg-open '/persist/home/rob/it'\\''s.txt'"
         );
+    }
+
+    #[test]
+    fn a_click_enters_a_folder_opens_a_file_and_misses_nothing() {
+        let d = dir("view");
+        fs::create_dir(d.join("sub")).unwrap();
+        fs::write(d.join("sub").join("inner.txt"), "x").unwrap();
+        fs::write(d.join("top.txt"), "y").unwrap();
+
+        let mut view = View::show(d.clone()).unwrap();
+        // Folders first, then files, alphabetical.
+        assert_eq!(view.entries[0].name, "sub");
+        assert_eq!(view.entries[1].name, "top.txt");
+
+        // Enter the folder: the view now shows it.
+        assert_eq!(view.click(0), Action::Enter(d.join("sub")));
+        assert_eq!(view.entries.len(), 1);
+        assert_eq!(view.entries[0].name, "inner.txt");
+
+        // Open the file.
+        assert_eq!(view.click(0), Action::Open(d.join("sub").join("inner.txt")));
+
+        // Out of range: nothing.
+        assert_eq!(view.click(99), Action::None);
+
+        fs::remove_dir_all(&d).ok();
     }
 }
