@@ -6,6 +6,8 @@ rings** (built like the harness-mesh cables, each carrying a travelling data bul
 over a **twinkling starfield**, with the **"MorpheOS"** wordmark. It plays once (one 4/4 bar at
 42 BPM), fires a green settle ripple, then fades to black.
 
+**What the mark means** — the poetic explanation: [LOGO.md](LOGO.md).
+
 - **`login.html`** — the animation. Self-contained; the Three.js library is vendored in `vendor/`
   (MIT, see `vendor/LICENSE`). Open it in a browser — no network needed.
 - **`logo-*.svg`** — still-logo options: the geomesh mark, the lockup, the wordmark, the hex badge.
