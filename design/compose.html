@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MorpheOS — still composer</title>
+<style>
+  :root { --green:#00ff41; }
+  * { margin:0; box-sizing:border-box; }
+  body {
+    background:#05070d; color:#cfe0d5;
+    font-family:'Helvetica Neue', Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  #stage { position:relative; aspect-ratio:16/9; background:#05070d; margin:8px auto 0; transform-origin:50% 0; }
+  #stage canvas { width:100%; height:100%; display:block; }
+
+  .word {
+    position:absolute; left:0; right:0; bottom:12%; text-align:center;
+    font-weight:700; font-size:clamp(36px, 7vw, 88px);
+    letter-spacing:0.04em; line-height:1; perspective:700px; pointer-events:none;
+  }
+  .word .inner { display:inline-block; transform:rotateX(8deg);
+    filter: drop-shadow(0 14px 26px rgba(0,0,0,0.65)) drop-shadow(0 0 26px rgba(0,255,65,0.30)); }
+  .word .m { background: linear-gradient(100deg,#7CFFBE 0%,#00ff41 30%,#9dffcd 50%,#0B5A2E 70%,#00ff41 100%);
+    -webkit-background-clip:text; background-clip:text; color:transparent; -webkit-text-fill-color:transparent; }
+  .word .o { background: linear-gradient(180deg,#ffffff 0%,#d6eadf 55%,#a8c2b2 100%);
+    -webkit-background-clip:text; background-clip:text; color:transparent; -webkit-text-fill-color:transparent; }
+  .tag {
+    position:absolute; left:0; right:0; bottom:5%; text-align:center;
+    color:#9dffcd; font-size:15px; font-weight:600; letter-spacing:0.42em; text-indent:0.42em; text-transform:uppercase;
+    text-shadow:0 0 14px rgba(0,255,65,0.45); pointer-events:none;
+  }
+
+  .panel {
+    position:fixed; left:0; right:0; bottom:0; background:rgba(8,12,16,0.50); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); border-top:1px solid rgba(29,74,48,0.5);
+    padding:14px 18px 16px; z-index:20; display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end;
+  }
+  .ring { flex:1 1 200px; min-width:200px; }
+  .ring h4 { font-size:12px; font-weight:600; letter-spacing:0.12em; margin-bottom:6px; }
+  .ring.pink h4 { color:#ff5ee0; } .ring.cyan h4 { color:#41d8ff; } .ring.blue h4 { color:#6f8bff; }
+  .axis { display:flex; align-items:center; gap:8px; margin:4px 0; }
+  .axis label { width:14px; font-size:11px; color:#8aa394; }
+  .axis input[type=range] { flex:1; accent-color:#2BDE7C; }
+  .axis .val { width:38px; text-align:right; font-size:11px; color:#9dffcd; font-variant-numeric:tabular-nums; }
+  .actions { display:flex; gap:10px; }
+  .zoom { display:flex; align-items:center; gap:8px; }
+  .zoom span { font-size:11px; color:#8aa394; }
+  .zoom input[type=range] { width:150px; accent-color:#2BDE7C; }
+  button {
+    background:#0f2a1b; color:#9dffcd; border:1px solid #1d4a30; border-radius:8px;
+    padding:10px 16px; font-size:13px; font-weight:600; cursor:pointer; letter-spacing:0.04em;
+  }
+  button:hover { background:#143a23; }
+  .hint { width:100%; font-size:11px; color:#5f8f72; margin-top:6px; }
+</style>
+</head>
+<body>
+  <div id="stage">
+    <div class="word"><span class="inner"><span class="m">Morphe</span><span class="o">OS</span></span></div>
+    <div class="tag">Never breaks · Heals itself</div>
+  </div>
+
+  <div class="panel">
+    <div class="ring pink">
+      <h4>PINK RING</h4>
+      <div class="axis"><label>X</label><input type="range" min="-180" max="180" value="28" data-ring="0" data-axis="x"><span class="val">28°</span></div>
+      <div class="axis"><label>Y</label><input type="range" min="-180" max="180" value="14" data-ring="0" data-axis="y"><span class="val">14°</span></div>
+      <div class="axis"><label>Z</label><input type="range" min="-180" max="180" value="0" data-ring="0" data-axis="z"><span class="val">0°</span></div>
+    </div>
+    <div class="ring cyan">
+      <h4>CYAN RING</h4>
+      <div class="axis"><label>X</label><input type="range" min="-180" max="180" value="-26" data-ring="1" data-axis="x"><span class="val">-26°</span></div>
+      <div class="axis"><label>Y</label><input type="range" min="-180" max="180" value="-18" data-ring="1" data-axis="y"><span class="val">-18°</span></div>
+      <div class="axis"><label>Z</label><input type="range" min="-180" max="180" value="0" data-ring="1" data-axis="z"><span class="val">0°</span></div>
+    </div>
+    <div class="ring blue">
+      <h4>BLUE RING</h4>
+      <div class="axis"><label>X</label><input type="range" min="-180" max="180" value="16" data-ring="2" data-axis="x"><span class="val">16°</span></div>
+      <div class="axis"><label>Y</label><input type="range" min="-180" max="180" value="30" data-ring="2" data-axis="y"><span class="val">30°</span></div>
+      <div class="axis"><label>Z</label><input type="range" min="-180" max="180" value="0" data-ring="2" data-axis="z"><span class="val">0°</span></div>
+    </div>
+    <div class="actions">
+      <button id="download">Download PNG</button>
+      <button id="fit">Fit</button>
+    </div>
+    <div class="zoom">
+      <span>Zoom</span><input type="range" id="zoom" min="0.4" max="2.5" step="0.05" value="1">
+    </div>
+    <div class="hint">Drag the sliders to position each ring. The geomesh is already green. When it looks right, hit <b>Download PNG</b>.</div>
+  </div>
+
+  <script src="vendor/three.min.js"></script>
+  <script src="vendor/Pass.js"></script>
+  <script src="vendor/CopyShader.js"></script>
+  <script src="vendor/LuminosityHighPassShader.js"></script>
+  <script src="vendor/MaskPass.js"></script>
+  <script src="vendor/ShaderPass.js"></script>
+  <script src="vendor/RenderPass.js"></script>
+  <script src="vendor/EffectComposer.js"></script>
+  <script src="vendor/UnrealBloomPass.js"></script>
+
+  <script>
+  'use strict';
+  (function () {
+    const GEOMESH_R = 2.4;
+    const TUBE_SEGS = 220, TUBE_RADIAL = 12;
+
+    const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true, preserveDrawingBuffer:true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    renderer.setSize(1600, 900);
+    document.getElementById('stage').appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x05070d);
+    scene.fog = new THREE.FogExp2(0x05070d, 0.02);
+
+    const camera = new THREE.PerspectiveCamera(50, 16/9, 0.1, 120);
+    camera.position.set(0, 0.5, 10);
+    camera.lookAt(0, 0, 0);
+
+    const composer = new THREE.EffectComposer(renderer);
+    composer.addPass(new THREE.RenderPass(scene, camera));
+    composer.addPass(new THREE.UnrealBloomPass(new THREE.Vector2(1600, 900), 0.5, 0.42, 0.56));
+
+    // faint centre glow
+    const glowTex = (() => {
+      const c = document.createElement('canvas'); c.width = c.height = 128;
+      const g = c.getContext('2d');
+      const gr = g.createRadialGradient(64,64,0,64,64,64);
+      gr.addColorStop(0,'rgba(255,255,255,1)'); gr.addColorStop(0.25,'rgba(255,255,255,0.55)');
+      gr.addColorStop(0.6,'rgba(255,255,255,0.12)'); gr.addColorStop(1,'rgba(255,255,255,0)');
+      g.fillStyle = gr; g.fillRect(0,0,128,128);
+      return new THREE.CanvasTexture(c);
+    })();
+    const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map:glowTex, color:0x00ff41, transparent:true, opacity:0.10, blending:THREE.AdditiveBlending, depthWrite:false }));
+    halo.scale.setScalar(7.5);
+    scene.add(halo);
+
+    // ---- the geomesh: already green, fully drawn, fixed angle ----
+    const geomeshGeom = new THREE.EdgesGeometry(new THREE.IcosahedronGeometry(GEOMESH_R, 1));
+    const geomesh = new THREE.LineSegments(geomeshGeom, new THREE.LineBasicMaterial({ color:0x00ff41, toneMapped:false }));
+    geomeshGeom.setDrawRange(0, geomeshGeom.attributes.position.count);
+    geomesh.rotation.set(0.35, 0.5, 0.1);
+    scene.add(geomesh);
+
+    // ---- three cable rings, static, positioned by the sliders ----
+    const _up = new THREE.Vector3(0,0,1), _tan = new THREE.Vector3(), _nrm = new THREE.Vector3(), _bin = new THREE.Vector3();
+    const rings = [];
+    const ringDefs = [
+      { R:3.0, tube:0.045, color:0xff2fd6 },
+      { R:3.6, tube:0.038, color:0x06b6d4 },
+      { R:4.15, tube:0.032, color:0x4d6bfe },
+    ];
+    function makeRing(def) {
+      const geom = new THREE.BufferGeometry();
+      const verts = (TUBE_SEGS + 1) * TUBE_RADIAL;
+      geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(verts*3), 3));
+      geom.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(verts*2), 2));
+      const idx = [];
+      for (let i=0;i<TUBE_SEGS;i++) for (let j=0;j<TUBE_RADIAL;j++) {
+        const a=i*TUBE_RADIAL+j, b=(i+1)*TUBE_RADIAL+j, c=i*TUBE_RADIAL+((j+1)%TUBE_RADIAL), d=(i+1)*TUBE_RADIAL+((j+1)%TUBE_RADIAL);
+        idx.push(a,c,b,b,c,d);
+      }
+      geom.setIndex(idx);
+      const uv = geom.attributes.uv; let ui=0;
+      for (let i=0;i<=TUBE_SEGS;i++) for (let j=0;j<TUBE_RADIAL;j++) uv.setXY(ui++, j/TUBE_RADIAL, i/TUBE_SEGS);
+
+      // fill the tube positions: a circle of radius R, tube radius `tube`
+      const pos = geom.attributes.position; let p=0;
+      for (let i=0;i<=TUBE_SEGS;i++) {
+        const ang = (i/TUBE_SEGS) * Math.PI * 2;
+        const cx = def.R*Math.cos(ang), cy = def.R*Math.sin(ang);
+        _tan.set(-Math.sin(ang), Math.cos(ang), 0);
+        _nrm.crossVectors(_up, _tan).normalize();
+        _bin.crossVectors(_tan, _nrm).normalize();
+        for (let j=0;j<TUBE_RADIAL;j++) {
+          const a2 = (j/TUBE_RADIAL)*Math.PI*2;
+          const ca = Math.cos(a2)*def.tube, sa = Math.sin(a2)*def.tube;
+          pos.setXYZ(p++, cx+_nrm.x*ca+_bin.x*sa, cy+_nrm.y*ca+_bin.y*sa, _nrm.z*ca+_bin.z*sa);
+        }
+      }
+
+      const mat = new THREE.ShaderMaterial({
+        uniforms: { uTime:{value:0}, uColor:{value:new THREE.Color(def.color).convertSRGBToLinear()}, uPulseColor:{value:new THREE.Color(0xffffff)}, uPulseT:{value:0.5}, uPulseOn:{value:0} },
+        vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+        fragmentShader: `
+          uniform float uTime; uniform vec3 uColor; uniform vec3 uPulseColor; uniform float uPulseT; uniform float uPulseOn;
+          varying vec2 vUv;
+          void main(){
+            float t=vUv.y;
+            float flow=0.5+0.5*sin(t*18.0-uTime*2.6);
+            float pulse=uPulseOn*exp(-pow((t-uPulseT)*2.0,2.0));
+            vec3 col=uColor*(0.24+flow*0.17)+uPulseColor*(pulse*0.90);
+            gl_FragColor=vec4(col,1.0);
+          }`,
+        transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide,
+      });
+      const mesh = new THREE.Mesh(geom, mat);
+      scene.add(mesh);
+      return mesh;
+    }
+    for (const def of ringDefs) rings.push(makeRing(def));
+
+    // ---- stars ----
+    const N=420, sp=new Float32Array(N*3), ph=new Float32Array(N), sz=new Float32Array(N), cl=new Float32Array(N*3);
+    for (let i=0;i<N;i++){
+      const r=14+Math.random()*40, th=Math.random()*Math.PI*2, p2=Math.acos(2*Math.random()-1);
+      sp[i*3]=r*Math.sin(p2)*Math.cos(th); sp[i*3+1]=r*Math.sin(p2)*Math.sin(th); sp[i*3+2]=r*Math.cos(p2);
+      ph[i]=Math.random(); sz[i]=0.8+Math.random()*1.5;
+      const g=Math.random()<0.35; cl[i*3]=g?0.65:1.0; cl[i*3+1]=1.0; cl[i*3+2]=g?0.72:1.0;
+    }
+    const sg = new THREE.BufferGeometry();
+    sg.setAttribute('position', new THREE.BufferAttribute(sp,3));
+    sg.setAttribute('aPhase', new THREE.BufferAttribute(ph,1));
+    sg.setAttribute('aSize', new THREE.BufferAttribute(sz,1));
+    sg.setAttribute('color', new THREE.BufferAttribute(cl,3));
+    const starMat = new THREE.ShaderMaterial({
+      uniforms:{ uTime:{value:0} },
+      vertexShader: `attribute float aPhase; attribute float aSize; attribute vec3 color; varying float vPhase; varying vec3 vColor;
+        void main(){ vPhase=aPhase; vColor=color; vec4 mv=modelViewMatrix*vec4(position,1.0); gl_PointSize=aSize*(55.0/-mv.z); gl_Position=projectionMatrix*mv; }`,
+      fragmentShader: `uniform float uTime; varying float vPhase; varying vec3 vColor;
+        void main(){ float d=length(gl_PointCoord-vec2(0.5)); float a=smoothstep(0.5,0.05,d); float tw=0.78+0.22*sin(uTime*2.4+vPhase*6.28318); gl_FragColor=vec4(vColor,a*tw); }`,
+      transparent:true, blending:THREE.AdditiveBlending, depthWrite:false,
+    });
+    scene.add(new THREE.Points(sg, starMat));
+
+    // ---- slider wiring ----
+    const rotEuler = [[0.49,0.24,0],[ -0.45,-0.31,0],[0.28,0.52,0]]; // radians from the default degrees
+    document.querySelectorAll('input[type=range]').forEach((el) => {
+      el.addEventListener('input', () => {
+        const r = +el.dataset.ring, axis = el.dataset.axis;
+        const deg = +el.value;
+        el.nextElementSibling.textContent = deg + '°';
+        rotEuler[r][axis === 'x' ? 0 : axis === 'y' ? 1 : 2] = deg * Math.PI / 180;
+        rings[r].rotation.set(rotEuler[r][0], rotEuler[r][1], rotEuler[r][2]);
+      });
+    });
+    // apply defaults once
+    rings.forEach((m, i) => m.rotation.set(rotEuler[i][0], rotEuler[i][1], rotEuler[i][2]));
+
+    // ---- download ----
+    // ---- zoom / fit: see the whole scene at once, or zoom in ----
+    let zoom = 1;
+    const stageEl = document.getElementById('stage');
+    function layout() {
+      const panelH = document.querySelector('.panel').offsetHeight || 200;
+      const availW = window.innerWidth - 12;
+      const availH = window.innerHeight - panelH - 12;
+      const fitW = Math.min(availW, availH * 16 / 9);
+      stageEl.style.width = fitW + 'px';
+      stageEl.style.transform = 'scale(' + zoom + ')';
+    }
+    document.getElementById('zoom').addEventListener('input', (e) => { zoom = +e.target.value; layout(); });
+    document.getElementById('fit').addEventListener('click', () => { zoom = 1; document.getElementById('zoom').value = 1; layout(); });
+    window.addEventListener('resize', layout);
+    layout();
+
+    document.getElementById('download').addEventListener('click', () => {
+      renderer.render(scene, camera);
+      const a = document.createElement('a');
+      a.download = 'morpheos-still.png';
+      a.href = renderer.domElement.toDataURL('image/png');
+      a.click();
+    });
+
+    // ---- loop (stars twinkle, rings' flow glows) ----
+    function animate() {
+      requestAnimationFrame(animate);
+      const t = performance.now()/1000;
+      starMat.uniforms.uTime.value = t;
+      rings.forEach((m) => m.material.uniforms.uTime.value = t);
+      composer.render();
+    }
+    animate();
+  })();
+  </script>
+</body>
+</html>
