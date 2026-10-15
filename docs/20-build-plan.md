@@ -743,6 +743,30 @@ on the screen Rob is looking at.
 8. **Size:** M. PR 1: several outputs, mirrored, with the test. PR 2: orientation, unit-tested.
    PR 3, if it is needed: hotplug.
 
+### E14 · Firefox goes online when the Wi-Fi picker joins · proposed
+
+**What:** on the first real boot (mac-2015, 2026-10-15) Rob joined Wi-Fi through the picker,
+but Firefox still showed its offline page. The browser does not learn the network is up until
+it is reloaded. It should come online once NetworkManager reports a connection, with no
+manual reload.
+
+**Done when:** a QEMU scenario joins a simulated network through the picker (test-wifi.sh's
+rig) and then asserts Firefox loads a page served by the CI host, without any reload step.
+
+**From the report:** "I was able to connect to the wifi … but firefox didnt connect it was
+still off line" — Rob, mac-2015 boot, 2026-10-15.
+
+### E15 · The shell is readable on a high-DPI panel · proposed
+
+**What:** the compositor draws at the panel's native mode, so on mac-2015's 4096×2304 screen
+everything is tiny. The shell needs a scale (a default output scale, or honouring the mode's
+physical size) so a 4K panel is readable.
+
+**Done when:** a QEMU scenario on a high-resolution head asserts the shell's chrome is drawn
+at a minimum on-screen size (a scale factor is applied), not 1:1 at the native mode.
+
+**From the report:** "everything was really small" — Rob, mac-2015 boot, 2026-10-15.
+
 ### E9 · Move, fullscreen, and the switch shortcut, on real input · done · needs E3
 
 **What:** what E2 left for real input: drag a window by its edge, fullscreen and back, and
