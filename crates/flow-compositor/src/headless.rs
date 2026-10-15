@@ -696,7 +696,7 @@ impl Server {
         }
         if let Some(id) = self.state.wm.resizing_id() {
             if let Some((_, _, w, h)) = self.state.wm.resize_to(x as i32, y as i32) {
-                self.tell_size(id, w, h);
+                self.state.tell_size(id, w, h);
             }
         }
         let on_popup = self
