@@ -16,4 +16,9 @@ What was found that the next person needs: `verify-docs.mjs` previously refused 
 argument, so it could not be self-tested at all (H17's shape — "nothing failed" reading as
 "the check ran"). Now the one flag is `--self-test`; anything else is still refused.
 
-Next: Rob's E6 report folders, to fill the three files in and turn every failure into a task.
+Also in this branch, the first report data. Rob booted the stick on the harness iMac
+(mac-2015) on 2026-10-15; its two failures are recorded — **E14** (Firefox shows offline
+even after the Wi-Fi picker joins) and **E15** (the shell is tiny at 4096×2304 native, no
+HiDPI scaling) — both `proposed`, his words quoted, and `docs/hardware/mac-2015.md` filled in.
+
+Next: the other two report folders (`win`, `win-2`), and the reference-laptop choice.
