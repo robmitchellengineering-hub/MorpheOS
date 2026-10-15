@@ -11,9 +11,8 @@
     background:#05070d; color:#cfe0d5;
     font-family:'Helvetica Neue', Helvetica, Arial, sans-serif;
     -webkit-font-smoothing:antialiased;
-    padding-bottom:220px;
   }
-  #stage { position:relative; width:100%; aspect-ratio:16/9; background:#05070d; }
+  #stage { position:relative; aspect-ratio:16/9; background:#05070d; margin:8px auto 0; }
   #stage canvas { width:100%; height:100%; display:block; }
 
   .word {
@@ -45,6 +44,9 @@
   .axis input[type=range] { flex:1; accent-color:#2BDE7C; }
   .axis .val { width:38px; text-align:right; font-size:11px; color:#9dffcd; font-variant-numeric:tabular-nums; }
   .actions { display:flex; gap:10px; }
+  .zoom { display:flex; align-items:center; gap:8px; }
+  .zoom span { font-size:11px; color:#8aa394; }
+  .zoom input[type=range] { width:150px; accent-color:#2BDE7C; }
   button {
     background:#0f2a1b; color:#9dffcd; border:1px solid #1d4a30; border-radius:8px;
     padding:10px 16px; font-size:13px; font-weight:600; cursor:pointer; letter-spacing:0.04em;
@@ -80,6 +82,10 @@
     </div>
     <div class="actions">
       <button id="download">Download PNG</button>
+      <button id="fit">Fit</button>
+    </div>
+    <div class="zoom">
+      <span>Zoom</span><input type="range" id="zoom" min="0.4" max="2.5" step="0.05" value="1">
     </div>
     <div class="hint">Drag the sliders to position each ring. The geomesh is already green. When it looks right, hit <b>Download PNG</b>.</div>
   </div>
@@ -237,6 +243,21 @@
     rings.forEach((m, i) => m.rotation.set(rotEuler[i][0], rotEuler[i][1], rotEuler[i][2]));
 
     // ---- download ----
+    // ---- zoom / fit: see the whole scene at once, or zoom in ----
+    let zoom = 1;
+    const stageEl = document.getElementById('stage');
+    function layout() {
+      const panelH = document.querySelector('.panel').offsetHeight || 200;
+      const availW = window.innerWidth - 12;
+      const availH = window.innerHeight - panelH - 12;
+      const fitW = Math.min(availW, availH * 16 / 9);
+      stageEl.style.width = Math.max(140, fitW * zoom) + 'px';
+    }
+    document.getElementById('zoom').addEventListener('input', (e) => { zoom = +e.target.value; layout(); });
+    document.getElementById('fit').addEventListener('click', () => { zoom = 1; document.getElementById('zoom').value = 1; layout(); });
+    window.addEventListener('resize', layout);
+    layout();
+
     document.getElementById('download').addEventListener('click', () => {
       renderer.render(scene, camera);
       const a = document.createElement('a');
