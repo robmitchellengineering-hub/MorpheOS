@@ -33,7 +33,7 @@
   }
 
   .panel {
-    position:fixed; left:0; right:0; bottom:0; background:rgba(8,12,16,0.50); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); border-top:1px solid rgba(29,74,48,0.5);
+    position:fixed; left:0; right:0; bottom:0; background:transparent;
     padding:14px 18px 16px; z-index:20; display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end;
   }
   .ring { flex:1 1 200px; min-width:200px; }
@@ -260,11 +260,21 @@
     layout();
 
     document.getElementById('download').addEventListener('click', () => {
-      renderer.render(scene, camera);
-      const a = document.createElement('a');
-      a.download = 'morpheos-still.png';
-      a.href = renderer.domElement.toDataURL('image/png');
-      a.click();
+      composer.render();
+      renderer.domElement.toBlob((blob) => {
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'morpheos-still.png';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        const btn = document.getElementById('download');
+        btn.textContent = 'Saved ✓';
+        setTimeout(() => { btn.textContent = 'Download PNG'; }, 1600);
+      }, 'image/png');
     });
 
     // ---- loop (stars twinkle, rings' flow glows) ----
