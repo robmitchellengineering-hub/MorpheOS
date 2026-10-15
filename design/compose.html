@@ -53,6 +53,10 @@
   }
   button:hover { background:#143a23; }
   .hint { width:100%; font-size:11px; color:#5f8f72; margin-top:6px; }
+  .modal { position:fixed; inset:0; z-index:60; background:rgba(0,0,0,0.9); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; padding:20px; }
+  .modal.hidden { display:none; }
+  .modal img { max-width:94vw; max-height:72vh; border:1px solid #1d4a30; border-radius:6px; }
+  .modal-note { color:#9dffcd; font-size:13px; text-align:center; max-width:520px; }
 </style>
 </head>
 <body>
@@ -88,6 +92,12 @@
       <span>Zoom</span><input type="range" id="zoom" min="0.4" max="2.5" step="0.05" value="1">
     </div>
     <div class="hint">Drag the sliders to position each ring. The geomesh is already green. When it looks right, hit <b>Download PNG</b>.</div>
+  </div>
+
+  <div class="modal hidden" id="modal">
+    <img id="modal-img" alt="MorpheOS still">
+    <div class="modal-note">Long-press the image and tap <b>Save to Photos</b> (phone), or right-click → Save Image As (Mac).</div>
+    <button id="modal-close">Close</button>
   </div>
 
   <script src="vendor/three.min.js"></script>
@@ -261,20 +271,21 @@
 
     document.getElementById('download').addEventListener('click', () => {
       composer.render();
-      renderer.domElement.toBlob((blob) => {
-        if (!blob) return;
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'morpheos-still.png';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 2000);
-        const btn = document.getElementById('download');
-        btn.textContent = 'Saved ✓';
-        setTimeout(() => { btn.textContent = 'Download PNG'; }, 1600);
-      }, 'image/png');
+      const dataUrl = renderer.domElement.toDataURL('image/png');
+      // attempt a direct download (works on desktop browsers)
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = 'morpheos-still.png';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // always show the image, so it can be saved natively (long-press / right-click)
+      document.getElementById('modal-img').src = dataUrl;
+      document.getElementById('modal').classList.remove('hidden');
+    });
+    document.getElementById('modal-close').addEventListener('click', () => {
+      document.getElementById('modal').classList.add('hidden');
+      document.getElementById('modal-img').src = '';
     });
 
     // ---- loop (stars twinkle, rings' flow glows) ----
