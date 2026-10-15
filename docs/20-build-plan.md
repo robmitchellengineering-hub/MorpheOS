@@ -794,6 +794,20 @@ is driven through the same input handlers as every other window.
 
 **From the report:** "how to access my files i downloaded" — Rob, in the session, 2026-10-15.
 
+### E18 · A USB stick shows up in the file view · open · parallel · needs E17
+
+**What:** a person plugs in a USB stick and its files appear where they can be reached: the
+stick is mounted automatically when it appears, under a stable place the file view (E17)
+lists, so its files can be opened or copied to `/persist` without a terminal. E17 already
+lists and opens files; this is the "where did my stick go" half of that question.
+
+**Done when:** a pure function turns a block device into a mount point (unit-tested); a udev
+rule mounts the stick when it is plugged in; and a QEMU scenario attaches a virtual USB disk
+with a known file and asserts the file view lists it and opens it.
+
+**From the report:** "if i plug a stick in with data that i want on the computer how does that
+process work" — Rob, in the session, 2026-10-15.
+
 ### E9 · Move, fullscreen, and the switch shortcut, on real input · done · needs E3
 
 **What:** what E2 left for real input: drag a window by its edge, fullscreen and back, and
