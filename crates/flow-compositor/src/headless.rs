@@ -694,10 +694,10 @@ impl Server {
         if self.state.wm.dragging() {
             self.state.wm.drag_to(x as i32, y as i32);
         }
-        if let Some(id) = self.state.wm.resizing_id() {
-            if let Some((_, _, w, h)) = self.state.wm.resize_to(x as i32, y as i32) {
-                self.state.tell_size(id, w, h);
-            }
+        if let Some(id) = self.state.wm.resizing_id()
+            && let Some((_, _, w, h)) = self.state.wm.resize_to(x as i32, y as i32)
+        {
+            self.state.tell_size(id, w, h);
         }
         let on_popup = self
             .state
@@ -764,13 +764,13 @@ impl Server {
             let with_super = self.keyboard.modifier_state().logo;
             if self.state.popup_at(at.x as i32, at.y as i32).is_none() {
                 // A corner press resizes; an edge press moves.
-                if let Some((id, corner)) = self.state.wm.corner_at(at.x as i32, at.y as i32) {
-                    if self.state.wm.begin_resize(id, corner) {
-                        self.state.dismiss_popups();
-                        self.resize_button = Some(button);
-                        self.apply_focus();
-                        return;
-                    }
+                if let Some((id, corner)) = self.state.wm.corner_at(at.x as i32, at.y as i32)
+                    && self.state.wm.begin_resize(id, corner)
+                {
+                    self.state.dismiss_popups();
+                    self.resize_button = Some(button);
+                    self.apply_focus();
+                    return;
                 }
                 if self
                     .state
