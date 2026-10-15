@@ -814,7 +814,8 @@ process work" — Rob, in the session, 2026-10-15.
 completion (cyberpunk colours phasing to matrix green) with gyro data rings and a twinkling
 starfield, over the "MorpheOS" wordmark. This is the brand's first impression, and becomes the
 login screen's own (S5). The prototype lives in `design/` — self-contained Three.js; open
-`design/login.html` in a browser.
+`design/login.html` in a browser. It auto-syncs to a music track (`theme.mp3`): the audio's clock
+is the master, so the animation and the music stay locked and the tail plays out uncut.
 
 **Done when:** the animation and its still/logo mark are reviewed in `design/`, and the chosen
 mark is exported as the SVG logo for the shell and boot.
