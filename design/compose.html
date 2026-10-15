@@ -12,7 +12,7 @@
     font-family:'Helvetica Neue', Helvetica, Arial, sans-serif;
     -webkit-font-smoothing:antialiased;
   }
-  #stage { position:relative; aspect-ratio:16/9; background:#05070d; margin:8px auto 0; }
+  #stage { position:relative; aspect-ratio:16/9; background:#05070d; margin:8px auto 0; transform-origin:50% 0; }
   #stage canvas { width:100%; height:100%; display:block; }
 
   .word {
@@ -33,7 +33,7 @@
   }
 
   .panel {
-    position:fixed; left:0; right:0; bottom:0; background:#0a0f14; border-top:1px solid #14201a;
+    position:fixed; left:0; right:0; bottom:0; background:rgba(8,12,16,0.50); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); border-top:1px solid rgba(29,74,48,0.5);
     padding:14px 18px 16px; z-index:20; display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end;
   }
   .ring { flex:1 1 200px; min-width:200px; }
@@ -251,7 +251,8 @@
       const availW = window.innerWidth - 12;
       const availH = window.innerHeight - panelH - 12;
       const fitW = Math.min(availW, availH * 16 / 9);
-      stageEl.style.width = Math.max(140, fitW * zoom) + 'px';
+      stageEl.style.width = fitW + 'px';
+      stageEl.style.transform = 'scale(' + zoom + ')';
     }
     document.getElementById('zoom').addEventListener('input', (e) => { zoom = +e.target.value; layout(); });
     document.getElementById('fit').addEventListener('click', () => { zoom = 1; document.getElementById('zoom').value = 1; layout(); });
