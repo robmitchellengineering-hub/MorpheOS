@@ -767,6 +767,20 @@ at a minimum on-screen size (a scale factor is applied), not 1:1 at the native m
 
 **From the report:** "everything was really small" — Rob, mac-2015 boot, 2026-10-15.
 
+### E16 · Resize a window · open · needs E3
+
+**What:** the Classic feel (ADR 0013, item 3) manages windows: focus, move, close, fullscreen,
+switch — and resize. A drag on a window's corner resizes it: the corner follows the pointer,
+the opposite corner stays put, and the client is told the new size (its `configure`). A drag on
+an edge (not a corner) still moves. A window cannot be resized below a floor, nor past the
+screen's `max_size`, and a fullscreen window does not resize.
+
+**Done when:** a headless test drags a window's corner and asserts the client is told a new
+size (its `configure WxH` line changes) and the frame shows it; the same drag on an edge moves
+instead. Manager decisions are unit-tested first (wm.rs), the same way move and fullscreen are.
+
+**From the report:** "i have to be able to resize a window" — Rob, in the session, 2026-10-15.
+
 ### E9 · Move, fullscreen, and the switch shortcut, on real input · done · needs E3
 
 **What:** what E2 left for real input: drag a window by its edge, fullscreen and back, and
