@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 640" width="800" height="640">
+  <rect width="800" height="640" fill="#05070d"/>
+  <defs>
+    <linearGradient id="mg" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#7CFFBE"/><stop offset="45%" stop-color="#00ff41"/><stop offset="100%" stop-color="#0B5A2E"/>
+    </linearGradient>
+  </defs>
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <line x1="400.0" y1="296.4" x2="400.0" y2="203.6" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+    <line x1="400.0" y1="296.4" x2="446.4" y2="325.0" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+    <line x1="400.0" y1="296.4" x2="353.6" y2="325.0" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+    <line x1="400.0" y1="296.4" x2="475.0" y2="250.0" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+    <line x1="400.0" y1="296.4" x2="325.0" y2="250.0" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+    <line x1="400.0" y1="203.6" x2="446.4" y2="175.0" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+    <line x1="400.0" y1="203.6" x2="353.6" y2="175.0" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+    <line x1="400.0" y1="203.6" x2="475.0" y2="250.0" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+    <line x1="400.0" y1="203.6" x2="325.0" y2="250.0" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+    <line x1="400.0" y1="296.4" x2="400.0" y2="203.6" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+    <line x1="400.0" y1="296.4" x2="446.4" y2="325.0" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+    <line x1="400.0" y1="296.4" x2="353.6" y2="325.0" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+    <line x1="400.0" y1="296.4" x2="475.0" y2="250.0" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+    <line x1="400.0" y1="296.4" x2="325.0" y2="250.0" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+    <line x1="400.0" y1="203.6" x2="446.4" y2="175.0" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+    <line x1="400.0" y1="203.6" x2="353.6" y2="175.0" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+    <line x1="400.0" y1="203.6" x2="475.0" y2="250.0" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+    <line x1="400.0" y1="203.6" x2="325.0" y2="250.0" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+    <line x1="446.4" y1="325.0" x2="353.6" y2="325.0" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+    <line x1="446.4" y1="325.0" x2="475.0" y2="250.0" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+    <line x1="446.4" y1="325.0" x2="475.0" y2="250.0" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+    <line x1="353.6" y1="325.0" x2="325.0" y2="250.0" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+    <line x1="353.6" y1="325.0" x2="325.0" y2="250.0" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+    <line x1="446.4" y1="175.0" x2="353.6" y2="175.0" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+    <line x1="446.4" y1="175.0" x2="475.0" y2="250.0" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+    <line x1="446.4" y1="175.0" x2="475.0" y2="250.0" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+    <line x1="353.6" y1="175.0" x2="325.0" y2="250.0" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+    <line x1="353.6" y1="175.0" x2="325.0" y2="250.0" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+    <line x1="475.0" y1="250.0" x2="475.0" y2="250.0" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+    <line x1="325.0" y1="250.0" x2="325.0" y2="250.0" stroke="#00ff41" stroke-width="3.2" opacity="1.0"/>
+  </g>
+  <text x="400" y="470" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-weight="700" font-size="76" letter-spacing="4">
+    <tspan fill="url(#mg)">Morphe</tspan><tspan fill="#ffffff">OS</tspan>
+  </text>
+  <text x="400" y="510" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" letter-spacing="7" fill="#5f8f72">NEVER BREAKS · HEALS ITSELF</text>
+</svg>

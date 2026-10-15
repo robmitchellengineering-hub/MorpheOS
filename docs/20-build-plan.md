@@ -808,6 +808,17 @@ with a known file and asserts the file view lists it and opens it.
 **From the report:** "if i plug a stick in with data that i want on the computer how does that
 process work" — Rob, in the session, 2026-10-15.
 
+### E19 · The boot/login animation and brand mark · proposed
+
+**What:** the animated MorpheOS mark that opens the shell — a green geomesh drawing itself into
+completion (cyberpunk colours phasing to matrix green) with gyro data rings and a twinkling
+starfield, over the "MorpheOS" wordmark. This is the brand's first impression, and becomes the
+login screen's own (S5). The prototype lives in `design/` — self-contained Three.js; open
+`design/login.html` in a browser.
+
+**Done when:** the animation and its still/logo mark are reviewed in `design/`, and the chosen
+mark is exported as the SVG logo for the shell and boot.
+
 ### E9 · Move, fullscreen, and the switch shortcut, on real input · done · needs E3
 
 **What:** what E2 left for real input: drag a window by its edge, fullscreen and back, and
