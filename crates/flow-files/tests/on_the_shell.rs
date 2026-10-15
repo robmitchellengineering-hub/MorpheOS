@@ -43,13 +43,13 @@ fn runtime_dir(name: &str) -> PathBuf {
 }
 
 struct Ppm {
-    w: usize,
     px: Vec<[u8; 3]>,
 }
 
 impl Ppm {
     fn read(path: &Path) -> Self {
         let bytes = std::fs::read(path).unwrap();
+        // Skip the PPM header: three lines ("P6", "W H", "255"), then the pixels.
         let text_end = bytes
             .iter()
             .enumerate()
@@ -57,10 +57,7 @@ impl Ppm {
             .nth(2)
             .unwrap()
             .0;
-        let header = String::from_utf8_lossy(&bytes[..text_end]).to_string();
-        let w = header.split_whitespace().nth(1).unwrap().parse().unwrap();
         Self {
-            w,
             px: bytes[text_end + 1..].as_chunks::<3>().0.to_vec(),
         }
     }
