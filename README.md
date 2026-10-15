@@ -73,6 +73,7 @@ and constraints into execution across devices). See [doc 12](docs/12-radical-con
 | `crates/flow-shell` | The Flow shell's own frame: a session laid out and painted, with a check that asserts something was actually drawn rather than that a unit started; the Session + shelf feel draws a shelf of the session's openables and an intent bar whose query is a deterministic match ([ADR 0010](docs/adr/0010-flow-shell-first.md), [ADR 0013](docs/adr/0013-flow-shell-feels.md)) |
 | `crates/flow-compositor` | The Flow shell as a real Wayland compositor (Smithay): headless with software rendering for now, proven by real clients' windows appearing in its frame (HANDOFF.md E1) |
 | `crates/flow-wifi` | The Wi-Fi picker: a window on the shell that lists networks, takes a password and joins over NetworkManager's D-Bus API; its model unit-tested, its window driven on the compositor, its join proven in a VM against a simulated WPA2 network (doc 20, E5) |
+| `crates/flow-files` | The file view: list a folder and open a file, the base the timeline and USB-mounting sit on; its listing and open command are pure and unit-tested, the window driven on the compositor (doc 20, E17) |
 | `manifest/` | Example machines and how to validate them ([README](manifest/README.md)) |
 | `images/x86-qemu` | A/B test disk for a UEFI VM, with Strata watching `/home`, and the "Try to Break It" update and ransomware tests ([README](images/README.md)) |
 | `images/pi5` | Raspberry Pi 5 immutable A/B image built with rpi-image-gen ([README](images/pi5/README.md)) |

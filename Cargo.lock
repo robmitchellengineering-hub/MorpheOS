@@ -580,6 +580,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "flow-files"
+version = "0.1.0"
+dependencies = [
+ "flow-shell",
+ "rustix 1.1.5",
+ "wayland-client",
+ "wayland-protocols",
+]
+
+[[package]]
 name = "flow-session"
 version = "0.1.0"
 
