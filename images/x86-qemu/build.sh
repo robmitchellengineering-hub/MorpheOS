@@ -56,9 +56,10 @@ SDBOOT_EFI=${SDBOOT_EFI:-/usr/lib/systemd/boot/efi/systemd-bootx64.efi}
 FLOW_COMPOSITOR=${FLOW_COMPOSITOR:-$REPO/target/release/flow-compositor}
 SOLID_WINDOW=${SOLID_WINDOW:-$REPO/target/release/solid-window}
 FLOW_WIFI=${FLOW_WIFI:-$REPO/target/release/flow-wifi}
+FLOW_MOUNT=${FLOW_MOUNT:-$REPO/target/release/flow-mount}
 if [ "$SHELL_UI" = 1 ]; then
-    for b in "$FLOW_COMPOSITOR" "$SOLID_WINDOW" "$FLOW_WIFI"; do
-        [ -x "$b" ] || { echo "missing $b: run cargo build --release -p flow-compositor -p flow-wifi" >&2; exit 1; }
+    for b in "$FLOW_COMPOSITOR" "$SOLID_WINDOW" "$FLOW_WIFI" "$FLOW_MOUNT"; do
+        [ -x "$b" ] || { echo "missing $b: run cargo build --release -p flow-compositor -p flow-wifi -p flow-files" >&2; exit 1; }
     done
 fi
 
@@ -262,6 +263,7 @@ EOF
         install -m 0755 "$FLOW_COMPOSITOR" "$dir/usr/bin/flow-compositor"
         install -m 0755 "$SOLID_WINDOW" "$dir/usr/bin/solid-window"
         install -m 0755 "$FLOW_WIFI" "$dir/usr/bin/flow-wifi"
+        install -m 0755 "$FLOW_MOUNT" "$dir/usr/bin/flow-mount"
         # The shell scenario shows the demonstration window; the browser scenario, Firefox;
         # the wifi scenario, only the Wi-Fi picker. Where there is NetworkManager, the picker
         # opens by itself when the machine has no network.
