@@ -476,6 +476,27 @@ impl App {
         }
     }
 
+    /// Tell one window its new size (a resize the shell started): configure it, and the
+    /// client redraws at that size.
+    fn tell_size(&mut self, id: u32, w: i32, h: i32) {
+        let Some((surface, _)) = self.ids.iter().find(|(_, i)| *i == id).cloned() else {
+            return;
+        };
+        let Some(toplevel) = self
+            .xdg_shell_state
+            .toplevel_surfaces()
+            .iter()
+            .find(|t| *t.wl_surface() == surface)
+            .cloned()
+        else {
+            return;
+        };
+        toplevel.with_pending_state(|state| {
+            state.size = Some((w, h).into());
+        });
+        toplevel.send_configure();
+    }
+
     /// The window whose toplevel says it is `app_id` (`xdg_toplevel.set_app_id`).
     fn window_with_app_id(&self, app_id: &str) -> Option<u32> {
         self.xdg_shell_state
@@ -534,6 +555,7 @@ pub struct Server {
     /// A button press started a move the shell made (an edge, or Super): its release is the
     /// shell's too, not the window's.
     drag_button: Option<u32>,
+    resize_button: Option<u32>,
     /// When the server started (frame-callback timestamps count from it), and when the
     /// visible surfaces were last told their frame was shown.
     started: Instant,
@@ -672,6 +694,11 @@ impl Server {
         if self.state.wm.dragging() {
             self.state.wm.drag_to(x as i32, y as i32);
         }
+        if let Some(id) = self.state.wm.resizing_id()
+            && let Some((_, _, w, h)) = self.state.wm.resize_to(x as i32, y as i32)
+        {
+            self.state.tell_size(id, w, h);
+        }
         let on_popup = self
             .state
             .popup_at(x as i32, y as i32)
@@ -713,6 +740,11 @@ impl Server {
             self.state.wm.end_drag();
             return;
         }
+        if !pressed && self.resize_button == Some(button) {
+            self.resize_button = None;
+            self.state.wm.end_resize();
+            return;
+        }
         // The bar's Wi-Fi button is the shell's: the press opens the picker, and neither it
         // nor its release reaches a window.
         if pressed
@@ -730,17 +762,27 @@ impl Server {
         if pressed && button == BTN_LEFT {
             let at = self.pointer_at;
             let with_super = self.keyboard.modifier_state().logo;
-            if self.state.popup_at(at.x as i32, at.y as i32).is_none()
-                && self
+            if self.state.popup_at(at.x as i32, at.y as i32).is_none() {
+                // A corner press resizes; an edge press moves.
+                if let Some((id, corner)) = self.state.wm.corner_at(at.x as i32, at.y as i32)
+                    && self.state.wm.begin_resize(id, corner)
+                {
+                    self.state.dismiss_popups();
+                    self.resize_button = Some(button);
+                    self.apply_focus();
+                    return;
+                }
+                if self
                     .state
                     .wm
                     .begin_drag(at.x as i32, at.y as i32, with_super)
                     .is_some()
-            {
-                self.state.dismiss_popups();
-                self.drag_button = Some(button);
-                self.apply_focus();
-                return;
+                {
+                    self.state.dismiss_popups();
+                    self.drag_button = Some(button);
+                    self.apply_focus();
+                    return;
+                }
             }
         }
         // A client's own move (its title bar) ends when its button comes up; the window
@@ -1057,6 +1099,7 @@ impl Server {
             pointer_moved: false,
             keyboard_on: None,
             drag_button: None,
+            resize_button: None,
             started: Instant::now(),
             last_frames: Instant::now(),
             width,

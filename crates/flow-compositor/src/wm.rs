@@ -36,6 +36,8 @@ pub const GRAB: i32 = MARGIN / 2;
 /// How much of a moved window stays on the screen, in each direction, so a window cannot be
 /// dragged out of reach.
 pub const KEEP: i32 = 32;
+/// The smallest a window may be resized to, in either direction.
+pub const MIN_SIZE: i32 = 64;
 
 /// The bar along the bottom of the screen (doc 20, E5): the shell's own, drawn over every
 /// window but a fullscreen one. Windows are sized and placed to leave it clear.
@@ -115,6 +117,22 @@ impl Placed {
         };
         outer.contains(x, y) && !self.contains(x, y)
     }
+
+    /// In a corner's grab region: within `GRAB` of both a horizontal and a vertical edge, but
+    /// not on the window. The corner is where the two strips meet.
+    fn on_corner(&self, x: i32, y: i32) -> Option<Corner> {
+        let left = x >= self.x - GRAB && x < self.x;
+        let right = x >= self.x + self.w && x < self.x + self.w + GRAB;
+        let top = y >= self.y - GRAB && y < self.y;
+        let bottom = y >= self.y + self.h && y < self.y + self.h + GRAB;
+        match (left, right, top, bottom) {
+            (true, false, true, false) => Some(Corner::TopLeft),
+            (false, true, true, false) => Some(Corner::TopRight),
+            (true, false, false, true) => Some(Corner::BottomLeft),
+            (false, true, false, true) => Some(Corner::BottomRight),
+            _ => None,
+        }
+    }
 }
 
 /// A move in progress: which window, and where the pointer holds it.
@@ -123,6 +141,26 @@ struct Drag {
     id: u32,
     dx: i32,
     dy: i32,
+}
+
+/// Which corner of a window a resize drags.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Corner {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+}
+
+/// A resize in progress: which window, which corner follows the pointer, and the opposite
+/// corner (the one that stays put).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Resize {
+    id: u32,
+    corner: Corner,
+    /// The fixed corner (opposite the dragged one), in screen coordinates, at the moment the
+    /// resize began. It never moves while the drag lasts.
+    fixed: (i32, i32),
 }
 
 /// The windows, in the order they opened; which one has focus; where moved ones are; which
@@ -139,6 +177,7 @@ pub struct Manager {
     /// The size the fullscreen window had before, to ask it back to afterwards.
     before_fullscreen: Option<(u32, i32, i32)>,
     drag: Option<Drag>,
+    resize: Option<Resize>,
     screen: (i32, i32),
 }
 
@@ -157,6 +196,9 @@ impl Manager {
         }
         if !self.drag.as_ref().is_some_and(|d| alive(&d.id)) {
             self.drag = None;
+        }
+        if !self.resize.as_ref().is_some_and(|r| alive(&r.id)) {
+            self.resize = None;
         }
         for c in current {
             match self.windows.iter_mut().find(|w| w.id == c.id) {
@@ -347,6 +389,89 @@ impl Manager {
     #[must_use]
     pub fn dragging(&self) -> bool {
         self.drag.is_some()
+    }
+
+    /// The window and corner under a point, if it is in a corner's grab region. Front to back,
+    /// so the corner belongs to what is drawn on top.
+    #[must_use]
+    pub fn corner_at(&self, x: i32, y: i32) -> Option<(u32, Corner)> {
+        self.layout()
+            .iter()
+            .rev()
+            .find_map(|p| p.on_corner(x, y).map(|c| (p.id, c)))
+    }
+
+    /// Start resizing a window from its `corner`: the opposite corner stays put. A fullscreen
+    /// window does not resize. Returns whether a resize began.
+    pub fn begin_resize(&mut self, id: u32, corner: Corner) -> bool {
+        if self.fullscreen == Some(id) {
+            return false;
+        }
+        let Some(p) = self.layout().into_iter().find(|p| p.id == id) else {
+            return false;
+        };
+        let fixed = match corner {
+            Corner::BottomRight => (p.x, p.y),
+            Corner::BottomLeft => (p.x + p.w, p.y),
+            Corner::TopRight => (p.x, p.y + p.h),
+            Corner::TopLeft => (p.x + p.w, p.y + p.h),
+        };
+        self.resize = Some(Resize { id, corner, fixed });
+        self.focused = Some(id);
+        self.raise(id);
+        true
+    }
+
+    /// The pointer moved during a resize: the dragged corner follows it, the opposite corner
+    /// stays, and the size is clamped to at least `MIN_SIZE` and at most the screen's
+    /// `max_size`. Returns the new `(x, y, w, h)` to tell the client, or `None` if no resize
+    /// is in progress.
+    #[must_use]
+    pub fn resize_to(&mut self, x: i32, y: i32) -> Option<(i32, i32, i32, i32)> {
+        let r = self.resize?;
+        let (fx, fy) = r.fixed;
+        let (max_w, max_h) = max_size(self.screen.0, self.screen.1);
+        let clamp = |s: i32, max: i32| s.clamp(MIN_SIZE, max.max(MIN_SIZE));
+        // The dragged corner follows the pointer; the fixed edge is the opposite corner's.
+        let (nx, nw) = match r.corner {
+            Corner::TopRight | Corner::BottomRight => {
+                let nw = clamp(x - fx, max_w);
+                (fx, nw)
+            }
+            Corner::TopLeft | Corner::BottomLeft => {
+                let nw = clamp(fx - x, max_w);
+                (fx - nw, nw)
+            }
+        };
+        let (ny, nh) = match r.corner {
+            Corner::BottomLeft | Corner::BottomRight => {
+                let nh = clamp(y - fy, max_h);
+                (fy, nh)
+            }
+            Corner::TopLeft | Corner::TopRight => {
+                let nh = clamp(fy - y, max_h);
+                (fy - nh, nh)
+            }
+        };
+        self.moved.retain(|(id, _, _)| *id != r.id);
+        self.moved.push((r.id, nx, ny));
+        Some((nx, ny, nw, nh))
+    }
+
+    /// The button came up: the resize is over.
+    pub fn end_resize(&mut self) {
+        self.resize = None;
+    }
+
+    #[must_use]
+    pub fn resizing(&self) -> bool {
+        self.resize.is_some()
+    }
+
+    /// The window being resized, if any.
+    #[must_use]
+    pub fn resizing_id(&self) -> Option<u32> {
+        self.resize.map(|r| r.id)
     }
 
     /// Make a window fullscreen, or not. Returns whether anything changed (so the client
@@ -671,5 +796,76 @@ mod tests {
         assert_eq!(m.cycle(), Some(2));
         assert_eq!(m.cycle(), Some(3));
         assert_eq!(m.cycle(), Some(1));
+    }
+
+    #[test]
+    fn a_window_resizes_by_its_corner_and_keeps_the_opposite_corner_fixed() {
+        let mut m = two();
+        // Window 2 is at (16, 82), 80 x 40; its bottom-right is (96, 122).
+        assert!(m.begin_resize(2, Corner::BottomRight));
+        assert!(m.resizing());
+        assert_eq!(m.focused(), Some(2));
+        assert_eq!(
+            m.resize_to(200, 150),
+            Some((16, 82, 184, 68)),
+            "top-left fixed, size follows the pointer"
+        );
+        m.end_resize();
+        assert!(!m.resizing());
+    }
+
+    #[test]
+    fn a_window_resized_by_a_top_corner_moves_its_top_edge_not_its_bottom() {
+        let mut m = two();
+        // Window 1 is at (16, 16), 100 x 50; its bottom-right is (116, 66). Dragging the
+        // top-left corner to (0, 0) grows the window, and the bottom-right stays put.
+        assert!(m.begin_resize(1, Corner::TopLeft));
+        let r = m.resize_to(0, 0).unwrap();
+        assert_eq!(r, (0, 0, 116, 66), "the bottom-right (116, 66) stays put");
+        assert_eq!(r.0 + r.2, 116);
+        assert_eq!(r.1 + r.3, 66);
+    }
+
+    #[test]
+    fn a_resize_is_clamped_to_a_floor_and_to_the_screen() {
+        let mut m = Manager::default();
+        m.set_screen(640, 480);
+        m.sync(&[win(1, 200, 200)]);
+        m.begin_resize(1, Corner::BottomRight);
+        // Drag up-left past the fixed corner: clamped to the floor, never flipped.
+        assert_eq!(
+            m.resize_to(-100, -100),
+            Some((MARGIN, MARGIN, MIN_SIZE, MIN_SIZE))
+        );
+        // Drag far past the screen: clamped to the screen's max_size.
+        let (max_w, max_h) = max_size(640, 480);
+        assert_eq!(
+            m.resize_to(10000, 10000),
+            Some((MARGIN, MARGIN, max_w, max_h))
+        );
+    }
+
+    #[test]
+    fn a_corner_resizes_an_edge_moves_and_a_fullscreen_window_does_neither() {
+        let mut m = two();
+        // The top-left corner of window 1 (at 16,16) is at (14, 14).
+        assert_eq!(
+            m.corner_at(MARGIN - 2, MARGIN - 2),
+            Some((1, Corner::TopLeft))
+        );
+        assert_eq!(
+            m.corner_at(MARGIN + 50, MARGIN - 2),
+            None,
+            "mid-edge is a move, not a corner"
+        );
+        assert_eq!(
+            m.corner_at(MARGIN + 5, MARGIN + 5),
+            None,
+            "inside the window is neither"
+        );
+        // A fullscreen window has no grab strip, so no corner, and refuses to resize.
+        m.set_fullscreen(1, true);
+        assert_eq!(m.corner_at(0, 0), None);
+        assert!(!m.begin_resize(1, Corner::BottomRight));
     }
 }

@@ -261,3 +261,51 @@ fn windows_move_switch_and_go_fullscreen_on_real_input() {
         "A saw a button: {a_out:?}"
     );
 }
+
+#[test]
+fn a_window_resizes_by_its_top_left_corner() {
+    let dir = runtime_dir("resize");
+    let f: Vec<PathBuf> = (0..2).map(|i| dir.join(format!("{i}.ppm"))).collect();
+    // A at (16, 16) 160x100, B at (16, 132) 120x80. Grab B's top-left corner (12, 128) and
+    // drag it to (0, 100): B's bottom-right (136, 212) stays put, so it is told 136x112, and
+    // its top-left follows the pointer to (0, 100).
+    let script = format!(
+        "frame {f0}\ndrag 12 128 0 100\nsettle 300\nframe {f1}\n",
+        f0 = f[0].display(),
+        f1 = f[1].display(),
+    );
+    let script_path = dir.join("script");
+    std::fs::write(&script_path, script).unwrap();
+    let mut comp = Command::new(COMPOSITOR)
+        .env("XDG_RUNTIME_DIR", &dir)
+        .args(["--socket", "test", "--width", "640", "--height", "480"])
+        .args(["--wait-for", "2", "--timeout", "30", "--script"])
+        .arg(&script_path)
+        .spawn()
+        .unwrap();
+    let mut a = client(&dir, "ff4000", "160x100");
+    std::thread::sleep(Duration::from_millis(300));
+    let mut b = client(&dir, "40ff00", "120x80");
+    assert!(
+        comp.wait().unwrap().success(),
+        "the script did not complete"
+    );
+    let _ = a.kill();
+    let _ = b.kill();
+    let (_, b_out) = (stdout_of(&mut a), stdout_of(&mut b));
+    let frames: Vec<Frame> = f.iter().map(|p| Frame::read(p)).collect();
+
+    assert_eq!(frames[0].find(B), Some((16, 132, 120, 80)));
+    // A corner press resizes: the client is told the new size, and its top-left moved to
+    // (0, 100) while the bottom-right stayed put. (The buffer keeps its own size, so the
+    // frame shows the window where the compositor put it, not the size it was asked to be.)
+    assert!(
+        b_out.contains("configure 136x112"),
+        "B was not told the new size: {b_out:?}"
+    );
+    assert_eq!(
+        frames[1].find(B),
+        Some((0, 100, 120, 80)),
+        "B's top-left corner did not follow the pointer"
+    );
+}
