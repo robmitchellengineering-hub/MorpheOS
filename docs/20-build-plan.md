@@ -781,7 +781,7 @@ instead. Manager decisions are unit-tested first (wm.rs), the same way move and 
 
 **From the report:** "i have to be able to resize a window" — Rob, in the session, 2026-10-15.
 
-### E17 · A file view in the shell · open · parallel
+### E17 · A file view in the shell · done
 
 **What:** a window in the shell that lists a folder's files and opens one — the first thing a
 person reaches for after the browser ("where are my downloads"). It lists the person's folders
@@ -793,6 +793,11 @@ opening it runs the right command; the listing is a pure function (unit-tested),
 is driven through the same input handlers as every other window.
 
 **From the report:** "how to access my files i downloaded" — Rob, in the session, 2026-10-15.
+
+**Evidence:** `crates/flow-files/src/lib.rs` (the listing and the click decision, pure and
+unit-tested), `crates/flow-files/src/main.rs` (the window), and
+`crates/flow-files/tests/on_the_shell.rs` (the headless test: lists a known file and opens it with
+the right command).
 
 ### E18 · A USB stick shows up in the file view · open · parallel · needs E17
 
