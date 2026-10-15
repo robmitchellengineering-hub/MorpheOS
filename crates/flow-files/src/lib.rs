@@ -5,6 +5,8 @@
 
 use std::path::{Path, PathBuf};
 
+use flow_shell::{Frame, Rect};
+
 /// One entry in a folder, as the view shows it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
@@ -93,6 +95,54 @@ impl View {
     }
 }
 
+/// The view's colours. Distinct from everything else on the shell, so a test reading a
+/// screenshot finds the file view by colour.
+pub mod colours {
+    use flow_shell::Colour;
+    pub const BACKGROUND: Colour = Colour::rgb(0x18, 0x1c, 0x22);
+    pub const TITLE: Colour = Colour::rgb(0x24, 0x2a, 0x34);
+    pub const TEXT: Colour = Colour::rgb(0xe0, 0xe0, 0xe0);
+    /// A folder row.
+    pub const FOLDER: Colour = Colour::rgb(0x5a, 0xa8, 0xff);
+    /// A file row.
+    pub const FILE: Colour = Colour::rgb(0x40, 0xff, 0x00);
+}
+
+/// Layout, in window pixels.
+pub const SCALE: u32 = 2;
+pub const TITLE_H: u32 = 40;
+pub const ROW_H: u32 = 36;
+pub const PAD: u32 = 12;
+
+/// Paint the view into a frame: a title, then one row per entry (folders and files in their
+/// own colours), with the name in text.
+pub fn paint(view: &View, frame: &mut Frame) {
+    let w = frame.width();
+    frame.clear(colours::BACKGROUND);
+    frame.fill_rect(Rect::new(0, 0, w, TITLE_H), colours::TITLE);
+    frame.text("Files", PAD, TITLE_H / 2 - 4, SCALE, colours::TEXT);
+    for (i, entry) in view.entries.iter().enumerate() {
+        let y = TITLE_H + i as u32 * ROW_H;
+        let colour = if entry.is_dir {
+            colours::FOLDER
+        } else {
+            colours::FILE
+        };
+        frame.fill_rect(Rect::new(0, y, w, ROW_H), colour);
+        frame.text(&entry.name, PAD, y + ROW_H / 2 - 4, SCALE, colours::TEXT);
+    }
+}
+
+/// Which entry a click at `(x, y)` hits, if any.
+pub fn row_at(view: &View, x: u32, y: u32) -> Option<usize> {
+    let _ = x;
+    if y < TITLE_H {
+        return None;
+    }
+    let i = (y - TITLE_H) / ROW_H;
+    ((i as usize) < view.entries.len()).then_some(i as usize)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -179,6 +229,32 @@ mod tests {
 
         // Out of range: nothing.
         assert_eq!(view.click(99), Action::None);
+
+        fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn paint_draws_rows_and_row_at_maps_the_click() {
+        let d = dir("paint");
+        fs::create_dir(d.join("sub")).unwrap();
+        fs::write(d.join("top.txt"), "y").unwrap();
+        let view = View::show(d.clone()).unwrap();
+
+        let mut frame = Frame::new(200, 200);
+        paint(&view, &mut frame);
+        // The title, the background, a folder row and a file row are distinct.
+        assert!(
+            frame.distinct_colours() >= 4,
+            "{}",
+            frame.distinct_colours()
+        );
+
+        // A click in the first row (a folder) maps to entry 0; the second (a file) to 1;
+        // the title band and past the last row are nothing.
+        assert_eq!(row_at(&view, 5, TITLE_H + 5), Some(0));
+        assert_eq!(row_at(&view, 5, TITLE_H + ROW_H + 5), Some(1));
+        assert_eq!(row_at(&view, 5, TITLE_H - 1), None);
+        assert_eq!(row_at(&view, 5, TITLE_H + 2 * ROW_H + 5), None);
 
         fs::remove_dir_all(&d).ok();
     }

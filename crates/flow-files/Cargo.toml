@@ -7,5 +7,10 @@ repository.workspace = true
 description = "MorpheOS: the file view on the Flow shell"
 
 [dependencies]
+flow-shell = { path = "../flow-shell" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+# The window: a plain Wayland client, as solid-window is, with the compositor's own keymap.
+wayland-client = "0.31.11"
+wayland-protocols = { version = "0.32.9", features = ["client"] }
+rustix = { version = "1.1.5", features = ["event"] }
