@@ -781,6 +781,19 @@ instead. Manager decisions are unit-tested first (wm.rs), the same way move and 
 
 **From the report:** "i have to be able to resize a window" — Rob, in the session, 2026-10-15.
 
+### E17 · A file view in the shell · open · parallel
+
+**What:** a window in the shell that lists a folder's files and opens one — the first thing a
+person reaches for after the browser ("where are my downloads"). It lists the person's folders
+on `/persist` (home, Downloads, Firefox's profile), opens a file with its default handler, and is
+the base D5's timeline and USB-mounting sit on.
+
+**Done when:** a headless test opens the file view, asserts a known file is listed, and that
+opening it runs the right command; the listing is a pure function (unit-tested), and the window
+is driven through the same input handlers as every other window.
+
+**From the report:** "how to access my files i downloaded" — Rob, in the session, 2026-10-15.
+
 ### E9 · Move, fullscreen, and the switch shortcut, on real input · done · needs E3
 
 **What:** what E2 left for real input: drag a window by its edge, fullscreen and back, and
