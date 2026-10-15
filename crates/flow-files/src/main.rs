@@ -30,7 +30,7 @@ mod client {
     use std::os::fd::AsFd;
     use std::path::PathBuf;
 
-    use flow_files::{Action, ROW_H, TITLE_H, View, open_command, paint, row_at};
+    use flow_files::{Action, View, open_command, paint, row_at};
     use flow_shell::Frame;
     use wayland_client::protocol::{
         wl_buffer, wl_compositor, wl_pointer, wl_registry, wl_seat, wl_shm, wl_shm_pool, wl_surface,
@@ -169,10 +169,9 @@ mod client {
             if let wl_seat::Event::Capabilities {
                 capabilities: WEnum::Value(caps),
             } = event
+                && caps.contains(wl_seat::Capability::Pointer)
             {
-                if caps.contains(wl_seat::Capability::Pointer) {
-                    seat.get_pointer(qh, ());
-                }
+                seat.get_pointer(qh, ());
             }
         }
     }
