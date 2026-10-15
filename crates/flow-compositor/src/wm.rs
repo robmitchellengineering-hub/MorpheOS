@@ -428,7 +428,7 @@ impl Manager {
     /// is in progress.
     #[must_use]
     pub fn resize_to(&mut self, x: i32, y: i32) -> Option<(i32, i32, i32, i32)> {
-        let Some(r) = self.resize else { return None };
+        let r = self.resize?;
         let (fx, fy) = r.fixed;
         let (max_w, max_h) = max_size(self.screen.0, self.screen.1);
         let clamp = |s: i32, max: i32| s.clamp(MIN_SIZE, max.max(MIN_SIZE));
@@ -466,6 +466,12 @@ impl Manager {
     #[must_use]
     pub fn resizing(&self) -> bool {
         self.resize.is_some()
+    }
+
+    /// The window being resized, if any.
+    #[must_use]
+    pub fn resizing_id(&self) -> Option<u32> {
+        self.resize.map(|r| r.id)
     }
 
     /// Make a window fullscreen, or not. Returns whether anything changed (so the client
@@ -843,7 +849,10 @@ mod tests {
     fn a_corner_resizes_an_edge_moves_and_a_fullscreen_window_does_neither() {
         let mut m = two();
         // The top-left corner of window 1 (at 16,16) is at (14, 14).
-        assert_eq!(m.corner_at(MARGIN - 2, MARGIN - 2), Some((1, Corner::TopLeft)));
+        assert_eq!(
+            m.corner_at(MARGIN - 2, MARGIN - 2),
+            Some((1, Corner::TopLeft))
+        );
         assert_eq!(
             m.corner_at(MARGIN + 50, MARGIN - 2),
             None,
