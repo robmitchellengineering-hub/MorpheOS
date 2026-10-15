@@ -8,9 +8,16 @@
 fn main() -> std::process::ExitCode {
     use std::process::Command;
 
+    /// Say it to the journal, and to the console the harness's serial log carries (so the
+    /// QEMU test sees both the mount and its failure).
+    fn announce(line: &str) {
+        println!("flow-mount: {line}");
+        let _ = std::fs::write("/dev/console", format!("flow-mount: {line}\n"));
+    }
+
     let device = std::env::var("DEVNAME").unwrap_or_default();
     if device.is_empty() {
-        eprintln!("flow-mount: DEVNAME is not set — run it from the udev rule");
+        announce("no DEVNAME — run it from the udev rule");
         return std::process::ExitCode::FAILURE;
     }
     let label = std::env::var("ID_FS_LABEL").unwrap_or_default();
@@ -18,26 +25,21 @@ fn main() -> std::process::ExitCode {
     let mp = flow_files::mount_point(&label, &uuid);
 
     if let Err(e) = std::fs::create_dir_all(&mp) {
-        eprintln!("flow-mount: cannot create {mp}: {e}");
+        announce(&format!("cannot create {mp}: {e}"));
         return std::process::ExitCode::FAILURE;
     }
     // `mount(8)` auto-detects the filesystem; the mount point is the pure decision.
     match Command::new("mount").arg(&device).arg(&mp).status() {
         Ok(s) if s.success() => {
-            println!("flow-mount: mounted {device} at {mp}");
-            // A dedicated marker on the console, so the harness's serial log carries the verdict.
-            let _ = std::fs::write(
-                "/dev/console",
-                format!("flow-mount: mounted {device} at {mp}\n"),
-            );
+            announce(&format!("mounted {device} at {mp}"));
             std::process::ExitCode::SUCCESS
         }
         Ok(s) => {
-            eprintln!("flow-mount: mount {device} failed: {s}");
+            announce(&format!("mount {device} failed: {s}"));
             std::process::ExitCode::FAILURE
         }
         Err(e) => {
-            eprintln!("flow-mount: cannot run mount: {e}");
+            announce(&format!("cannot run mount: {e}"));
             std::process::ExitCode::FAILURE
         }
     }
