@@ -82,7 +82,7 @@ jobs:
       # does not name. None of those break a build, which is exactly why they rot.
       # Dependency-free, so it needs no install step.
       - name: Verify the documentation against the repository
-        run: node scripts/verify-docs.mjs
+        run: node scripts/verify-docs.mjs --self-test && node scripts/verify-docs.mjs
       # THE PLAN IS THE ONLY TASK LIST (docs/20-build-plan.md), and this keeps it honest: every
       # task has a check, "done" has evidence, and a pull request's branch names the task it
       # serves. It is how the work stays on the plan after the handover.

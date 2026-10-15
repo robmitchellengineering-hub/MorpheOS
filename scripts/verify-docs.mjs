@@ -30,10 +30,12 @@ import { fileURLToPath } from 'node:url';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-// It takes no arguments. Refuse any, so that `--self-test` (which it does not have yet:
-// doc 20, E6, note 3) cannot pass for one by printing the normal success line.
-if (process.argv.length > 2) {
-  console.error(`verify-docs.mjs takes no arguments (got: ${process.argv.slice(2).join(' ')}); it has no --self-test yet`);
+// `--self-test` is the one flag: it runs only the self-test and exits, proving the checks
+// can fail (a guard that cannot fail is not a guard). Any other argument is refused, so an
+// unknown flag cannot pass for --self-test.
+const SELF_TEST = process.argv[2] === '--self-test';
+if (!SELF_TEST && process.argv.length > 2) {
+  console.error(`verify-docs.mjs takes no arguments (got: ${process.argv.slice(2).join(' ')}); the only flag is --self-test`);
   process.exit(2);
 }
 const failures = [];
@@ -41,6 +43,53 @@ const fail = (msg) => failures.push(msg);
 
 const read = (p) => readFileSync(join(REPO, p), 'utf8');
 const listed = (dir, re) => readdirSync(join(REPO, dir)).filter((f) => re.test(f)).sort();
+
+// ── hardware reports (E6): the headings every report must have, and no MAC addresses ──
+//
+// E6 writes docs/hardware/<machine>.md from Rob's report. The headings are the shape each
+// report must keep; and the repository is public, so a raw MAC address (net.txt, dmesg.txt)
+// must never be committed — replace it with xx:xx:… .
+const HW_HEADINGS = ['Machine', 'Boot path', 'Display', 'Keyboard', 'Touchpad', 'Wi-Fi', 'Wired', 'Sound', 'Firmware missing', 'Boot history', 'Tasks'];
+const MAC_RE = /([0-9a-f]{2}:){5}[0-9a-f]{2}/i;
+
+/** Problems in a set of hardware reports, keyed by repo-relative path. Pure, so --self-test can call it. */
+function hardwareProblems(files) {
+  const problems = [];
+  for (const [path, content] of Object.entries(files)) {
+    for (const h of HW_HEADINGS) {
+      if (!new RegExp(`^## ${h}\\b`, 'm').test(content)) {
+        problems.push(`${path} is missing the "${h}" heading`);
+      }
+    }
+    const mac = content.match(MAC_RE);
+    if (mac) problems.push(`${path} contains a MAC address (${mac[0]}); replace it with xx:xx:…`);
+  }
+  return problems;
+}
+
+function selfTest() {
+  const good = '# machine\n\n' + HW_HEADINGS.map((h) => `## ${h}`).join('\n\n(pending)\n\n') + '\n';
+  const cases = [];
+  const check = (name, files, want) => {
+    const got = hardwareProblems(files).length;
+    if (got !== want) cases.push(`${name}: expected ${want} problem(s), got ${got}`);
+  };
+  check('a report with every heading passes', { 'good.md': good }, 0);
+  check('a report missing one heading fails', { 'bad.md': good.replace('## Display', '') }, 1);
+  check('a report with a MAC address fails', { 'mac.md': good.replace('## Wi-Fi', '## Wi-Fi\n\naa:bb:cc:dd:ee:ff') }, 1);
+  if (cases.length) {
+    console.error('verify-docs self-test FAILED:\n');
+    for (const c of cases) console.error('  ✗ ' + c);
+    process.exit(1);
+  }
+  console.log('verify-docs: every rule can fail');
+}
+
+// The self-test runs alone and exits before the repository checks below.
+if (SELF_TEST) {
+  selfTest();
+  process.exit(0);
+}
 
 // ── 1. the numbered design docs ──────────────────────────────────────────────
 //
@@ -128,6 +177,13 @@ for (const crate of crateDirs) {
   }
 }
 
+// ── 5. the hardware reports have their headings and no MAC addresses ─────────
+
+const hwFiles = listed('docs/hardware', /\.md$/).map((f) => join('docs/hardware', f));
+for (const f of hwFiles) {
+  for (const p of hardwareProblems({ [f]: read(f) })) fail(p);
+}
+
 // ── report ───────────────────────────────────────────────────────────────────
 
 if (failures.length) {
@@ -136,4 +192,4 @@ if (failures.length) {
   console.error(`\n${failures.length} problem(s). A link is a promise; either fix the link or delete the claim.`);
   process.exit(1);
 }
-console.log(`documentation verified: ${docs.length} design docs, ${adrFiles.length} ADRs, ${crateDirs.length} crates — every link resolves and every one is listed.`);
+console.log(`documentation verified: ${docs.length} design docs, ${adrFiles.length} ADRs, ${crateDirs.length} crates, ${hwFiles.length} hardware reports — every link resolves and every one is listed.`);

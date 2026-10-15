@@ -55,7 +55,9 @@ step "a real client's window through the compositor"
     WAYLAND_DISPLAY=check target/debug/solid-window --colour 00a0ff --size 320x200 || true
     wait %1
 )
-step "docs";     node scripts/verify-docs.mjs
+step "docs"
+node scripts/verify-docs.mjs --self-test
+node scripts/verify-docs.mjs
 step "plan"
 node scripts/verify-plan.mjs --self-test
 # Judged against main as it is now, not as this clone last saw it.
