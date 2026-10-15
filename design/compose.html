@@ -64,19 +64,19 @@
   <div class="panel">
     <div class="ring pink">
       <h4>PINK RING</h4>
-      <div class="axis"><label>X</label><input type="range" min="-180" max="180" value="28" data-ring="0" data-axis="x"><span class="val">28°</span></div>
-      <div class="axis"><label>Y</label><input type="range" min="-180" max="180" value="14" data-ring="0" data-axis="y"><span class="val">14°</span></div>
+      <div class="axis"><label>X</label><input type="range" min="-180" max="180" value="6" data-ring="0" data-axis="x"><span class="val">6°</span></div>
+      <div class="axis"><label>Y</label><input type="range" min="-180" max="180" value="-5" data-ring="0" data-axis="y"><span class="val">-5°</span></div>
       <div class="axis"><label>Z</label><input type="range" min="-180" max="180" value="0" data-ring="0" data-axis="z"><span class="val">0°</span></div>
     </div>
     <div class="ring cyan">
       <h4>CYAN RING</h4>
-      <div class="axis"><label>X</label><input type="range" min="-180" max="180" value="-26" data-ring="1" data-axis="x"><span class="val">-26°</span></div>
+      <div class="axis"><label>X</label><input type="range" min="-180" max="180" value="106" data-ring="1" data-axis="x"><span class="val">106°</span></div>
       <div class="axis"><label>Y</label><input type="range" min="-180" max="180" value="-18" data-ring="1" data-axis="y"><span class="val">-18°</span></div>
       <div class="axis"><label>Z</label><input type="range" min="-180" max="180" value="0" data-ring="1" data-axis="z"><span class="val">0°</span></div>
     </div>
     <div class="ring blue">
       <h4>BLUE RING</h4>
-      <div class="axis"><label>X</label><input type="range" min="-180" max="180" value="16" data-ring="2" data-axis="x"><span class="val">16°</span></div>
+      <div class="axis"><label>X</label><input type="range" min="-180" max="180" value="81" data-ring="2" data-axis="x"><span class="val">81°</span></div>
       <div class="axis"><label>Y</label><input type="range" min="-180" max="180" value="30" data-ring="2" data-axis="y"><span class="val">30°</span></div>
       <div class="axis"><label>Z</label><input type="range" min="-180" max="180" value="0" data-ring="2" data-axis="z"><span class="val">0°</span></div>
     </div>
@@ -229,7 +229,7 @@
     scene.add(new THREE.Points(sg, starMat));
 
     // ---- slider wiring ----
-    const rotEuler = [[0.49,0.24,0],[ -0.45,-0.31,0],[0.28,0.52,0]]; // radians from the default degrees
+    const rotEuler = [[0.1047,-0.0873,0],[ 1.8500,-0.3142,0],[1.4137,0.5236,0]]; // radians from the default degrees
     document.querySelectorAll('input[type=range]').forEach((el) => {
       el.addEventListener('input', () => {
         const r = +el.dataset.ring, axis = el.dataset.axis;
