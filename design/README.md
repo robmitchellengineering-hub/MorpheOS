@@ -20,4 +20,17 @@ sample**, and runs the whole animation off the **audio's own clock** (Web Audio 
 the two cannot drift, and the reverb/delay tail plays out to the file's natural end while the
 scene fades to black. With no `theme.mp3` present, the animation just auto-plays on a timer.
 
+## Hero still — `still-logo.png`
+
+The chosen still, composed in `compose.html`: green geomesh, three data rings at —
+
+| ring | X    | Y    | Z |
+|------|------|------|---|
+| pink | 6°   | -5°  | 0° |
+| cyan | 106° | -18° | 0° |
+| blue | 81°  | 30°  | 0° |
+
+Recreate it: open `compose.html`, set each ring's X/Y/Z sliders to those values (the geomesh is
+already green), then Download PNG.
+
 The chosen still becomes the logo (SVG) for the shell and boot.
