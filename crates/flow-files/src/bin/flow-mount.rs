@@ -25,6 +25,11 @@ fn main() -> std::process::ExitCode {
     match Command::new("mount").arg(&device).arg(&mp).status() {
         Ok(s) if s.success() => {
             println!("flow-mount: mounted {device} at {mp}");
+            // A dedicated marker on the console, so the harness's serial log carries the verdict.
+            let _ = std::fs::write(
+                "/dev/console",
+                format!("flow-mount: mounted {device} at {mp}\n"),
+            );
             std::process::ExitCode::SUCCESS
         }
         Ok(s) => {

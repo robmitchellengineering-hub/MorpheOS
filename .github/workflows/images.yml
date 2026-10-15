@@ -124,6 +124,8 @@ jobs:
       # on the VM's keyboard; verdicts from screendumps and the network's own DHCP log.
       - name: Joining Wi-Fi with the picker
         run: sudo images/x86-qemu/test-wifi.sh "$RUNNER_TEMP/img"
+      - name: A USB stick mounts itself (E18)
+        run: sudo images/x86-qemu/test-usb.sh "$RUNNER_TEMP/img"
       - name: Keep serial logs
         if: always()
         uses: actions/upload-artifact@v4

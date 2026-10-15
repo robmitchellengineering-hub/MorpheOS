@@ -51,5 +51,7 @@ if [ "$WHAT" = shell ] || [ "$WHAT" = all ]; then
     sudo images/x86-qemu/test-browser.sh "$WORK"
     step "joining Wi-Fi with the picker"
     sudo images/x86-qemu/test-wifi.sh "$WORK"
+    step "a USB stick mounts itself"
+    sudo images/x86-qemu/test-usb.sh "$WORK"
 fi
 printf '\nimages suite (%s) passed\n' "$WHAT"
