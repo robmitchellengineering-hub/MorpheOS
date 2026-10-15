@@ -143,6 +143,38 @@ pub fn row_at(view: &View, x: u32, y: u32) -> Option<usize> {
     ((i as usize) < view.entries.len()).then_some(i as usize)
 }
 
+/// Where a removable disk is mounted, from its label or UUID (doc 20, E18): a stable,
+/// sanitised place under `/run/media`, so the file view (E17) lists it by a name a person
+/// reads. A label wins over a UUID; with neither, it falls back to `disk`. The name keeps
+/// letters, digits, `_` and `-` only — lower-cased, runs of anything else become one `-` —
+/// so a label with a space or a shell metacharacter cannot make a path that does anything
+/// but name the mount.
+pub fn mount_point(label: &str, uuid: &str) -> String {
+    let name = sanitise(label)
+        .or_else(|| sanitise(uuid))
+        .unwrap_or_else(|| "disk".to_string());
+    format!("/run/media/{name}")
+}
+
+/// A mount-point name from a raw label or UUID; `None` when it would be empty.
+fn sanitise(raw: &str) -> Option<String> {
+    let mut name = String::new();
+    let mut last_dash = true; // collapse leading separators too
+    for c in raw.trim().chars() {
+        if c.is_ascii_alphanumeric() || c == '_' {
+            name.push(c.to_ascii_lowercase());
+            last_dash = false;
+        } else if !last_dash {
+            name.push('-');
+            last_dash = true;
+        }
+    }
+    while name.ends_with('-') {
+        name.pop();
+    }
+    (!name.is_empty()).then_some(name)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -257,5 +289,22 @@ mod tests {
         assert_eq!(row_at(&view, 5, TITLE_H + 2 * ROW_H + 5), None);
 
         fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn a_mount_point_is_stable_readable_and_safe() {
+        // A label wins over a UUID; spaces and junk become a single hyphen.
+        assert_eq!(mount_point("My Files", "abcd-1234"), "/run/media/my-files");
+        // A UUID stands in when there is no label.
+        assert_eq!(mount_point("", "ABCD-1234"), "/run/media/abcd-1234");
+        // No label and no UUID: a fixed name, not a crash.
+        assert_eq!(mount_point("", ""), "/run/media/disk");
+        // A label full of shell metacharacters cannot name anything but a directory.
+        assert_eq!(mount_point("..;rm -rf / 'x'", ""), "/run/media/rm-rf-x");
+        // Runs of separators collapse, and edges are trimmed.
+        assert_eq!(
+            mount_point("  hello   world!!  ", ""),
+            "/run/media/hello-world"
+        );
     }
 }
