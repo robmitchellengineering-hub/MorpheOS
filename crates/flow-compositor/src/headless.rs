@@ -99,8 +99,9 @@ pub struct Options {
     pub launch_wifi: Option<String>,
     /// The command that opens the file view, from the bar's Files button or Super+E (E20).
     pub launch_files: Option<String>,
-    /// Render the boot splash (the shell's first moments, E19) instead of the shell.
-    pub splash: bool,
+    /// Render the boot splash (E19) at this many seconds after the compositor started,
+    /// instead of the shell. `None` renders the shell; `Some(0)` is the first instant.
+    pub splash: Option<f32>,
 }
 
 struct App {
@@ -671,6 +672,11 @@ impl Server {
         self.state.wm.layout().len()
     }
 
+    /// Whether the boot splash is still showing; the live display logs when it ends.
+    pub fn splash_showing(&self) -> bool {
+        splash::state(self.started.elapsed()).showing
+    }
+
     /// Render the screen now (the live display): `cursor` draws the pointer, once something
     /// has moved it, while the headless frames tests read leave it out. The splash shows
     /// for the first moments, from when the server started.
@@ -1120,7 +1126,7 @@ impl Server {
             // A scripted frame is the shell: the splash is the first moments, long over by
             // the time input commands have run.
             ["frame", path] => {
-                self.write_frame(Path::new(path), opts.width, opts.height, splash::TOTAL)?
+                self.write_frame(Path::new(path), opts.width, opts.height, splash::total())?
             }
             ["settle", _] => self.settle(Duration::from_millis(num(1)?.max(0) as u64))?,
             [] => {}
@@ -1243,12 +1249,18 @@ pub fn run(opts: &Options) -> Result<(), String> {
     }
 
     // The splash is the shell's first moments, before any window has drawn, so it is
-    // rendered without waiting for one. It needs an `--out` to write, like the shell.
-    if opts.splash {
+    // rendered without waiting for one, at a fixed elapsed time. It needs an `--out` to
+    // write, like the shell.
+    if let Some(elapsed) = opts.splash {
         let Some(out) = &opts.out else {
             return Err("--splash needs --out".to_string());
         };
-        server.write_frame(out, opts.width, opts.height, Duration::ZERO)?;
+        server.write_frame(
+            out,
+            opts.width,
+            opts.height,
+            Duration::from_secs_f32(elapsed),
+        )?;
         return Ok(());
     }
 
@@ -1279,7 +1291,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
         }
         // The shell frame, drawn as it looks once the splash has finished: the headless
         // frame is the shell, not the boot (that is `--splash`).
-        (None, Some(out)) => server.write_frame(out, opts.width, opts.height, splash::TOTAL)?,
+        (None, Some(out)) => server.write_frame(out, opts.width, opts.height, splash::total())?,
         (None, None) => return Err("nothing to do: give --out or --script".into()),
     }
     Ok(())
@@ -1288,7 +1300,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
 /// Render the windows where the window manager put them, over the shell's background,
 /// with a border round the focused one and the pointer on top, and read the pixels back.
 /// For the first moments after the compositor started (`elapsed`), the frame is the boot
-/// splash instead: the mark on the brand background, before any window has drawn.
+/// splash instead: the animated geomesh, before any window has drawn.
 fn render(
     state: &App,
     width: u32,
@@ -1301,7 +1313,7 @@ fn render(
     // frame both show the same splash for the same elapsed time.
     let boot = splash::state(elapsed);
     if boot.showing {
-        return Ok(splash::frame(width, height, boot.alpha));
+        return Ok(splash::frame(width, height, elapsed));
     }
     let err = |what: &'static str| {
         move |e: smithay::backend::renderer::pixman::PixmanError| format!("{what}: {e}")

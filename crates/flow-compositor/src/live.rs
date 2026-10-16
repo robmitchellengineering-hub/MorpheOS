@@ -44,6 +44,9 @@ struct Live {
     active: bool,
     /// An error from inside a callback, returned by the main loop.
     failed: Option<String>,
+    /// Whether the boot splash has finished, so it is logged once (test-shell.sh waits
+    /// for the line rather than a magic sleep).
+    splash_done: bool,
 }
 
 impl Live {
@@ -197,6 +200,7 @@ pub fn run(server: Server, device: &Path) -> Result<(), String> {
         output: None,
         active,
         failed: None,
+        splash_done: false,
     };
 
     // The seat may be granted a moment after it is asked for.
@@ -266,6 +270,12 @@ pub fn run(server: Server, device: &Path) -> Result<(), String> {
                 eprintln!("flow-compositor: first frame on the display; ready");
                 ready = true;
             }
+        }
+        // The boot splash (E19) finishes on a timer; say so once, so a test can wait for
+        // the shell instead of sleeping a magic number of seconds.
+        if !live.splash_done && !live.server.splash_showing() {
+            eprintln!("flow-compositor: splash done");
+            live.splash_done = true;
         }
         // One line when the picture changes in kind, so a log (and a test) can follow it.
         let count = live.server.windows();

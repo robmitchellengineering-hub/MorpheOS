@@ -14,14 +14,15 @@ mod live;
 const USAGE: &str = "\
 usage: flow-compositor --socket NAME (--out FRAME.png | --script FILE | --drm DEVICE)
                        [--wait-for N] [--timeout SECS] [--width N] [--height N]
-                       [--launch-wifi CMD] [--launch-files CMD] [--splash]
+                       [--launch-wifi CMD] [--launch-files CMD] [--splash [SECS]]
 
 --drm /dev/dri/card0 shows the screen on that display and runs until stopped (the service);
 --drm auto takes the first card in /dev/dri with a connected display.
 --launch-wifi CMD is the command the bar's Wi-Fi button (and Super+W) runs to open the picker.
 --launch-files CMD is the command the bar's Files button (and Super+E) runs to open the file view.
---splash writes the boot splash (the mark on the brand background, the shell's first moments)
-instead of the shell; it needs --out and does not wait for a window.
+--splash [SECS] writes the boot splash (the shell's first moments) at SECS seconds after
+the compositor started (default 0), instead of the shell; it needs --out and does not wait
+for a window. The tests use it to render the splash at a couple of instants.
 Otherwise it is headless:
 
 Listen on $XDG_RUNTIME_DIR/NAME, wait until N windows (default 1) have drawn, write one
@@ -69,7 +70,13 @@ fn main() -> std::process::ExitCode {
             timeout: std::time::Duration::from_secs(num("--timeout", 30)?),
             width: num("--width", 800)? as u32,
             height: num("--height", 600)? as u32,
-            splash: args.iter().any(|a| a == "--splash"),
+            // --splash renders the splash at a fixed elapsed time; an optional number
+            // follows it (--splash 5.72), defaulting to the first instant.
+            splash: args.iter().any(|a| a == "--splash").then(|| {
+                flag("--splash")
+                    .and_then(|v| v.parse::<f32>().ok())
+                    .unwrap_or(0.0)
+            }),
         })
     })();
     let opts = match parsed {
