@@ -829,7 +829,7 @@ the Wi-Fi button's is.
 
 **From the report:** "how to access my files i downloaded" — Rob, in the session, 2026-10-15.
 
-### E19 · The boot/login animation and brand mark · proposed
+### E19 · The boot/login animation and brand mark · open
 
 **What:** the animated MorpheOS mark that opens the shell — a green geomesh drawing itself into
 completion (cyberpunk colours phasing to matrix green) with gyro data rings and a twinkling
