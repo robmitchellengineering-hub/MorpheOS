@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MorpheOS — the Geomesh</title>
+<!-- Boot splash (E19): hand over to the browser start page once the draw has settled. A
+     browser-native refresh, so it fires even if WebGL is unavailable and the mesh never renders. -->
+<meta http-equiv="refresh" content="8; url=start.html">
 <style>
   :root { --green:#00ff41; }
   * { margin:0; box-sizing:border-box; }
@@ -424,15 +427,6 @@
       composer.render();
     }
     requestAnimationFrame(animate);
-
-    // Boot splash (E19): hand over to the browser start page after the draw + settle. A timer,
-    // not the animation clock, so the handover happens even if WebGL is unavailable and the
-    // mesh never rendered.
-    if (STILL == null) {
-      setTimeout(() => {
-        window.location.replace('file:///usr/share/morpheos/start.html');
-      }, 8500);
-    }
 
     window.addEventListener('resize', () => {
       camera.aspect = window.innerWidth / window.innerHeight;
