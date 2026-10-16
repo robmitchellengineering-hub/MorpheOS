@@ -417,13 +417,6 @@
         fadeEl.style.opacity = fadeP.toFixed(3);
       }
 
-      // Boot splash: once the mesh has drawn and settled, hand over to the browser start
-      // page (E19 — this animation is the launch screen in the image). 1.5 s after the draw:
-      // the ~0.7 s settle ripple, plus a beat.
-      if (STILL == null && t > DRAW_SEC + 1.5) {
-        window.location.replace('file:///usr/share/morpheos/start.html');
-      }
-
       updateRing(ring1, t, dt);
       updateRing(ring2, t, dt);
       updateRing(ring3, t, dt);
@@ -431,6 +424,15 @@
       composer.render();
     }
     requestAnimationFrame(animate);
+
+    // Boot splash (E19): hand over to the browser start page after the draw + settle. A timer,
+    // not the animation clock, so the handover happens even if WebGL is unavailable and the
+    // mesh never rendered.
+    if (STILL == null) {
+      setTimeout(() => {
+        window.location.replace('file:///usr/share/morpheos/start.html');
+      }, 8500);
+    }
 
     window.addEventListener('resize', () => {
       camera.aspect = window.innerWidth / window.innerHeight;
