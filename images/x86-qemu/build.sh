@@ -84,7 +84,7 @@ mkdir -p "$WORK"
 # installed, by name, in a hook; the firmware stays the chosen sets below. The extra modules
 # also carry mac80211_hwsim, the simulated Wi-Fi the E5 test connects through.
 BASE="$WORK/rootfs-base"
-BASE_PKGS=systemd-sysv,udev,kmod,linux-image-virtual,initramfs-tools,systemd-boot,dosfstools,libpixman-1-0,libxkbcommon0,libinput10,libseat1,seatd,pciutils,usbutils,pci.ids,usb.ids,linux-firmware-amd-graphics,linux-firmware-intel-graphics,linux-firmware-intel-wireless,linux-firmware-mediatek,linux-firmware-realtek,linux-firmware-broadcom-wireless,firmware-sof-signed,firmware-b43-installer
+BASE_PKGS=systemd-sysv,udev,kmod,linux-image-virtual,initramfs-tools,systemd-boot,dosfstools,libpixman-1-0,libxkbcommon0,libinput10,libseat1,seatd,pciutils,usbutils,pci.ids,usb.ids,linux-firmware-amd-graphics,linux-firmware-intel-graphics,linux-firmware-intel-wireless,linux-firmware-mediatek,linux-firmware-realtek,linux-firmware-broadcom-wireless,firmware-sof-signed,firmware-b43-installer,openssh-server
 MODULES_EXTRA_HOOK='chroot "$1" sh -c "apt-get install -y -q linux-modules-extra-\$(ls /usr/lib/modules | sort -V | tail -1)"'
 BASE_KEY="$BASE_PKGS,(linux-modules-extra)"
 if [ "$(cat "$BASE/.complete" 2>/dev/null)" != "$BASE_KEY" ]; then
@@ -117,7 +117,7 @@ MOZILLA_FPR=35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3
 # systemd-resolved for DNS: the browser has to reach the network (E5).
 # Mesa, because Firefox needs GL to render (WebRender), and the base carries none: with no
 # GL it comes up blank — "no Firefox" on a screen that otherwise works (E6, MacBookPro9,1).
-BROWSER_PKGS="$BASE_PKGS,firefox,fonts-dejavu-core,network-manager,wpasupplicant,systemd-resolved,libgl1-mesa-dri,libegl-mesa0,libgbm1,libglx-mesa0"
+BROWSER_PKGS="$BASE_PKGS,firefox,fonts-dejavu-core,network-manager,wpasupplicant,systemd-resolved,libgl1-mesa-dri,libegl-mesa0,libgbm1,libglx-mesa0,pipewire,pipewire-pulse,wireplumber,alsa-ucm-conf"
 BROWSER_KEY="$BROWSER_PKGS,(linux-modules-extra)"
 if [ "$SCENARIO" = browser ] || [ "$SCENARIO" = plain ]; then
     BROWSER_BASE="$WORK/rootfs-browser"
@@ -233,6 +233,14 @@ make_root() {
     install -D -m 0644 /dev/null "$dir/usr/lib/morpheos/release"
     echo "$RELEASE" > "$dir/usr/lib/morpheos/release"
     install -m 0755 "$STRATA" "$dir/usr/bin/strata"
+    # SSH in, so the mesh can drive this machine over the network (E6: no stick, no console
+    # person). Root, key only — the mesh admin key is baked into the image.
+    mkdir -p "$dir/root/.ssh" "$dir/etc/ssh/sshd_config.d"
+    printf '%s\n' 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJbhcvkozieT1Efw8FGAObkRbiqe+Tm8nMprjOFvp99N harness-mesh admin' \
+        > "$dir/root/.ssh/authorized_keys"
+    chmod 700 "$dir/root/.ssh"; chmod 600 "$dir/root/.ssh/authorized_keys"
+    printf 'PermitRootLogin prohibit-password\nPasswordAuthentication no\n' > "$dir/etc/ssh/sshd_config.d/morpheos.conf"
+    ln -sf /usr/lib/systemd/system/ssh.service "$dir/etc/systemd/system/multi-user.target.wants/ssh.service"
     # The 2012 MacBook Pro's BCM4331 Wi-Fi (E6): the `b43` driver is the one that works with
     # this chip; its firmware comes from `firmware-b43-installer` (multiverse), asserted below.
     echo "morpheos-$slot" > "$dir/etc/hostname"
