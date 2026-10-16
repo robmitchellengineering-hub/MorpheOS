@@ -115,7 +115,9 @@ MOZILLA_KEY_URL=https://packages.mozilla.org/apt/repo-signing-key.gpg
 MOZILLA_FPR=35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3
 # NetworkManager (A6) with what Wi-Fi needs (wpasupplicant, a "recommends" we would skip) and
 # systemd-resolved for DNS: the browser has to reach the network (E5).
-BROWSER_PKGS="$BASE_PKGS,firefox,fonts-dejavu-core,network-manager,wpasupplicant,systemd-resolved"
+# Mesa, because Firefox needs GL to render (WebRender), and the base carries none: with no
+# GL it comes up blank — "no Firefox" on a screen that otherwise works (E6, MacBookPro9,1).
+BROWSER_PKGS="$BASE_PKGS,firefox,fonts-dejavu-core,network-manager,wpasupplicant,systemd-resolved,libgl1-mesa-dri,libegl-mesa0,libgbm1,libglx-mesa0"
 BROWSER_KEY="$BROWSER_PKGS,(linux-modules-extra)"
 if [ "$SCENARIO" = browser ] || [ "$SCENARIO" = plain ]; then
     BROWSER_BASE="$WORK/rootfs-browser"
@@ -231,6 +233,11 @@ make_root() {
     install -D -m 0644 /dev/null "$dir/usr/lib/morpheos/release"
     echo "$RELEASE" > "$dir/usr/lib/morpheos/release"
     install -m 0755 "$STRATA" "$dir/usr/bin/strata"
+    # The 2012 MacBook Pro's BCM4331 Wi-Fi (E6): `b43` needs Broadcom's proprietary firmware
+    # (not redistributable), so blacklist it and ship the free `brcmsmac` firmware instead.
+    install -D -m 0644 "$REPO/images/common/firmware/brcm/bcm43xx-0.fw" "$dir/lib/firmware/brcm/bcm43xx-0.fw"
+    install -D -m 0644 "$REPO/images/common/firmware/brcm/bcm43xx_hdr-0.fw" "$dir/lib/firmware/brcm/bcm43xx_hdr-0.fw"
+    printf 'blacklist b43\n' > "$dir/etc/modprobe.d/morpheos-wifi.conf"
     echo "morpheos-$slot" > "$dir/etc/hostname"
     : > "$dir/etc/machine-id"
     cat > "$dir/etc/fstab" <<EOF
@@ -320,7 +327,7 @@ EOF
         # it), its touchscreen, its wired network. Each of these was missing until the extra
         # modules went in, with the firmware for them already on the image.
         for mod in usb-storage uas xhci-hcd ahci sd_mod ext4 vfat \
-            amdgpu i915 xe cfg80211 mac80211 iwlwifi mt7921e brcmfmac hid-multitouch r8169; do
+            amdgpu i915 xe cfg80211 mac80211 iwlwifi mt7921e brcmfmac brcmsmac hid-multitouch r8169; do
             found=$(find "$dir/usr/lib/modules" -name "$mod.ko*" -print -quit 2>/dev/null || true)
             if [ -z "$found" ] && ! printf '%s' "$builtin" | grep -q "/$mod\.ko"; then
                 missing="$missing $mod"
@@ -331,6 +338,11 @@ EOF
             echo "kernel flavour: $(ls "$dir"/boot/vmlinuz-* 2>/dev/null | xargs -n1 basename)" >&2
             exit 1
         fi
+        # The firmware brcmsmac loads for the BCM4331 (MacBookPro9,1). Assert it landed, not
+        # just that the module did: a missing .fw is the exact "no Wi-Fi" the hardware report
+        # found, and it reads as green until a person boots it.
+        [ -f "$dir/lib/firmware/brcm/bcm43xx-0.fw" ] \
+            || { echo "brcmsmac firmware is missing from $dir: BCM4331 Wi-Fi cannot start" >&2; exit 1; }
         # The screen, asserted from the kernel's own config instead: `efifb` is built into this
         # kernel, so it has no .ko to look for, and a check that looked for one failed a good
         # image. A dark screen with no serial port is a machine nobody can use.
