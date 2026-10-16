@@ -228,7 +228,7 @@ impl XdgShellHandler for App {
         _output: Option<wl_output::WlOutput>,
     ) {
         match self.id_of(surface.wl_surface()) {
-            Some(id) if self.wm.set_fullscreen(id, true) => self.tell_fullscreen(),
+            Some(id) if self.wm.set_fullscreen(id, true) => self.tell_states(),
             // Nothing changed, but a request must be answered with a configure.
             _ => {
                 surface.send_configure();
@@ -237,11 +237,40 @@ impl XdgShellHandler for App {
     }
     fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
         match self.id_of(surface.wl_surface()) {
-            Some(id) if self.wm.set_fullscreen(id, false) => self.tell_fullscreen(),
+            Some(id) if self.wm.set_fullscreen(id, false) => self.tell_states(),
             _ => {
                 surface.send_configure();
             }
         }
+    }
+
+    // MAXIMIZE AND MINIMIZE ASKED FOR BY THE CLIENT (E9). A toolkit's title-bar buttons ask
+    // for these the same way Firefox asks for fullscreen on F11; the window manager decides,
+    // and these only carry the request to it. There is no minimize in the xdg protocol's
+    // state set, so minimizing just takes the window off the screen (and, by un-fullscreening
+    // and un-maximizing it in the window manager, tells the client the rest via `tell_states`).
+    fn maximize_request(&mut self, surface: ToplevelSurface) {
+        match self.id_of(surface.wl_surface()) {
+            Some(id) if self.wm.set_maximized(id, true) => self.tell_states(),
+            _ => {
+                surface.send_configure();
+            }
+        }
+    }
+    fn unmaximize_request(&mut self, surface: ToplevelSurface) {
+        match self.id_of(surface.wl_surface()) {
+            Some(id) if self.wm.set_maximized(id, false) => self.tell_states(),
+            _ => {
+                surface.send_configure();
+            }
+        }
+    }
+    fn minimize_request(&mut self, surface: ToplevelSurface) {
+        match self.id_of(surface.wl_surface()) {
+            Some(id) if self.wm.set_minimized(id, true) => self.tell_states(),
+            _ => {}
+        }
+        surface.send_configure();
     }
 }
 
@@ -328,8 +357,10 @@ impl App {
             self.offsets.retain(|(i, _)| *i != id);
             self.offsets.push((id, (geometry.loc.x, geometry.loc.y)));
             // Too big for the screen: ask it to fit, once per size asked for. (A fullscreen
-            // window is exactly the screen's size, and asked to be.)
+            // window is exactly the screen's size, and asked to be; a maximized one is the
+            // screen less the bar, which is larger than `fit` would allow, so it is left.)
             if self.wm.fullscreen() != Some(id)
+                && !self.wm.is_maximized(id)
                 && let Some(size) = wm::fit(
                     geometry.size.w,
                     geometry.size.h,
@@ -352,6 +383,7 @@ impl App {
                 id,
                 w: geometry.size.w,
                 h: geometry.size.h,
+                ..Window::default()
             });
         }
         self.offsets
@@ -447,10 +479,14 @@ impl App {
         self.ids.iter().find(|(s, _)| s == surface).map(|(_, i)| *i)
     }
 
-    /// Tell every window whose fullscreen state the window manager changed: fullscreen at
-    /// the screen's size, or back to the size it had before.
-    fn tell_fullscreen(&mut self) {
+    /// Tell every window its fullscreen and maximized state, now that the window manager has
+    /// changed them. A fullscreen window is asked for the screen's size, a maximized one for
+    /// the screen less the bar, and any other for the size it had before those. One
+    /// configure per window whose state changed, so the two states never fight over the size.
+    fn tell_states(&mut self) {
         let full = self.wm.fullscreen();
+        let (sw, sh) = self.screen;
+        let max_h = (sh - wm::BAR_HEIGHT).max(1);
         for (surface, id) in self.ids.clone() {
             let Some(toplevel) = self
                 .xdg_shell_state
@@ -461,21 +497,32 @@ impl App {
             else {
                 continue;
             };
-            let want = full == Some(id);
-            let has = toplevel
-                .with_pending_state(|state| state.states.contains(xdg_toplevel::State::Fullscreen));
-            if want == has {
+            let want_full = full == Some(id);
+            let want_max = self.wm.is_maximized(id);
+            let (has_full, has_max) = toplevel.with_pending_state(|state| {
+                (
+                    state.states.contains(xdg_toplevel::State::Fullscreen),
+                    state.states.contains(xdg_toplevel::State::Maximized),
+                )
+            });
+            if want_full == has_full && want_max == has_max {
                 continue;
             }
-            let screen = self.screen;
-            let before = self.wm.size_before_fullscreen(id);
+            let before_full = self.wm.size_before_fullscreen(id);
+            let before_max = self.wm.size_before_maximized(id);
             toplevel.with_pending_state(|state| {
-                if want {
+                if want_full {
                     state.states.set(xdg_toplevel::State::Fullscreen);
-                    state.size = Some(screen.into());
+                    state.states.unset(xdg_toplevel::State::Maximized);
+                    state.size = Some((sw, sh).into());
+                } else if want_max {
+                    state.states.unset(xdg_toplevel::State::Fullscreen);
+                    state.states.set(xdg_toplevel::State::Maximized);
+                    state.size = Some((sw, max_h).into());
                 } else {
                     state.states.unset(xdg_toplevel::State::Fullscreen);
-                    state.size = before.map(Into::into);
+                    state.states.unset(xdg_toplevel::State::Maximized);
+                    state.size = before_max.or(before_full).map(Into::into);
                 }
             });
             toplevel.send_configure();
@@ -921,7 +968,7 @@ impl Server {
                     if let Some(id) = self.state.wm.focused() {
                         let on = self.state.wm.fullscreen() != Some(id);
                         if self.state.wm.set_fullscreen(id, on) {
-                            self.state.tell_fullscreen();
+                            self.state.tell_states();
                         }
                     }
                     None
@@ -1355,11 +1402,12 @@ fn render(
             ));
         }
     }
-    // No border on a fullscreen window: it has the whole screen, edge to edge.
+    // No border on a fullscreen window (the whole screen, edge to edge) or a maximized one
+    // (the whole usable screen, whose border would run off the top and sides).
     let focus_border = state
         .wm
         .focused()
-        .filter(|id| state.wm.fullscreen() != Some(*id))
+        .filter(|id| state.wm.fullscreen() != Some(*id) && !state.wm.is_maximized(*id))
         .and_then(|id| layout.iter().find(|p| p.id == id))
         .map(|p| {
             Rectangle::new(
