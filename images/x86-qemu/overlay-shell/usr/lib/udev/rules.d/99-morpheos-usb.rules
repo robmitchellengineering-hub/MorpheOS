@@ -1,5 +1,7 @@
 # A removable USB disk appears: mount it where the file view (E17) lists it (doc 20, E18).
-# udev passes DEVNAME, ID_FS_LABEL and ID_FS_UUID in the environment to flow-mount.
+# udev cannot mount it itself: its RUN programs run WITHOUT CAP_SYS_ADMIN, so mount(2) fails
+# with EPERM even as uid 0. Instead the device is tagged for systemd, which starts
+# morpheos-usb-mount@<kernel>.service — a real service, which keeps CAP_SYS_ADMIN — for it.
 # SUBSYSTEMS walks the parent chain, so this matches a disk behind usb-storage (its block
 # device's own ID_BUS is scsi, not usb).
-ACTION=="add", SUBSYSTEM=="block", ENV{ID_FS_USAGE}=="filesystem", SUBSYSTEMS=="usb", RUN{program}+="/usr/bin/flow-mount"
+ACTION=="add", SUBSYSTEM=="block", ENV{ID_FS_USAGE}=="filesystem", SUBSYSTEMS=="usb", TAG+="systemd", ENV{SYSTEMD_WANTS}+="morpheos-usb-mount@%k.service"

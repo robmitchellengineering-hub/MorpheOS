@@ -1,0 +1,9 @@
+[Unit]
+Description=Mount a removable MorpheOS disk (/dev/%i) at the file view's place
+Documentation=https://github.com/robmitchellengineering-hub/MorpheOS/blob/main/docs/20-build-plan.md
+# Started by the udev rule's SYSTEMD_WANTS when a USB filesystem appears (doc 20, E18). A real
+# service, unlike a udev RUN program, keeps CAP_SYS_ADMIN, so mount(2) succeeds.
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/flow-mount /dev/%i
