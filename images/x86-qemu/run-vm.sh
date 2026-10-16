@@ -25,6 +25,10 @@ PAYLOAD=${4:-}
 PAYLOAD_ARGS=()
 [ -n "$PAYLOAD" ] && PAYLOAD_ARGS=(-drive "file=$PAYLOAD,format=raw,if=virtio,readonly=on")
 
+# A USB storage disk (doc 20, E18): VM_USB=<path> attaches a FAT image the udev rule mounts.
+USB_ARGS=()
+[ -n "${VM_USB:-}" ] && USB_ARGS=(-device qemu-xhci -device usb-storage,drive=stick -drive "id=stick,file=$VM_USB,format=raw,if=none")
+
 # A real display (doc 20, E3): VM_GPU=1 swaps the default VGA for virtio-gpu, a KMS device
 # the compositor can drive, and VM_MONITOR=<path> opens a monitor socket so a test can take
 # a `screendump` of what is on the screen.
@@ -55,7 +59,7 @@ exec timeout --foreground "$TIMEOUT" qemu-system-x86_64 \
     -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
     -drive if=pflash,format=raw,file="$VARS" \
     -drive file="$DISK",format=raw,if=virtio \
-    "${PAYLOAD_ARGS[@]}" \
+    "${PAYLOAD_ARGS[@]}" "${USB_ARGS[@]}" \
     -device i6300esb -action watchdog=reset \
     "${DISPLAY_ARGS[@]}" "${MONITOR_ARGS[@]}" \
     "${NET_ARGS[@]}" -display none \

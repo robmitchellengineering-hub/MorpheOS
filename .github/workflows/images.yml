@@ -55,7 +55,7 @@ jobs:
       # and after the step above, which installs the system libraries it links (libudev,
       # libinput, libseat, xkbcommon, pixman). Built before it, it failed on libudev.
       - name: Build the shell and the Wi-Fi picker
-        run: cargo build --release -p flow-compositor -p flow-wifi
+        run: cargo build --release -p flow-compositor -p flow-wifi -p flow-files
       # ⚠️ FIRST, AND BEFORE THE SCENARIOS. This is the image a PERSON boots — the one that
       # goes on real hardware — and it is built and published before any test that might fail,
       # so a red scenario cannot cost us the artefact somebody is waiting for. `if: always()`
@@ -108,7 +108,7 @@ jobs:
       # libraries came from setup-linux.sh above.
       - name: The Flow shell on a real display, with a keyboard and a mouse
         run: |
-          cargo build --release -p flow-compositor -p flow-wifi
+          cargo build --release -p flow-compositor -p flow-wifi -p flow-files
           sudo images/x86-qemu/test-shell.sh "$RUNNER_TEMP/img"
       # Doc 20, E11: an update whose shell cannot start, or starts and never draws, is
       # trialled once and falls back, like `unhealthy`. The second is why the shell is
@@ -124,6 +124,8 @@ jobs:
       # on the VM's keyboard; verdicts from screendumps and the network's own DHCP log.
       - name: Joining Wi-Fi with the picker
         run: sudo images/x86-qemu/test-wifi.sh "$RUNNER_TEMP/img"
+      - name: A USB stick mounts itself (E18)
+        run: sudo images/x86-qemu/test-usb.sh "$RUNNER_TEMP/img"
       - name: Keep serial logs
         if: always()
         uses: actions/upload-artifact@v4

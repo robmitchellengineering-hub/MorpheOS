@@ -28,7 +28,7 @@ mkdir -p "$WORK"
 
 # The harness scripts run under sudo, whose PATH has no cargo: build first, as yourself.
 step "build the binaries the images carry"
-cargo build --release -p morph-boot -p strata -p morph-update -p morph-heal -p flow-compositor -p flow-wifi
+cargo build --release -p morph-boot -p strata -p morph-update -p morph-heal -p flow-compositor -p flow-wifi -p flow-files
 
 if [ "$WHAT" = plain ] || [ "$WHAT" = all ]; then
     step "the image a person uses: build, boot, and read back its report"
@@ -51,5 +51,7 @@ if [ "$WHAT" = shell ] || [ "$WHAT" = all ]; then
     sudo images/x86-qemu/test-browser.sh "$WORK"
     step "joining Wi-Fi with the picker"
     sudo images/x86-qemu/test-wifi.sh "$WORK"
+    step "a USB stick mounts itself"
+    sudo images/x86-qemu/test-usb.sh "$WORK"
 fi
 printf '\nimages suite (%s) passed\n' "$WHAT"
