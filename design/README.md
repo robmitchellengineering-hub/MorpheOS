@@ -16,11 +16,15 @@ over a **twinkling starfield**, with the **"MorpheOS"** wordmark. It plays once 
 
 ## Audio — auto-synced
 
-Rob is adding the music. When the track is ready, drop it next to `login.html` as **`theme.mp3`**:
-the animation then waits for a tap/keypress, starts the music and the picture on the **same audio
-sample**, and runs the whole animation off the **audio's own clock** (Web Audio is the master) — so
-the two cannot drift, and the reverb/delay tail plays out to the file's natural end while the
-scene fades to black. With no `theme.mp3` present, the animation just auto-plays on a timer.
+`theme.mp3` (next to `login.html`) is the current **placeholder** — an F# major chord that builds
+over the draw and rings out at the settle — while Rob records the real track. The animation waits
+for a tap/keypress, then starts the music and the picture together.
+
+Over HTTP the track is decoded and played sample-accurately, with Web Audio's clock as the master,
+so picture and music cannot drift. On a `file://` page — how the booted image opens `login.html` —
+the browser blocks `fetch()`, so the loader falls back to an `<audio>` element and a
+`performance.now()` clock; the two still start on the same tap, within the element's start-up
+latency. With no `theme.mp3` present, the animation just auto-plays on a timer.
 
 ## Hero still — `still-logo.png`
 
