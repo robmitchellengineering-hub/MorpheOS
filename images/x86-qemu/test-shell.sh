@@ -59,7 +59,15 @@ if [ -z "$ready" ]; then
     grep -a 'flow-compositor\|flow-shell\|solid-window\|seatd' "$log" | tail -20 || true
     fail=1
 else
-    sleep 2 # a few frames after the window arrived
+    # The boot splash (E19) runs for ~7 s; wait for the compositor to say it is done
+    # before judging the shell's first screenshot, rather than sleeping a magic number.
+    for _ in $(seq 1 30); do
+        if grep -aq 'flow-compositor: splash done' "$log" 2>/dev/null; then
+            break
+        fi
+        if ! kill -0 "$vm" 2>/dev/null; then break; fi
+        sleep 1
+    done
     python3 - "$qmp" "$WORK" <<'PY' || fail=1
 import json, socket, sys, time
 
