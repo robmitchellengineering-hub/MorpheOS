@@ -443,9 +443,10 @@ chmod 0700 "$DATADIR/strata"
 
 # 5. Partition images, then the disk. No loop devices or mounts needed.
 # ROOT_MB was 1200 until 2026-10-14, when `plain` took Firefox and the check above measured slot
-# A at 1134 MiB (94%). 1600 puts it at 71%. Each raise is deliberate and said in the pull request:
-# a machine installed with one slot size keeps it (doc 20, E7).
-ESP_MB=300 ROOT_MB=1600 DATA_MB=256
+# A at 1134 MiB (94%). 1600 puts it at 71%. Then 2026-10-16, git+curl+ca-certificates (node/dev
+# tools) pushed slot A to 1428 MiB (89%); 1800 puts it back to 79%. Each raise is deliberate and
+# said in the pull request: a machine installed with one slot size keeps it (doc 20, E7).
+ESP_MB=300 ROOT_MB=1800 DATA_MB=256
 rm -f "$WORK/esp.img"
 mkfs.vfat -F 32 -n ESP -C "$WORK/esp.img" $((ESP_MB * 1024)) >/dev/null
 mcopy -s -i "$WORK/esp.img" "$ESPDIR"/* ::/
