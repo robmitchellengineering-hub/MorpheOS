@@ -767,7 +767,7 @@ at a minimum on-screen size (a scale factor is applied), not 1:1 at the native m
 
 **From the report:** "everything was really small" — Rob, mac-2015 boot, 2026-10-15.
 
-### E16 · Resize a window · open · needs E3
+### E16 · Resize a window · done · needs E3
 
 **What:** the Classic feel (ADR 0013, item 3) manages windows: focus, move, close, fullscreen,
 switch — and resize. A drag on a window's corner resizes it: the corner follows the pointer,
@@ -780,6 +780,10 @@ size (its `configure WxH` line changes) and the frame shows it; the same drag on
 instead. Manager decisions are unit-tested first (wm.rs), the same way move and fullscreen are.
 
 **From the report:** "i have to be able to resize a window" — Rob, in the session, 2026-10-15.
+
+**Evidence:** `crates/flow-compositor/src/wm.rs` (the resize decisions, unit-tested),
+`crates/flow-compositor/src/headless.rs` (corner vs edge), and
+`crates/flow-compositor/tests/move_fullscreen.rs` (the headless corner-drag test).
 
 ### E17 · A file view in the shell · done
 
