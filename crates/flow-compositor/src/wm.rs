@@ -64,6 +64,14 @@ pub fn wifi_button(screen_w: i32, screen_h: i32) -> (i32, i32, i32, i32) {
     )
 }
 
+/// The Files button on that screen: the same square, one button's gap to the Wi-Fi button's
+/// left, so the file view (E17) opens from the bar the way the picker does (doc 20, E20).
+#[must_use]
+pub fn files_button(screen_w: i32, screen_h: i32) -> (i32, i32, i32, i32) {
+    let (wx, wy, _, _) = wifi_button(screen_w, screen_h);
+    (wx - BUTTON_INSET - BUTTON, wy, BUTTON, BUTTON)
+}
+
 /// The largest a window may be on a screen of `screen_w` x `screen_h`: the screen less a
 /// margin all round and the bar. A toolkit picks its own window size, and GTK (so Firefox)
 /// picks one wider than a small screen; such a window is asked to shrink to this.
@@ -274,6 +282,17 @@ impl Manager {
     #[must_use]
     pub fn on_wifi_button(&self, x: i32, y: i32) -> bool {
         let (bx, by, bw, bh) = wifi_button(self.screen.0, self.screen.1);
+        self.fullscreen.is_none()
+            && self.screen.1 > 0
+            && (bx..bx + bw).contains(&x)
+            && (by..by + bh).contains(&y)
+    }
+
+    /// Whether a point is on the bar's Files button. The bar is not there while a window is
+    /// fullscreen, so neither is the button.
+    #[must_use]
+    pub fn on_files_button(&self, x: i32, y: i32) -> bool {
+        let (bx, by, bw, bh) = files_button(self.screen.0, self.screen.1);
         self.fullscreen.is_none()
             && self.screen.1 > 0
             && (bx..bx + bw).contains(&x)
@@ -581,6 +600,27 @@ mod tests {
         );
         assert!(
             !Manager::default().on_wifi_button(0, 0),
+            "no screen, no button"
+        );
+    }
+
+    #[test]
+    fn the_files_button_sits_left_of_the_wifi_button_and_goes_with_fullscreen() {
+        let mut m = Manager::default();
+        m.set_screen(640, 480);
+        // Wi-Fi at (608, 452); Files one button (24) plus a gap (8) to its left.
+        assert_eq!(files_button(640, 480), (576, 452, 24, 24));
+        assert!(m.on_files_button(576, 452) && m.on_files_button(599, 475));
+        assert!(!m.on_files_button(575, 460) && !m.on_files_button(600, 460));
+        assert!(!m.on_wifi_button(576, 460), "Files is not the Wi-Fi button");
+        m.sync(&[win(1, 100, 50)]);
+        m.set_fullscreen(1, true);
+        assert!(
+            !m.on_files_button(588, 460),
+            "no bar over a fullscreen window"
+        );
+        assert!(
+            !Manager::default().on_files_button(0, 0),
             "no screen, no button"
         );
     }

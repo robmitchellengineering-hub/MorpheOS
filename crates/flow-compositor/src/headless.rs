@@ -96,6 +96,8 @@ pub struct Options {
     pub drm: Option<PathBuf>,
     /// The command that opens the Wi-Fi picker, from the bar's button or Super+W (E5).
     pub launch_wifi: Option<String>,
+    /// The command that opens the file view, from the bar's Files button or Super+E (E20).
+    pub launch_files: Option<String>,
 }
 
 struct App {
@@ -531,10 +533,14 @@ enum Shortcut {
     Cycle,
     Fullscreen,
     Wifi,
+    Files,
 }
 
 /// The Wi-Fi picker's `app_id`, by which the shell finds one already open.
 pub const WIFI_APP_ID: &str = "morpheos.wifi";
+
+/// The file view's `app_id`, by which the shell finds one already open.
+pub const FILES_APP_ID: &str = "morpheos.files";
 
 /// The left mouse button's code (linux/input-event-codes.h `BTN_LEFT`).
 pub const BTN_LEFT: u32 = 0x110;
@@ -567,6 +573,7 @@ pub struct Server {
     /// and the pickers this shell started, reaped as they exit.
     socket: String,
     launch_wifi: Option<Vec<String>>,
+    launch_files: Option<Vec<String>>,
     launched: Vec<std::process::Child>,
 }
 
@@ -745,6 +752,20 @@ impl Server {
             self.state.wm.end_resize();
             return;
         }
+        // The bar's Files button is the shell's: the press opens the file view, and neither it
+        // nor its release reaches a window.
+        if pressed
+            && button == BTN_LEFT
+            && self
+                .state
+                .wm
+                .on_files_button(self.pointer_at.x as i32, self.pointer_at.y as i32)
+        {
+            self.state.dismiss_popups();
+            self.drag_button = Some(button);
+            self.open_files();
+            return;
+        }
         // The bar's Wi-Fi button is the shell's: the press opens the picker, and neither it
         // nor its release reaches a window.
         if pressed
@@ -858,6 +879,8 @@ impl Server {
                         FilterResult::Intercept(Shortcut::Fullscreen)
                     } else if modifiers.logo && plain == Some(Keysym::w.raw()) {
                         FilterResult::Intercept(Shortcut::Wifi)
+                    } else if modifiers.logo && plain == Some(Keysym::e.raw()) {
+                        FilterResult::Intercept(Shortcut::Files)
                     } else {
                         FilterResult::Forward
                     }
@@ -883,7 +906,43 @@ impl Server {
                     self.open_wifi();
                     None
                 }
+                Shortcut::Files => {
+                    self.open_files();
+                    None
+                }
             })
+    }
+
+    /// Open the file view (the bar's Files button, Super+E). There is only ever one: one
+    /// already on the screen comes to the front, and while one this shell started is still
+    /// starting, nothing more is started.
+    fn open_files(&mut self) {
+        if let Some(id) = self.state.window_with_app_id(FILES_APP_ID) {
+            self.state.wm.activate(id);
+            self.apply_focus();
+            return;
+        }
+        let Some(cmd) = &self.launch_files else {
+            eprintln!("flow-compositor: no file view to open (no --launch-files)");
+            return;
+        };
+        if !self.launched.is_empty() {
+            return;
+        }
+        match std::process::Command::new(&cmd[0])
+            .args(&cmd[1..])
+            .env("WAYLAND_DISPLAY", &self.socket)
+            .spawn()
+        {
+            Ok(child) => {
+                eprintln!("flow-compositor: opening the file view");
+                self.launched.push(child);
+            }
+            Err(e) => eprintln!(
+                "flow-compositor: could not open the file view ({}): {e}",
+                cmd[0]
+            ),
+        }
     }
 
     /// Open the Wi-Fi picker (the bar's button, Super+W). There is only ever one: one already
@@ -1106,6 +1165,7 @@ impl Server {
             height,
             socket: socket.to_string(),
             launch_wifi: None,
+            launch_files: None,
             launched: Vec::new(),
         })
     }
@@ -1141,6 +1201,11 @@ pub fn run(opts: &Options) -> Result<(), String> {
     let mut server = Server::new(&opts.socket, opts.width, opts.height)?;
     server.launch_wifi = opts
         .launch_wifi
+        .as_deref()
+        .map(|c| c.split_whitespace().map(str::to_string).collect::<Vec<_>>())
+        .filter(|c| !c.is_empty());
+    server.launch_files = opts
+        .launch_files
         .as_deref()
         .map(|c| c.split_whitespace().map(str::to_string).collect::<Vec<_>>())
         .filter(|c| !c.is_empty());
@@ -1289,13 +1354,20 @@ fn render(
             let rect =
                 |(x, y, w, h): (i32, i32, i32, i32)| Rectangle::new((x, y).into(), (w, h).into());
             let (bx, by, _, _) = wm::wifi_button(sw, sh);
-            // The button: a square with three rising bars, the usual sign for Wi-Fi.
+            let (fx, fy, _, _) = wm::files_button(sw, sh);
+            // The Wi-Fi button: a square with three rising bars. The Files button: a folder.
             let mut parts = vec![
                 (rect(wm::bar(sw, sh)), colour(palette::BAR)),
                 (
                     rect(wm::wifi_button(sw, sh)),
                     colour(palette::SURFACE_FOCUSED),
                 ),
+                (
+                    rect(wm::files_button(sw, sh)),
+                    colour(palette::SURFACE_FOCUSED),
+                ),
+                (rect((fx + 4, fy + 8, 16, 12)), colour(palette::BAR_ICON)),
+                (rect((fx + 4, fy + 5, 7, 4)), colour(palette::BAR_ICON)),
             ];
             for (i, h) in [6, 11, 16].into_iter().enumerate() {
                 let x = bx + 5 + 5 * i as i32;
