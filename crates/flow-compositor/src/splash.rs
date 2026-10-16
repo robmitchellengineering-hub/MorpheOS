@@ -786,7 +786,7 @@ mod tests {
     fn the_wordmark_rises_in_below_the_mark() {
         // The embedded wordmark carries the white "OS".
         let white = WORDMARK
-            .chunks_exact(4)
+            .chunks(4)
             .filter(|px| px[0] == 255 && px[1] == 255 && px[2] == 255 && px[3] == 255)
             .count();
         assert!(
