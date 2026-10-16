@@ -817,6 +817,18 @@ with a known file and asserts the file view lists it and opens it.
 **From the report:** "if i plug a stick in with data that i want on the computer how does that
 process work" — Rob, in the session, 2026-10-15.
 
+### E20 · The file view opens from the bar · open · parallel · needs E17
+
+**What:** E17 built the file view window, but nothing opens it — there is no bar button and no
+shortcut, so a person cannot reach their files. Add a Files button to the shell's bar (E5) and a
+Super+E shortcut that open the file view, exactly as the Wi-Fi button and Super+W open the picker.
+
+**Done when:** a headless test clicks the bar's Files button and asserts the file view window
+appears (and Super+E opens it too); the button's geometry is a pure function (unit-tested), as
+the Wi-Fi button's is.
+
+**From the report:** "how to access my files i downloaded" — Rob, in the session, 2026-10-15.
+
 ### E19 · The boot/login animation and brand mark · proposed
 
 **What:** the animated MorpheOS mark that opens the shell — a green geomesh drawing itself into
