@@ -59,7 +59,7 @@ if [ -z "$ready" ]; then
     grep -a 'flow-compositor\|flow-shell\|solid-window\|seatd' "$log" | tail -20 || true
     fail=1
 else
-    sleep 2 # a few frames after the window arrived
+    sleep 4 # the boot splash (E19) shows for 3 s; wait until it is done before judging the shell
     python3 - "$qmp" "$WORK" <<'PY' || fail=1
 import json, socket, sys, time
 
