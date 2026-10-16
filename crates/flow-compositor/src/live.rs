@@ -35,6 +35,14 @@ use flow_compositor::display;
 /// How long seatd has to give us the seat before the service gives up.
 const SEAT_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Pointer-acceleration speed applied to every pointer device (mouse or trackpad) when it
+/// is first seen, so a trackpad is not over- or under-sensitive. libinput's range is
+/// -1.0 (slowest) to 1.0 (fastest); 0.0 is the device's neutral default. The 2012 MacBook
+/// Pro's bcm5974 trackpad felt wrong at that raw default, so start a touch positive and
+/// tune this one constant. The adaptive acceleration profile is left at libinput's default;
+/// only the speed is set.
+const POINTER_ACCEL_SPEED: f64 = 0.2;
+
 struct Live {
     server: Server,
     session: LibSeatSession,
@@ -52,7 +60,7 @@ struct Live {
 impl Live {
     fn input(&mut self, event: InputEvent<LibinputInputBackend>) {
         match event {
-            InputEvent::DeviceAdded { device } => announce(&device),
+            InputEvent::DeviceAdded { mut device } => announce(&mut device),
             InputEvent::Keyboard { event } => {
                 // libinput's codes are offset by 8 into xkb's; `key` takes the Linux code.
                 let code = event.key_code().raw().saturating_sub(8);
@@ -124,8 +132,9 @@ fn notify_ready() {
     }
 }
 
-/// Say which input devices the shell is using, so a log shows what it found.
-fn announce(device: &smithay::reexports::input::Device) {
+/// Say which input devices the shell is using, so a log shows what it found, and tune each
+/// pointer's acceleration speed ([`POINTER_ACCEL_SPEED`]) before it is used.
+fn announce(device: &mut smithay::reexports::input::Device) {
     let kinds: Vec<&str> = [
         (DeviceCapability::Keyboard, "keyboard"),
         (DeviceCapability::Pointer, "pointer"),
@@ -140,6 +149,14 @@ fn announce(device: &smithay::reexports::input::Device) {
             device.name(),
             kinds.join(", ")
         );
+    }
+    if device.has_capability(DeviceCapability::Pointer) {
+        // A pointer that cannot take an acceleration speed returns Unsupported (or
+        // Invalid for an out-of-range value); the shell must not fail over it, so say
+        // so and keep going.
+        if let Err(e) = device.config_accel_set_speed(POINTER_ACCEL_SPEED) {
+            eprintln!("flow-compositor: pointer speed on {}: {e:?}", device.name());
+        }
     }
 }
 
@@ -238,9 +255,8 @@ pub fn run(server: Server, device: &Path) -> Result<(), String> {
             smithay::reexports::input::event::DeviceEvent::Added(added),
         ) = event
         {
-            announce(&smithay::reexports::input::event::EventTrait::device(
-                &added,
-            ));
+            let mut device = smithay::reexports::input::event::EventTrait::device(&added);
+            announce(&mut device);
         }
     }
 
