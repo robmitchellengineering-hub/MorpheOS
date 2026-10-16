@@ -418,8 +418,9 @@
       }
 
       // Boot splash: once the mesh has drawn and settled, hand over to the browser start
-      // page (E19 — this animation is the launch screen in the image).
-      if (STILL == null && t > DRAW_SEC + SETTLE_SEC + 0.8) {
+      // page (E19 — this animation is the launch screen in the image). 1.5 s after the draw:
+      // the ~0.7 s settle ripple, plus a beat.
+      if (STILL == null && t > DRAW_SEC + 1.5) {
         window.location.replace('file:///usr/share/morpheos/start.html');
       }
 
