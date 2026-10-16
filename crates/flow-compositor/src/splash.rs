@@ -38,6 +38,13 @@ pub const FADE_SEC: f32 = 0.5;
 /// The whole splash, from the first pixel to the shell taking over.
 pub const TOTAL_SEC: f32 = DRAW_SEC + SETTLE_SEC + FADE_SEC;
 
+/// Whether the compositor shows this software port at boot. It does NOT (E19 rework): the real
+/// Three.js `design/login.html` is the launch screen now, run by Firefox in the image. This port
+/// stays as pure, tested reference code and for the headless `--splash` frame.
+pub fn shown_at_boot() -> bool {
+    false
+}
+
 /// The brand background the mark sits on (design/README.md: "the depth the OS lives in").
 pub const BRAND_BLACK: Colour = Colour::rgb(0x05, 0x07, 0x0d); // #05070d
 /// Matrix green — where the mark lands (design/README.md: "the voice").

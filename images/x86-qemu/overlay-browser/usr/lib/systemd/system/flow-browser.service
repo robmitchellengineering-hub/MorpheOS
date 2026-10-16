@@ -14,7 +14,9 @@ Environment=HOME=/home/browser NO_AT_BRIDGE=1 XDG_CACHE_HOME=/persist/browser/ca
 # The socket appears when the compositor has bound it; wait for it rather than guessing.
 ExecStartPre=/bin/sh -c 'for i in $(seq 1 300); do [ -S /run/flow/wayland-0 ] && exit 0; sleep 0.1; done; exit 1'
 ExecStartPre=/bin/mkdir -p /home/browser /persist/browser/profile /persist/browser/cache
-ExecStart=/usr/bin/firefox --new-instance --profile /persist/browser/profile file:///usr/share/morpheos/start.html
+# The launch screen is the real Three.js animation (E19): Firefox shows login.html fullscreen;
+# login.html redirects to start.html once the mesh has drawn and settled.
+ExecStart=/usr/bin/firefox --new-instance --kiosk --profile /persist/browser/profile file:///usr/share/morpheos/login.html
 # There is no launcher yet: a person who closes Firefox gets it back. A crash is not a clean
 # exit, so it stays a failed unit, which the boot's health check sees.
 Restart=on-success
