@@ -833,7 +833,7 @@ asserts `flow-mount: mounted … at /run/media/teststick` in the serial log. The
 and opens whatever is in that directory (E17's `crates/flow-files/tests/on_the_shell.rs` proves
 it for a folder with a known file), so the stick's files appear where the file view lists them.
 
-### E20 · The file view opens from the bar · open · parallel · needs E17
+### E20 · The file view opens from the bar · done · parallel · needs E17
 
 **What:** E17 built the file view window, but nothing opens it — there is no bar button and no
 shortcut, so a person cannot reach their files. Add a Files button to the shell's bar (E5) and a
@@ -844,6 +844,11 @@ appears (and Super+E opens it too); the button's geometry is a pure function (un
 the Wi-Fi button's is.
 
 **From the report:** "how to access my files i downloaded" — Rob, in the session, 2026-10-15.
+
+**Evidence:** `crates/flow-compositor/src/wm.rs` (the Files button's geometry, unit-tested beside
+the Wi-Fi button's), `crates/flow-compositor/src/headless.rs` (the bar button and Super+E open the
+one file view), and `crates/flow-files/tests/on_the_shell.rs` (the headless test clicks the bar's
+Files button and asserts Super+E opens the same view).
 
 ### E19 · The boot/login animation and brand mark · in progress
 
