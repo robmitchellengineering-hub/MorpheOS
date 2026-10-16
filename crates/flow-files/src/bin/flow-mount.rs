@@ -20,6 +20,13 @@ fn main() -> std::process::ExitCode {
         announce("no DEVNAME — run it from the udev rule");
         return std::process::ExitCode::FAILURE;
     }
+    // Diagnose: who does udev run this as? (mount EPERM = not root, or dropped CAP_SYS_ADMIN)
+    if let Ok(out) = Command::new("id").output() {
+        announce(&format!(
+            "running as {}",
+            String::from_utf8_lossy(&out.stdout).trim()
+        ));
+    }
     let label = std::env::var("ID_FS_LABEL").unwrap_or_default();
     let uuid = std::env::var("ID_FS_UUID").unwrap_or_default();
     let fs_type = std::env::var("ID_FS_TYPE").unwrap_or_default();
