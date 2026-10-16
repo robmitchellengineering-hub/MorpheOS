@@ -674,7 +674,7 @@ impl Server {
 
     /// Whether the boot splash is still showing; the live display logs when it ends.
     pub fn splash_showing(&self) -> bool {
-        splash::state(self.started.elapsed()).showing
+        splash::shown_at_boot() && splash::state(self.started.elapsed()).showing
     }
 
     /// Render the screen now (the live display): `cursor` draws the pointer, once something
@@ -1312,7 +1312,7 @@ fn render(
     // It is returned before the pixman path below, so the live display and the headless
     // frame both show the same splash for the same elapsed time.
     let boot = splash::state(elapsed);
-    if boot.showing {
+    if splash::shown_at_boot() && boot.showing {
         return Ok(splash::frame(width, height, elapsed));
     }
     let err = |what: &'static str| {
