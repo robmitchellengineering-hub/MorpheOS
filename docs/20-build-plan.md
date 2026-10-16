@@ -743,7 +743,7 @@ on the screen Rob is looking at.
 8. **Size:** M. PR 1: several outputs, mirrored, with the test. PR 2: orientation, unit-tested.
    PR 3, if it is needed: hotplug.
 
-### E14 · Firefox goes online when the Wi-Fi picker joins · proposed
+### E14 · Firefox goes online when the Wi-Fi picker joins · done
 
 **What:** on the first real boot (mac-2015, 2026-10-15) Rob joined Wi-Fi through the picker,
 but Firefox still showed its offline page. The browser does not learn the network is up until
@@ -755,6 +755,12 @@ rig) and then asserts Firefox loads a page served by the CI host, without any re
 
 **From the report:** "I was able to connect to the wifi … but firefox didnt connect it was
 still off line" — Rob, mac-2015 boot, 2026-10-15.
+
+**Evidence:** `images/x86-qemu/overlay-browser/usr/share/morpheos/firefox-user.js`,
+`images/x86-qemu/overlay-browser/usr/lib/systemd/system/flow-browser.service`,
+`images/x86-qemu/build.sh`, `images/x86-qemu/overlay-wifi-test/usr/lib/morpheos/wifi-test-ap`,
+`images/x86-qemu/overlay-wifi-test/usr/share/morpheos/wifi-test/index.html`,
+`images/x86-qemu/test-wifi.sh`.
 
 ### E15 · The shell is readable on a high-DPI panel · proposed
 

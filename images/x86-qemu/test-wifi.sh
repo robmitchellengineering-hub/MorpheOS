@@ -17,6 +17,10 @@
 #     other end, not from the picker);
 #   * Esc closes the picker, and the bar's Wi-Fi button opens it again: it lists the network
 #     the machine is now on (doc 20, E5: the picker is reachable once the machine is online);
+#   * Firefox (E14) then navigates to http://192.168.77.1/, a page the access point itself
+#     serves, and its colour appears on screen — with no reload step anywhere: the first
+#     navigation after the picker joins must just work, which is the bug the user.js fix
+#     closes (there is no F5 / Ctrl+R in this sequence, so the page appearing is the proof);
 #   * the boot was healthy and committed.
 # The screenshots are the verdict on what a person sees (AGENTS.md H8); the log lines say
 # when to look, and what NetworkManager and the network did.
@@ -34,7 +38,7 @@ qmp="$WORK/qmp-wifi.sock"
 rm -f "$log" "$qmp" "$WORK"/screen-wifi-*.ppm
 
 start=$(date +%s)
-VM_GPU=1 VM_QMP="$qmp" "$HERE/run-vm.sh" "$disk" "$log" "${VM_TIMEOUT:-900}" &
+VM_GPU=1 VM_QMP="$qmp" VM_MEM=2048 "$HERE/run-vm.sh" "$disk" "$log" "${VM_TIMEOUT:-900}" &
 vm=$!
 
 # When to look: the picker has listed the test network.
@@ -58,7 +62,10 @@ qmp_path, work, log_path = sys.argv[1], sys.argv[2], sys.argv[3]
 # The picker's colours (crates/flow-wifi/src/picker.rs, `colours`).
 SELECTED, FIELD = (0x0e, 0x6b, 0x34), (0x05, 0x07, 0x0d)
 FAIL, OK = (0xd1, 0x3a, 0x4b), (0x00, 0xff, 0x41)
-WINDOW = (16, 16, 480, 360)      # where the window manager puts the first window
+# Firefox opens first and fills the usable screen; the picker then opens over it, cascaded to
+# MARGIN + CASCADE (16 + 32) so it stays on screen (crates/flow-compositor/src/wm.rs). Its
+# window is still 480 x 360, but it no longer sits at (16, 16) — Firefox has that spot.
+WINDOW = (48, 48, 480, 360)
 ROW = 480 * 36                   # one row or status line across the window, in pixels
 WRONG, RIGHT = "wrong pass", "correct horse"
 
@@ -139,10 +146,16 @@ def click(x, y):
         q.cmd("input-send-event", events=[{"type": "btn", "data": {"down": down, "button": "left"}}])
         time.sleep(0.1)
 
-QCODE = {" ": "spc"}
+# QEMU qcode names: letters and digits pass through; space and the URL's punctuation need a
+# name (QKeyCode has no "/" or "." strings, and no ":" at all — ":" is Shift+Semicolon).
+QCODE = {" ": "spc", "/": "slash", ".": "dot"}
 def type_text(s):
     for c in s:
-        q.cmd("send-key", keys=[{"type": "qcode", "data": QCODE.get(c, c)}])
+        if c == ":":
+            q.cmd("send-key", keys=[{"type": "qcode", "data": "shift"},
+                                     {"type": "qcode", "data": "semicolon"}])
+        else:
+            q.cmd("send-key", keys=[{"type": "qcode", "data": QCODE.get(c, c)}])
         time.sleep(0.05)
 
 def key(name):
@@ -182,6 +195,21 @@ def networks_lines():
     return [l for l in text.splitlines() if "flow-wifi: networks " in l]
 key("esc")
 check("Esc closed the picker (flow-wifi: closed)", wait_for("flow-wifi: closed", 10))
+
+# E14: the picker is gone, Firefox is the only window, and NetworkManager has a connection.
+# Navigate Firefox to the page the access point serves and assert its colour is on screen.
+# There is NO reload step anywhere in this sequence (no F5 / Ctrl+R): the first navigation
+# after the picker joins must just work, which is the bug the firefox-user.js pref closes.
+click(300, 31)  # Firefox's title bar (above where the picker sat), to give it the keyboard
+q.cmd("send-key", keys=[{"type": "qcode", "data": "ctrl"}, {"type": "qcode", "data": "l"}])
+time.sleep(0.5)
+type_text("http://192.168.77.1/")
+key("ret")
+CYAN = (0x00, 0xff, 0xff)  # overlay-wifi-test/.../wifi-test/index.html; nothing else uses it
+until("online-page", CYAN, 100000, 90)
+check("Firefox fetched the page over the network (python http.server GET /)",
+      wait_for("GET / HTTP/1.1", 30))
+
 before = len(networks_lines())
 w, h, _ = shot("closed")
 click(w - 8 - 12, h - 32 + 4 + 12)

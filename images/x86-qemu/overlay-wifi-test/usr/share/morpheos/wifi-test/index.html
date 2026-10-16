@@ -1,0 +1,21 @@
+<!doctype html>
+<!-- The page the Wi-Fi test serves (doc 20, E14): Firefox loads it over the simulated
+     network. Its background is a bright cyan nothing else on the wifi screen uses, so the
+     test asserts the page is on screen by that colour alone. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MorpheOS Wi-Fi test</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #00ffff; color: #001010;
+               font-family: "DejaVu Sans", sans-serif; }
+  main { padding: 64px; }
+  h1 { font-size: 48px; margin: 0 0 24px; }
+  p { font-size: 22px; margin: 8px 0; }
+</style>
+</head>
+<body><main>
+<h1>Online</h1>
+<p>This page came over the Wi-Fi network the picker joined.</p>
+</main></body>
+</html>
