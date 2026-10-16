@@ -76,6 +76,7 @@ use smithay::{
 use flow_shell::Frame as ShellFrame;
 use flow_shell::palette;
 
+use flow_compositor::splash;
 use flow_compositor::wm::{self, Manager, Window};
 
 /// What to run, from the command line.
@@ -98,6 +99,9 @@ pub struct Options {
     pub launch_wifi: Option<String>,
     /// The command that opens the file view, from the bar's Files button or Super+E (E20).
     pub launch_files: Option<String>,
+    /// Render the boot splash (E19) at this many seconds after the compositor started,
+    /// instead of the shell. `None` renders the shell; `Some(0)` is the first instant.
+    pub splash: Option<f32>,
 }
 
 struct App {
@@ -668,12 +672,32 @@ impl Server {
         self.state.wm.layout().len()
     }
 
-    /// Render the screen. `cursor` draws the pointer, once something has moved it: the
-    /// live display shows it, while the headless frames tests read leave it out.
+    /// Whether the boot splash is still showing; the live display logs when it ends.
+    pub fn splash_showing(&self) -> bool {
+        splash::state(self.started.elapsed()).showing
+    }
+
+    /// Render the screen now (the live display): `cursor` draws the pointer, once something
+    /// has moved it, while the headless frames tests read leave it out. The splash shows
+    /// for the first moments, from when the server started.
     pub fn render(&self, width: u32, height: u32, cursor: bool) -> Result<ShellFrame, String> {
+        self.render_at(width, height, cursor, self.started.elapsed())
+    }
+
+    /// Render the screen as it looked `elapsed` after the compositor started: the splash
+    /// while it is showing, then the shell. The headless tests render a fixed instant (the
+    /// splash at zero, the shell once it is over) so the frame does not depend on how long
+    /// a client took to draw.
+    fn render_at(
+        &self,
+        width: u32,
+        height: u32,
+        cursor: bool,
+        elapsed: Duration,
+    ) -> Result<ShellFrame, String> {
         let at = (cursor && self.pointer_moved)
             .then_some((self.pointer_at.x as i32, self.pointer_at.y as i32));
-        render(&self.state, width, height, at)
+        render(&self.state, width, height, at, elapsed)
     }
 
     /// Keep clients moving for a while, so they see what was just sent.
@@ -989,8 +1013,14 @@ impl Server {
         self.keyboard_on = self.state.wm.focused();
     }
 
-    fn write_frame(&self, path: &Path, width: u32, height: u32) -> Result<(), String> {
-        let frame = self.render(width, height, false)?;
+    fn write_frame(
+        &self,
+        path: &Path,
+        width: u32,
+        height: u32,
+        elapsed: Duration,
+    ) -> Result<(), String> {
+        let frame = self.render_at(width, height, false, elapsed)?;
         // PNG to look at; PPM for a test to read without a decoder.
         let bytes = if path.extension().is_some_and(|e| e == "ppm") {
             frame.to_ppm()
@@ -1093,7 +1123,11 @@ impl Server {
                 }
                 self.apply_focus();
             }
-            ["frame", path] => self.write_frame(Path::new(path), opts.width, opts.height)?,
+            // A scripted frame is the shell: the splash is the first moments, long over by
+            // the time input commands have run.
+            ["frame", path] => {
+                self.write_frame(Path::new(path), opts.width, opts.height, splash::total())?
+            }
             ["settle", _] => self.settle(Duration::from_millis(num(1)?.max(0) as u64))?,
             [] => {}
             _ => return Err(format!("script: unknown command `{line}`")),
@@ -1214,6 +1248,22 @@ pub fn run(opts: &Options) -> Result<(), String> {
         return crate::live::run(server, device);
     }
 
+    // The splash is the shell's first moments, before any window has drawn, so it is
+    // rendered without waiting for one, at a fixed elapsed time. It needs an `--out` to
+    // write, like the shell.
+    if let Some(elapsed) = opts.splash {
+        let Some(out) = &opts.out else {
+            return Err("--splash needs --out".to_string());
+        };
+        server.write_frame(
+            out,
+            opts.width,
+            opts.height,
+            Duration::from_secs_f32(elapsed),
+        )?;
+        return Ok(());
+    }
+
     let deadline = Instant::now() + opts.timeout;
     let start = Instant::now();
     while server.state.drawn_toplevels().len() < opts.wait_for {
@@ -1239,7 +1289,9 @@ pub fn run(opts: &Options) -> Result<(), String> {
                 server.command(line.trim(), opts)?;
             }
         }
-        (None, Some(out)) => server.write_frame(out, opts.width, opts.height)?,
+        // The shell frame, drawn as it looks once the splash has finished: the headless
+        // frame is the shell, not the boot (that is `--splash`).
+        (None, Some(out)) => server.write_frame(out, opts.width, opts.height, splash::total())?,
         (None, None) => return Err("nothing to do: give --out or --script".into()),
     }
     Ok(())
@@ -1247,12 +1299,22 @@ pub fn run(opts: &Options) -> Result<(), String> {
 
 /// Render the windows where the window manager put them, over the shell's background,
 /// with a border round the focused one and the pointer on top, and read the pixels back.
+/// For the first moments after the compositor started (`elapsed`), the frame is the boot
+/// splash instead: the animated geomesh, before any window has drawn.
 fn render(
     state: &App,
     width: u32,
     height: u32,
     cursor: Option<(i32, i32)>,
+    elapsed: Duration,
 ) -> Result<ShellFrame, String> {
+    // The splash is pure (no renderer, no windows): the mark on the brand background.
+    // It is returned before the pixman path below, so the live display and the headless
+    // frame both show the same splash for the same elapsed time.
+    let boot = splash::state(elapsed);
+    if boot.showing {
+        return Ok(splash::frame(width, height, elapsed));
+    }
     let err = |what: &'static str| {
         move |e: smithay::backend::renderer::pixman::PixmanError| format!("{what}: {e}")
     };
