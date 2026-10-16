@@ -803,7 +803,7 @@ unit-tested), `crates/flow-files/src/main.rs` (the window), and
 `crates/flow-files/tests/on_the_shell.rs` (the headless test: lists a known file and opens it with
 the right command).
 
-### E18 · A USB stick shows up in the file view · open · parallel · needs E17
+### E18 · A USB stick shows up in the file view · done · needs E17
 
 **What:** a person plugs in a USB stick and its files appear where they can be reached: the
 stick is mounted automatically when it appears, under a stable place the file view (E17)
@@ -816,6 +816,16 @@ with a known file and asserts the file view lists it and opens it.
 
 **From the report:** "if i plug a stick in with data that i want on the computer how does that
 process work" — Rob, in the session, 2026-10-15.
+
+**Evidence:** `crates/flow-files/src/lib.rs` (`mount_point`, the pure mount-point decision,
+unit-tested), `crates/flow-files/src/bin/flow-mount.rs` (the mount helper), the udev rule
+`images/x86-qemu/overlay-shell/usr/lib/udev/rules.d/99-morpheos-usb.rules` and its systemd
+service `images/x86-qemu/overlay-shell/usr/lib/systemd/system/morpheos-usb-mount@.service`
+(udev's RUN programs cannot mount — no CAP_SYS_ADMIN — so the service does). CI-proven by
+`images/x86-qemu/test-usb.sh`: it boots the `plain` image with a FAT stick labelled TESTSTICK and
+asserts `flow-mount: mounted … at /run/media/teststick` in the serial log. The file view lists
+and opens whatever is in that directory (E17's `crates/flow-files/tests/on_the_shell.rs` proves
+it for a folder with a known file), so the stick's files appear where the file view lists them.
 
 ### E20 · The file view opens from the bar · open · parallel · needs E17
 
