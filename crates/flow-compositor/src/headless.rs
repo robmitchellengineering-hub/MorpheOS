@@ -1463,26 +1463,33 @@ fn render(
             };
             let rect =
                 |(x, y, w, h): (i32, i32, i32, i32)| Rectangle::new((x, y).into(), (w, h).into());
-            let (bx, by, _, _) = wm::wifi_button(sw, sh);
-            let (fx, fy, _, _) = wm::files_button(sw, sh);
-            // The Wi-Fi button: a square with three rising bars. The Files button: a folder.
+            let (bx, by, bw, _) = wm::wifi_button(sw, sh);
+            let (fx, fy, fw, _) = wm::files_button(sw, sh);
+            let (barx, bary, barw, _) = wm::bar(sw, sh);
+            // The bar: near-black, with a 1px hairline along its top edge (the divider between
+            // it and the windows), two raised button regions at a consistent inset, and a
+            // hairline between them. The Wi-Fi button is three rising bars; Files is a folder.
             let mut parts = vec![
                 (rect(wm::bar(sw, sh)), colour(palette::BAR)),
-                (
-                    rect(wm::wifi_button(sw, sh)),
-                    colour(palette::SURFACE_FOCUSED),
-                ),
-                (
-                    rect(wm::files_button(sw, sh)),
-                    colour(palette::SURFACE_FOCUSED),
-                ),
-                (rect((fx + 4, fy + 8, 16, 12)), colour(palette::BAR_ICON)),
-                (rect((fx + 4, fy + 5, 7, 4)), colour(palette::BAR_ICON)),
+                (rect((barx, bary, barw, 1)), colour(palette::BAR_DIVIDER)),
+                (rect(wm::wifi_button(sw, sh)), colour(palette::BAR_BUTTON)),
+                (rect(wm::files_button(sw, sh)), colour(palette::BAR_BUTTON)),
             ];
+            // The hairline between the buttons, centred in the gap between them.
+            let gap_x = fx + fw + (bx - (fx + fw)) / 2;
+            parts.push((
+                rect((gap_x, fy + 6, 1, bw - 12)),
+                colour(palette::BAR_DIVIDER),
+            ));
+            // Wi-Fi: three bars, 3 px wide and 3 px apart, rising to the right, bottom-aligned
+            // and centred in the button.
             for (i, h) in [6, 11, 16].into_iter().enumerate() {
-                let x = bx + 5 + 5 * i as i32;
-                parts.push((rect((x, by + 20 - h, 4, h)), colour(palette::BAR_ICON)));
+                let x = bx + 5 + 6 * i as i32;
+                parts.push((rect((x, by + 20 - h, 3, h)), colour(palette::BAR_ICON)));
             }
+            // Files: a folder — a tab above the left of a body, both inset from the button.
+            parts.push((rect((fx + 4, fy + 8, 16, 12)), colour(palette::BAR_ICON)));
+            parts.push((rect((fx + 4, fy + 5, 8, 4)), colour(palette::BAR_ICON)));
             for (r, c) in parts {
                 frame
                     .draw_solid(r, &[Rectangle::from_size(r.size)], c)

@@ -56,8 +56,8 @@ import json, socket, sys, time
 
 qmp_path, work, log_path = sys.argv[1], sys.argv[2], sys.argv[3]
 # The picker's colours (crates/flow-wifi/src/picker.rs, `colours`).
-SELECTED, FIELD = (0x2a, 0x5c, 0xaa), (0x08, 0x0a, 0x0e)
-FAIL, OK = (0xc0, 0x32, 0x32), (0x1e, 0xa0, 0x5a)
+SELECTED, FIELD = (0x0e, 0x6b, 0x34), (0x05, 0x07, 0x0d)
+FAIL, OK = (0xd1, 0x3a, 0x4b), (0x00, 0xff, 0x41)
 WINDOW = (16, 16, 480, 360)      # where the window manager puts the first window
 ROW = 480 * 36                   # one row or status line across the window, in pixels
 WRONG, RIGHT = "wrong pass", "correct horse"
@@ -176,7 +176,7 @@ until("joined", OK, ROW * 8 // 10)
 
 # Online now, so nothing opens the picker by itself any more: Esc closes it, and the bar's
 # Wi-Fi button (the 24 x 24 square at the bar's right end, wm::wifi_button) opens it again.
-TITLE = (0x26, 0x2c, 0x38)
+TITLE = (0x18, 0x21, 0x2e)
 def networks_lines():
     text = open(log_path, "rb").read().decode("utf-8", "replace")
     return [l for l in text.splitlines() if "flow-wifi: networks " in l]
