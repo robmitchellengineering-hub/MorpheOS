@@ -318,7 +318,7 @@ fn the_bars_button_and_super_w_open_one_picker() {
     let title = rgb(colours::TITLE);
     let titles = |i: usize| Ppm::read(&f[i]).px.iter().filter(|p| **p == title).count();
     let one = TITLE_H as usize * SIZE.0 * 8 / 10;
-    let button = rgb(flow_shell::palette::SURFACE_FOCUSED);
+    let button = rgb(flow_shell::palette::BAR_BUTTON);
     let start = Ppm::read(&f[0]);
     assert_eq!(
         start.px[464 * start.w + 610],

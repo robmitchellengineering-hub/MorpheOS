@@ -23,6 +23,8 @@ fn no_two_colours_a_test_reads_by_are_the_same() {
         // The shell (crates/flow-shell, drawn by flow-compositor).
         ("palette::BACKGROUND", rgb(palette::BACKGROUND)),
         ("palette::BAR", rgb(palette::BAR)),
+        ("palette::BAR_BUTTON", rgb(palette::BAR_BUTTON)),
+        ("palette::BAR_DIVIDER", rgb(palette::BAR_DIVIDER)),
         ("palette::BAR_ICON", rgb(palette::BAR_ICON)),
         ("palette::SURFACE", rgb(palette::SURFACE)),
         ("palette::SURFACE_FOCUSED", rgb(palette::SURFACE_FOCUSED)),
@@ -36,6 +38,7 @@ fn no_two_colours_a_test_reads_by_are_the_same() {
         ("colours::TITLE", rgb(colours::TITLE)),
         ("colours::TEXT", rgb(colours::TEXT)),
         ("colours::DIM", rgb(colours::DIM)),
+        ("colours::SEPARATOR", rgb(colours::SEPARATOR)),
         ("colours::SELECTED", rgb(colours::SELECTED)),
         ("colours::FIELD", rgb(colours::FIELD)),
         ("colours::BUSY", rgb(colours::BUSY)),
