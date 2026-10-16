@@ -6,5 +6,5 @@ geometry is a pure function (`files_button`, unit-tested in wm.rs); the composit
 Linux-only (headless.rs: `Shortcut::Files`, `open_files`, the click, the bar drawing), proven by
 CI.
 
-Next: the headless test that clicks the Files button and Super+E and asserts the file view
-window appears.
+The headless test is here too: it clicks the bar's Files button and Super+E and asserts the
+file view window appears, closes, and reopens (flow-files/tests/on_the_shell.rs).
