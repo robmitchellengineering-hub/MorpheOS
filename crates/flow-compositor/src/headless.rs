@@ -266,10 +266,9 @@ impl XdgShellHandler for App {
         }
     }
     fn minimize_request(&mut self, surface: ToplevelSurface) {
-        if let Some(id) = self.id_of(surface.wl_surface()) {
-            if self.wm.set_minimized(id, true) {
-                self.tell_states();
-            }
+        match self.id_of(surface.wl_surface()) {
+            Some(id) if self.wm.set_minimized(id, true) => self.tell_states(),
+            _ => {}
         }
         surface.send_configure();
     }
