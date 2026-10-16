@@ -345,7 +345,21 @@
       };
       window.addEventListener('pointerdown', begin);
       window.addEventListener('keydown', begin);
-    }).catch(() => beginAt(performance.now() / 1000));
+    }).catch(() => {
+      // fetch() is blocked on a file:// page (Firefox gives each file a unique origin), and the
+      // booted image opens this page as file:///usr/share/morpheos/login.html. Media elements
+      // load file:// without CORS, so fall back to a plain <audio> element. The clock is
+      // performance.now(), started on the same tap as the music, so they begin together within
+      // play()'s start-up latency.
+      const el = new Audio(MUSIC_URL);
+      const begin = () => {
+        if (started) return;
+        el.play().catch(() => {});
+        beginAt(performance.now() / 1000);
+      };
+      window.addEventListener('pointerdown', begin);
+      window.addEventListener('keydown', begin);
+    });
 
     let lastT = 0;
     let doneFlashT = -1;
