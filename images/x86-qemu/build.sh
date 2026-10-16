@@ -33,8 +33,8 @@ case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell|browser|wifi|bro
 # `shell` is the shell with only a demonstration window, for the shell's own tests (E3, E10).
 # `browser` is `plain` with Firefox on a test page that then goes to the CI host (E4, E5).
 # `wifi` is `shell` with NetworkManager and no wired network: the Wi-Fi picker opens, and the
-# kernel's simulated radios (mac80211_hwsim) carry a WPA2 network for it to join (E5). No
-# Firefox, so it builds without Mozilla's servers.
+# kernel's simulated radios (mac80211_hwsim) carry a WPA2 network for it to join (E5). It also
+# carries Firefox, so the test can prove it comes online once the picker joins (E14).
 HARDWARE=0
 SHELL_UI=0
 # `broken-shell` and `hung-shell` are self-test images (the scripted A/B walk) WITH the shell:
@@ -157,19 +157,45 @@ fi
 # 1c. The Wi-Fi test base: the base, NetworkManager as the browser base has it, and the other
 # end of the simulated network: hostapd (the access point), dnsmasq (its DHCP server) and
 # iproute2 (to address it). Test-only; the access point runs only in the `wifi` scenario.
-WIFI_PKGS="$BASE_PKGS,network-manager,wpasupplicant,systemd-resolved,hostapd,dnsmasq-base,iproute2"
+# E14 needs Firefox in this image too (so the test can prove it comes online when the picker
+# joins), with its GL deps, plus python3 to serve the test page. It does NOT carry the
+# pipewire/audio packages: the test asserts no sound.
+WIFI_PKGS="$BASE_PKGS,network-manager,wpasupplicant,systemd-resolved,hostapd,dnsmasq-base,iproute2,firefox,fonts-dejavu-core,libgl1-mesa-dri,libegl-mesa0,libgbm1,libglx-mesa0,python3"
 WIFI_KEY="$WIFI_PKGS,(linux-modules-extra)"
 if [ "$SCENARIO" = wifi ]; then
     WIFI_BASE="$WORK/rootfs-wifi"
     if [ "$(cat "$WIFI_BASE/.complete" 2>/dev/null)" != "$WIFI_KEY" ]; then
         rm -rf "$WIFI_BASE"
+        # Firefox must come from Mozilla's own APT repository, exactly as the browser base
+        # gets it: Ubuntu's `firefox` is the snap stub, so the key is fetched, verified
+        # against Mozilla's published fingerprint, and the source is pinned to
+        # packages.mozilla.org (see the browser base's notes above for the signed-by path).
+        key="$WORK/packages.mozilla.org.asc"
+        curl -fsSL "$MOZILLA_KEY_URL" -o "$key"
+        fpr=$(gpg --show-keys --with-colons "$key" 2>/dev/null | awk -F: '$1 == "fpr" {print $10; exit}')
+        if [ "$fpr" != "$MOZILLA_FPR" ]; then
+            echo "Mozilla's signing key has fingerprint '$fpr', not $MOZILLA_FPR: refusing it" >&2
+            exit 1
+        fi
+        keyring="$WORK/packages.mozilla.org.gpg"
+        gpg --dearmor < "$key" > "$keyring"
         mmdebstrap --variant=apt \
             --include="$WIFI_PKGS" \
             --aptopt='APT::Install-Recommends "false"' \
+            --customize-hook="mkdir -p \"\$1/etc/apt/keyrings\" && cp '$keyring' \"\$1/etc/apt/keyrings/packages.mozilla.org.gpg\" && sed -i 's|signed-by=$keyring|signed-by=/etc/apt/keyrings/packages.mozilla.org.gpg|' \"\$1/etc/apt/sources.list\"" \
             --customize-hook="$MODULES_EXTRA_HOOK" \
+            --setup-hook='mkdir -p "$1/etc/apt/preferences.d" && printf "Package: *\nPin: origin packages.mozilla.org\nPin-Priority: 1000\n" > "$1/etc/apt/preferences.d/mozilla"' \
             "$SUITE" "$WIFI_BASE" \
             "deb $MIRROR $SUITE main universe multiverse" \
-            "deb $MIRROR $SUITE-updates main universe multiverse"
+            "deb $MIRROR $SUITE-updates main universe multiverse" \
+            "deb [signed-by=$keyring] https://packages.mozilla.org/apt mozilla main"
+        # Say which Firefox went in, and prove it is Mozilla's and not the snap stub.
+        version=$(chroot "$WIFI_BASE" dpkg-query -W -f='${Version}' firefox)
+        [ -x "$WIFI_BASE/usr/lib/firefox/firefox" ] || {
+            echo "firefox $version is not Mozilla's build (no /usr/lib/firefox/firefox): the snap stub?" >&2
+            exit 1
+        }
+        echo "wifi base: firefox $version from packages.mozilla.org" >&2
         echo "$WIFI_KEY" > "$WIFI_BASE/.complete"
     fi
     BASE="$WIFI_BASE"
@@ -277,15 +303,16 @@ EOF
         install -m 0755 "$FLOW_WIFI" "$dir/usr/bin/flow-wifi"
         install -m 0755 "$FLOW_MOUNT" "$dir/usr/bin/flow-mount"
         # The shell scenario shows the demonstration window; the browser scenario, Firefox;
-        # the wifi scenario, only the Wi-Fi picker. Where there is NetworkManager, the picker
-        # opens by itself when the machine has no network.
+        # the wifi scenario, Firefox plus the Wi-Fi picker (E14: once the picker joins,
+        # Firefox must come online). Where there is NetworkManager, the picker opens by
+        # itself when the machine has no network.
         apps=flow-demo-window
         case "$SCENARIO" in
             plain|browser) apps="flow-browser NetworkManager flow-wifi" ;;
-            wifi) apps="NetworkManager flow-wifi morph-wifi-test-ap" ;;
+            wifi) apps="flow-browser NetworkManager flow-wifi morph-wifi-test-ap" ;;
         esac
         case "$SCENARIO" in plain|browser|wifi) cp -a "$HERE/overlay-network/." "$dir/" ;; esac
-        case "$SCENARIO" in plain|browser) cp -a "$HERE/overlay-browser/." "$dir/" ;; esac
+        case "$SCENARIO" in plain|browser|wifi) cp -a "$HERE/overlay-browser/." "$dir/" ;; esac
         # What only the browser TEST needs (its page, and the drop-in that opens it).
         if [ "$SCENARIO" = browser ]; then cp -a "$HERE/overlay-browser-test/." "$dir/"; fi
         if [ "$SCENARIO" = wifi ]; then

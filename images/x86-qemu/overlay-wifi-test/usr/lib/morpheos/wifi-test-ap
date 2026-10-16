@@ -12,6 +12,11 @@ for _ in $(seq 1 100); do [ -e /sys/class/net/wlan1 ] && break; sleep 0.1; done
 ip link set wlan1 up
 ip addr add 192.168.77.1/24 dev wlan1
 hostapd /etc/morpheos/wifi-test/hostapd.conf &
+# E14: serve the test page Firefox loads once the picker joins, on the access point's own
+# address. Started in the background before the exec'd dnsmasq: the script ends in `exec
+# dnsmasq`, so this child keeps serving for as long as dnsmasq is the foreground process
+# (its stdout/stderr stay on journal+console, so the test reads its GET from the log).
+python3 -m http.server 80 --bind 192.168.77.1 --directory /usr/share/morpheos/wifi-test &
 # The root is read-only: the lease file goes in /run.
 exec dnsmasq --keep-in-foreground --log-facility=- --log-dhcp --user=root \
     --port=0 --no-resolv --no-hosts --interface=wlan1 --bind-interfaces --except-interface=lo \

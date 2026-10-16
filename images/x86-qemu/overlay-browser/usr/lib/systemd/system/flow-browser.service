@@ -14,6 +14,11 @@ Environment=HOME=/home/browser NO_AT_BRIDGE=1 XDG_CACHE_HOME=/persist/browser/ca
 # The socket appears when the compositor has bound it; wait for it rather than guessing.
 ExecStartPre=/bin/sh -c 'for i in $(seq 1 300); do [ -S /run/flow/wayland-0 ] && exit 0; sleep 0.1; done; exit 1'
 ExecStartPre=/bin/mkdir -p /home/browser /persist/browser/profile /persist/browser/cache
+# Seed the E14 offline-mode prefs once: Firefox starts with no network, and by default its
+# network.manage-offline-status flips it into "Work Offline", which it does not clear when
+# NetworkManager comes up. Seed idempotently (only if absent), so a profile a person has
+# already used keeps their own user.js.
+ExecStartPre=/bin/sh -c '[ -f /persist/browser/profile/user.js ] || cp /usr/share/morpheos/firefox-user.js /persist/browser/profile/user.js'
 # The launch screen is the real Three.js animation (E19): Firefox shows login.html first;
 # login.html redirects to start.html once the mesh has drawn and settled. (No --kiosk: kiosk
 # mode blocks the redirect, and the window is what the boot test expects.)
