@@ -91,12 +91,17 @@ pub fn fit(w: i32, h: i32, screen_w: i32, screen_h: i32) -> Option<(i32, i32)> {
     (w > max_w || h > max_h).then(|| (w.min(max_w), h.min(max_h)))
 }
 
-/// A window as the manager sees it: an ID the compositor chose, and its size.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A window as the manager sees it: an ID the compositor chose, its size, and which of the
+/// maximized/minimized states it is in. The compositor only fills in `id`, `w` and `h`; the
+/// states are the manager's own decisions, kept here so a window's place and its states
+/// travel together.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Window {
     pub id: u32,
     pub w: i32,
     pub h: i32,
+    pub maximized: bool,
+    pub minimized: bool,
 }
 
 /// Where a window is on screen.
@@ -184,6 +189,13 @@ pub struct Manager {
     fullscreen: Option<u32>,
     /// The size the fullscreen window had before, to ask it back to afterwards.
     before_fullscreen: Option<(u32, i32, i32)>,
+    /// The geometry (x, y, w, h) a window had before it was last maximized, to put it back
+    /// to afterwards. Kept until the next maximize, so the compositor can ask it back to the
+    /// old size even after the maximize flag has been cleared.
+    before_maximized: Option<(u32, i32, i32, i32, i32)>,
+    /// The window most recently minimized, so `cycle` can bring one back when every window
+    /// on the screen is minimized.
+    last_minimized: Option<u32>,
     drag: Option<Drag>,
     resize: Option<Resize>,
     screen: (i32, i32),
@@ -202,6 +214,16 @@ impl Manager {
         if !self.fullscreen.as_ref().is_some_and(alive) {
             self.fullscreen = None;
         }
+        if !self
+            .before_maximized
+            .as_ref()
+            .is_some_and(|(id, ..)| alive(id))
+        {
+            self.before_maximized = None;
+        }
+        if !self.last_minimized.as_ref().is_some_and(alive) {
+            self.last_minimized = None;
+        }
         if !self.drag.as_ref().is_some_and(|d| alive(&d.id)) {
             self.drag = None;
         }
@@ -210,7 +232,14 @@ impl Manager {
         }
         for c in current {
             match self.windows.iter_mut().find(|w| w.id == c.id) {
-                Some(w) => *w = *c,
+                // The compositor only reports id and size; the maximized/minimized states
+                // are the manager's, so keep them across the size update.
+                Some(w) => {
+                    let (maximized, minimized) = (w.maximized, w.minimized);
+                    *w = *c;
+                    w.maximized = maximized;
+                    w.minimized = minimized;
+                }
                 // A window that opens comes to the front: the Wi-Fi picker opening over
                 // Firefox is drawn over it. (Focus still waits for a click, ADR 0013.)
                 None => {
@@ -232,13 +261,15 @@ impl Manager {
         self.screen = (w, h);
     }
 
-    /// Where every window goes, back to front: the last one is in front.
+    /// Where every window goes, back to front: the last one is in front. A minimized window
+    /// is not drawn, so it is not placed; a maximized one fills the screen less the bar.
     #[must_use]
     pub fn layout(&self) -> Vec<Placed> {
         let (mut x, mut y) = (MARGIN, MARGIN);
         let mut placed: Vec<Placed> = self
             .windows
             .iter()
+            .filter(|w| !w.minimized)
             .map(|w| {
                 // A window that would reach past the bottom of the screen starts a new stack
                 // at the top, CASCADE right and down from the last one: under a window that
@@ -263,6 +294,10 @@ impl Manager {
                 }
                 if self.fullscreen == Some(w.id) {
                     (p.x, p.y, p.w, p.h) = (0, 0, self.screen.0, self.screen.1);
+                } else if w.maximized {
+                    // The screen less the bar, at the top: the bar stays visible.
+                    (p.x, p.y, p.w, p.h) =
+                        (0, 0, self.screen.0, (self.screen.1 - BAR_HEIGHT).max(1));
                 }
                 p
             })
@@ -334,16 +369,46 @@ impl Manager {
     }
 
     /// Focus the next window in opening order, wrapping round (the switch shortcut), and
-    /// bring it to the front.
+    /// bring it to the front. A minimized window is not on the screen, so it is skipped; when
+    /// every window is minimized, the most-recently-minimized one comes back instead, so a
+    /// window is never lost (there is no taskbar to find it again).
     pub fn cycle(&mut self) -> Option<u32> {
+        let visible: Vec<u32> = self
+            .windows
+            .iter()
+            .filter(|w| !w.minimized)
+            .map(|w| w.id)
+            .collect();
+        if visible.is_empty() {
+            // Bring back the most-recently-minimized window that is still there.
+            let restore = self
+                .last_minimized
+                .filter(|id| self.windows.iter().any(|w| w.id == *id && w.minimized))
+                .or_else(|| {
+                    self.windows
+                        .iter()
+                        .rev()
+                        .find(|w| w.minimized)
+                        .map(|w| w.id)
+                });
+            match restore {
+                Some(id) => {
+                    self.set_minimized(id, false);
+                    self.focused = Some(id);
+                    self.raise(id);
+                }
+                None => self.focused = None,
+            }
+            return self.focused;
+        }
         let next = match self.focused {
-            None => self.windows.first(),
+            None => visible.first().copied(),
             Some(f) => {
-                let i = self.windows.iter().position(|w| w.id == f).unwrap_or(0);
-                self.windows.get((i + 1) % self.windows.len().max(1))
+                let i = visible.iter().position(|id| *id == f).unwrap_or(0);
+                visible.get((i + 1) % visible.len()).copied()
             }
         };
-        self.focused = next.map(|w| w.id);
+        self.focused = next;
         if let Some(id) = self.focused {
             self.raise(id);
         }
@@ -352,7 +417,7 @@ impl Manager {
 
     /// A press that may start a move: on a window's edge, or anywhere on it when `anywhere`
     /// (Super is held). Returns the window it picked up, focused and in front; `None` leaves
-    /// the press to be a click. A fullscreen window does not move.
+    /// the press to be a click. A fullscreen or maximized window does not move.
     pub fn begin_drag(&mut self, x: i32, y: i32, anywhere: bool) -> Option<u32> {
         let layout = self.layout();
         // Front to back, so the press belongs to what is drawn on top. The window itself
@@ -372,7 +437,7 @@ impl Manager {
     /// Start moving a window from the pointer at `(x, y)`: a drag that began on its edge, or
     /// a client asking to be moved (a press on its own title bar).
     pub fn begin_move(&mut self, id: u32, x: i32, y: i32) -> Option<u32> {
-        if self.fullscreen == Some(id) {
+        if self.fullscreen == Some(id) || self.is_maximized(id) {
             return None;
         }
         let p = self.layout().into_iter().find(|p| p.id == id)?;
@@ -421,9 +486,9 @@ impl Manager {
     }
 
     /// Start resizing a window from its `corner`: the opposite corner stays put. A fullscreen
-    /// window does not resize. Returns whether a resize began.
+    /// or maximized window does not resize. Returns whether a resize began.
     pub fn begin_resize(&mut self, id: u32, corner: Corner) -> bool {
-        if self.fullscreen == Some(id) {
+        if self.fullscreen == Some(id) || self.is_maximized(id) {
             return false;
         }
         let Some(p) = self.layout().into_iter().find(|p| p.id == id) else {
@@ -494,7 +559,9 @@ impl Manager {
     }
 
     /// Make a window fullscreen, or not. Returns whether anything changed (so the client
-    /// needs telling). Only one window is fullscreen at a time.
+    /// needs telling). Only one window is fullscreen at a time, and fullscreening leaves the
+    /// window with no other state: a minimized or maximized window is brought back to normal
+    /// and then fullscreened.
     pub fn set_fullscreen(&mut self, id: u32, on: bool) -> bool {
         if !self.windows.iter().any(|w| w.id == id) {
             return false;
@@ -506,12 +573,136 @@ impl Manager {
                 self.before_fullscreen = w.map(|w| (w.id, w.w, w.h));
                 self.fullscreen = Some(id);
             }
+            self.unminimize(id);
+            self.unmaximize(id);
             self.focused = Some(id);
             self.raise(id);
         } else if was == Some(id) {
             self.fullscreen = None;
         }
         self.fullscreen != was
+    }
+
+    /// Make a window maximized, or not: maximized fills the screen less the bar, at the top.
+    /// Returns whether anything changed. The geometry the window had is remembered, and
+    /// un-maximizing puts it back. Maximizing un-minimizes and un-fullscreens the window.
+    pub fn set_maximized(&mut self, id: u32, on: bool) -> bool {
+        let Some(w) = self.windows.iter().find(|w| w.id == id).copied() else {
+            return false;
+        };
+        if w.maximized == on {
+            return false;
+        }
+        if on {
+            // Remember where it was and its size, to put it back. The window is no longer
+            // fullscreen, so `layout` gives its real place; if it was fullscreen, remember
+            // the size it had before fullscreen (its committed size is still the fullscreen
+            // one).
+            let was_fullscreen = self.fullscreen == Some(id);
+            if was_fullscreen {
+                self.fullscreen = None;
+            }
+            let placed = self.layout().into_iter().find(|p| p.id == id);
+            let (sx, sy) = placed.map(|p| (p.x, p.y)).unwrap_or((MARGIN, MARGIN));
+            let size = was_fullscreen
+                .then(|| self.size_before_fullscreen(id))
+                .flatten();
+            let (pw, ph) = size
+                .or_else(|| placed.map(|p| (p.w, p.h)))
+                .unwrap_or((w.w, w.h));
+            self.before_maximized = Some((id, sx, sy, pw, ph));
+            self.unminimize(id);
+            if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+                w.maximized = true;
+            }
+            self.focused = Some(id);
+            self.raise(id);
+        } else {
+            if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+                w.maximized = false;
+            }
+            self.restore_maximized_geometry(id);
+        }
+        true
+    }
+
+    /// Make a window minimized, or not. Returns whether anything changed. A minimized window
+    /// is not drawn, not hit and not switched to. Minimizing un-fullscreens and un-maximizes
+    /// the window, and drops its focus.
+    pub fn set_minimized(&mut self, id: u32, on: bool) -> bool {
+        let Some(w) = self.windows.iter().find(|w| w.id == id).copied() else {
+            return false;
+        };
+        if w.minimized == on {
+            return false;
+        }
+        if on {
+            if self.fullscreen == Some(id) {
+                self.fullscreen = None;
+            }
+            self.unmaximize(id);
+            if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+                w.minimized = true;
+            }
+            self.last_minimized = Some(id);
+            // A minimized window does not hold focus: give it to the next window on screen.
+            if self.focused == Some(id) {
+                self.focused = self
+                    .windows
+                    .iter()
+                    .rfind(|w| w.id != id && !w.minimized)
+                    .map(|w| w.id);
+            }
+        } else if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+            w.minimized = false;
+            if self.last_minimized == Some(id) {
+                self.last_minimized = None;
+            }
+        }
+        true
+    }
+
+    /// Bring a window back from minimized (used by [`Self::set_maximized`] and
+    /// [`Self::set_fullscreen`], which must not leave a window minimized behind them).
+    fn unminimize(&mut self, id: u32) {
+        if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+            w.minimized = false;
+        }
+        if self.last_minimized == Some(id) {
+            self.last_minimized = None;
+        }
+    }
+
+    /// Clear a window's maximized flag and put it back where it was (used by
+    /// [`Self::set_maximized`], [`Self::set_fullscreen`] and [`Self::set_minimized`], which
+    /// must not leave a window maximized behind them).
+    fn unmaximize(&mut self, id: u32) {
+        if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+            w.maximized = false;
+        }
+        self.restore_maximized_geometry(id);
+    }
+
+    /// Put a window back at the geometry it had before it was maximized (the `moved` entry
+    /// the layout uses for a placed window). Keeps `before_maximized` so the compositor can
+    /// still ask it back to its old size afterwards.
+    fn restore_maximized_geometry(&mut self, id: u32) {
+        if let Some(&(_, x, y, _, _)) = self.before_maximized.as_ref().filter(|(i, ..)| *i == id) {
+            self.moved.retain(|(i, _, _)| *i != id);
+            self.moved.push((id, x, y));
+        }
+    }
+
+    /// Whether a window is maximized.
+    #[must_use]
+    pub fn is_maximized(&self, id: u32) -> bool {
+        self.windows.iter().any(|w| w.id == id && w.maximized)
+    }
+
+    /// Whether a window is minimized.
+    #[must_use]
+    pub fn is_minimized(&self, id: u32) -> bool {
+        self.windows.iter().any(|w| w.id == id && w.minimized)
     }
 
     #[must_use]
@@ -527,6 +718,14 @@ impl Manager {
             .map(|(_, w, h)| (w, h))
     }
 
+    /// The size a window had before it was last maximized, to ask it back to.
+    #[must_use]
+    pub fn size_before_maximized(&self, id: u32) -> Option<(i32, i32)> {
+        self.before_maximized
+            .filter(|(i, ..)| *i == id)
+            .map(|(_, _, _, w, h)| (w, h))
+    }
+
     #[must_use]
     pub fn focused(&self) -> Option<u32> {
         self.focused
@@ -538,7 +737,12 @@ mod tests {
     use super::*;
 
     fn win(id: u32, w: i32, h: i32) -> Window {
-        Window { id, w, h }
+        Window {
+            id,
+            w,
+            h,
+            ..Window::default()
+        }
     }
 
     #[test]
@@ -907,5 +1111,109 @@ mod tests {
         m.set_fullscreen(1, true);
         assert_eq!(m.corner_at(0, 0), None);
         assert!(!m.begin_resize(1, Corner::BottomRight));
+    }
+
+    #[test]
+    fn a_window_maximizes_to_the_screen_less_the_bar_and_comes_back() {
+        let mut m = two(); // 1 at (16, 16) 100 x 50, 2 below it; screen 640 x 480.
+        assert!(m.set_maximized(1, true));
+        assert!(
+            !m.set_maximized(1, true),
+            "already maximized: nothing to tell"
+        );
+        // The screen less the bar, at the top; it covers everything above the bar.
+        let p = m.layout().into_iter().find(|p| p.id == 1).unwrap();
+        assert_eq!((p.x, p.y, p.w, p.h), (0, 0, 640, 480 - BAR_HEIGHT));
+        assert_eq!(m.hit(600, 400), Some(1), "it covers the usable screen");
+        // A maximized window does not move or resize.
+        assert_eq!(m.begin_drag(10, 10, true), None);
+        assert!(!m.begin_resize(1, Corner::BottomRight));
+        // The client takes the maximized size; its old size is kept, to ask it back to.
+        m.sync(&[win(1, 640, 448), win(2, 80, 40)]);
+        assert_eq!(m.size_before_maximized(1), Some((100, 50)));
+        // Un-maximize: back where it was, at its own size again.
+        assert!(m.set_maximized(1, false));
+        m.sync(&[win(1, 100, 50), win(2, 80, 40)]);
+        let p = m.layout().into_iter().find(|p| p.id == 1).unwrap();
+        assert_eq!((p.x, p.y, p.w, p.h), (16, 16, 100, 50));
+        assert!(!m.is_maximized(1));
+    }
+
+    #[test]
+    fn a_minimized_window_is_hidden_from_layout_and_cycle() {
+        let mut m = two();
+        assert!(m.set_minimized(1, true));
+        assert!(
+            !m.set_minimized(1, true),
+            "already minimized: nothing to tell"
+        );
+        assert!(m.is_minimized(1));
+        // Not placed, so not hit; window 2 stacks up into the gap and takes the clicks.
+        assert!(!m.layout().iter().any(|p| p.id == 1));
+        assert_eq!(m.hit(MARGIN + 5, MARGIN + 5), Some(2));
+        // cycle skips it: only window 2 is on screen.
+        assert_eq!(m.cycle(), Some(2));
+        assert_eq!(m.cycle(), Some(2));
+        assert_eq!(m.cycle(), Some(2));
+        assert_eq!(m.focused(), Some(2));
+    }
+
+    #[test]
+    fn cycle_brings_back_the_most_recently_minimized_window_when_none_are_left() {
+        let mut m = two();
+        m.set_minimized(1, true);
+        m.set_minimized(2, true);
+        assert!(m.layout().is_empty(), "both are hidden");
+        assert_eq!(m.focused(), None, "a minimized window loses focus");
+        // Nothing to switch to: the most recently minimized (2) comes back.
+        assert_eq!(m.cycle(), Some(2));
+        assert!(!m.is_minimized(2));
+        assert!(m.is_minimized(1));
+        assert_eq!(m.layout().len(), 1);
+        // Minimize the last window again and cycle: it comes back too.
+        m.set_minimized(2, true);
+        assert_eq!(m.cycle(), Some(2));
+        assert_eq!(
+            m.cycle(),
+            Some(2),
+            "1 is still hidden; 2 is the only window left"
+        );
+    }
+
+    #[test]
+    fn minimize_maximize_and_fullscreen_stay_mutually_exclusive() {
+        let mut m = two();
+        // Minimizing a fullscreen window un-fullscreens it.
+        m.set_fullscreen(1, true);
+        assert_eq!(m.fullscreen(), Some(1));
+        m.set_minimized(1, true);
+        assert_eq!(m.fullscreen(), None, "minimizing un-fullscreens");
+        assert!(m.is_minimized(1));
+        // Maximizing a minimized window un-minimizes it.
+        m.set_maximized(1, true);
+        assert!(!m.is_minimized(1), "maximizing un-minimizes");
+        assert!(m.is_maximized(1));
+        assert_eq!(m.fullscreen(), None);
+        // Fullscreening a maximized window un-maximizes it.
+        m.set_fullscreen(1, true);
+        assert!(!m.is_maximized(1), "fullscreening un-maximizes");
+        assert_eq!(m.fullscreen(), Some(1));
+        // Minimizing again leaves no other state on.
+        m.set_minimized(1, true);
+        assert_eq!(m.fullscreen(), None);
+        assert!(!m.is_maximized(1));
+        assert!(m.is_minimized(1));
+    }
+
+    #[test]
+    fn minimizing_the_focused_window_moves_focus_to_the_next_one_on_screen() {
+        let mut m = two();
+        m.click(MARGIN, MARGIN); // focus 1
+        assert_eq!(m.focused(), Some(1));
+        m.set_minimized(1, true);
+        assert_eq!(m.focused(), Some(2), "focus moved off the hidden window");
+        // Un-minimize: focus stays where it was moved, not snapped back.
+        m.set_minimized(1, false);
+        assert_eq!(m.focused(), Some(2));
     }
 }
