@@ -47,8 +47,8 @@ import json, socket, sys, time
 qmp_path, work = sys.argv[1], sys.argv[2]
 BG = (0x10, 0x12, 0x16)               # the shell's background (flow-shell's palette)
 START = (0x5a, 0x3c, 0xb4)            # the start page (overlay-browser/.../start.html)
-TITLE = (0x26, 0x2c, 0x38)            # the Wi-Fi picker's title bar (flow-wifi colours::TITLE)
-FAIL = (0xc0, 0x32, 0x32)             # its status line in red (colours::FAIL)
+TITLE = (0x18, 0x21, 0x2e)            # the Wi-Fi picker's title bar (flow-wifi colours::TITLE)
+FAIL = (0xd1, 0x3a, 0x4b)             # its status line in red (colours::FAIL)
 
 class Qmp:
     def __init__(self, path):

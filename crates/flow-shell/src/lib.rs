@@ -140,11 +140,16 @@ pub mod palette {
 
     /// Behind everything.
     pub const BACKGROUND: Colour = Colour::rgb(0x10, 0x12, 0x16);
-    /// The session bar.
-    pub const BAR: Colour = Colour::rgb(0x1b, 0x1f, 0x27);
-    /// What is drawn on the bar (the Wi-Fi button's bars). Its own colour, not TEXT: tests
-    /// find the pointer by TEXT, and a pointer that seemed drawn before the mouse moved
-    /// failed `test-shell.sh` when the icon used it.
+    /// The bar: near-black (the brand's depth, design/README.md), a touch above `BACKGROUND`
+    /// so the dock reads as its own surface.
+    pub const BAR: Colour = Colour::rgb(0x0a, 0x0e, 0x15);
+    /// A bar button's raised region (Wi-Fi, Files): the "hover target" a press can hit.
+    pub const BAR_BUTTON: Colour = Colour::rgb(0x14, 0x1a, 0x25);
+    /// The bar's 1px dividers: its top edge, and the hairline between the two buttons.
+    pub const BAR_DIVIDER: Colour = Colour::rgb(0x20, 0x28, 0x37);
+    /// What is drawn on the bar (the Wi-Fi button's bars, the Files folder). Its own colour,
+    /// not TEXT: tests find the pointer by TEXT, and a pointer that seemed drawn before the
+    /// mouse moved failed `test-shell.sh` when the icon used it.
     pub const BAR_ICON: Colour = Colour::rgb(0x9a, 0xa4, 0xb8);
     /// A session surface that does not have focus.
     pub const SURFACE: Colour = Colour::rgb(0x22, 0x27, 0x30);

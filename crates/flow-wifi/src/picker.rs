@@ -71,23 +71,32 @@ pub enum Action {
 /// The longest WPA passphrase (IEEE 802.11i).
 pub const MAX_PASSWORD: usize = 63;
 
-/// The picker's colours. Distinct from everything the shell draws, so a test reading a
-/// screenshot finds the picker's parts by colour.
+/// The picker's colours, drawn from the brand palette (design/README.md): the near-black
+/// `#05070d` depth, matrix green `#00ff41` for what is selected/joined, cyan for the live
+/// "joining" state, and the whites/greys for text. Distinct from everything the shell draws,
+/// so a test reading a screenshot finds the picker's parts by colour.
 pub mod colours {
     use flow_shell::Colour;
-    pub const BACKGROUND: Colour = Colour::rgb(0x1e, 0x23, 0x2c);
-    pub const TITLE: Colour = Colour::rgb(0x26, 0x2c, 0x38);
-    pub const TEXT: Colour = Colour::rgb(0xe6, 0xea, 0xf2);
-    pub const DIM: Colour = Colour::rgb(0x8a, 0x93, 0xa6);
-    /// The selected row.
-    pub const SELECTED: Colour = Colour::rgb(0x2a, 0x5c, 0xaa);
-    /// The password field.
-    pub const FIELD: Colour = Colour::rgb(0x08, 0x0a, 0x0e);
-    /// The status line, by state.
-    pub const BUSY: Colour = Colour::rgb(0xc8, 0x8c, 0x1e);
-    pub const OK: Colour = Colour::rgb(0x1e, 0xa0, 0x5a);
-    pub const FAIL: Colour = Colour::rgb(0xc0, 0x32, 0x32);
-    pub const IDLE: Colour = Colour::rgb(0x30, 0x36, 0x44);
+    /// The panel, a touch above the brand's near-black so the window reads as a surface.
+    pub const BACKGROUND: Colour = Colour::rgb(0x0c, 0x10, 0x1a);
+    /// The title band, slightly raised above [`BACKGROUND`].
+    pub const TITLE: Colour = Colour::rgb(0x18, 0x21, 0x2e);
+    /// Text: the brand's white.
+    pub const TEXT: Colour = Colour::rgb(0xff, 0xff, 0xff);
+    /// Secondary text: the strength, the lock, the hints.
+    pub const DIM: Colour = Colour::rgb(0x7e, 0x87, 0x97);
+    /// The 1px dividers between the title, the rows and the status line.
+    pub const SEPARATOR: Colour = Colour::rgb(0x28, 0x31, 0x40);
+    /// The selected row: matrix green, darkened enough to hold white text.
+    pub const SELECTED: Colour = Colour::rgb(0x0e, 0x6b, 0x34);
+    /// The password field, inset in the brand's near-black.
+    pub const FIELD: Colour = Colour::rgb(0x05, 0x07, 0x0d);
+    /// The status line, by state: cyan while it works, matrix green when it lands, red when
+    /// it fails, grey while it waits.
+    pub const BUSY: Colour = Colour::rgb(0x06, 0xb6, 0xd4);
+    pub const OK: Colour = Colour::rgb(0x00, 0xff, 0x41);
+    pub const FAIL: Colour = Colour::rgb(0xd1, 0x3a, 0x4b);
+    pub const IDLE: Colour = Colour::rgb(0x2e, 0x37, 0x4a);
 }
 
 /// Layout, in window pixels. The font is 5 x 7, drawn at [`SCALE`].
@@ -268,12 +277,16 @@ impl Picker {
     pub fn paint(&self, frame: &mut Frame) {
         let (w, h) = (frame.width(), frame.height());
         frame.clear(colours::BACKGROUND);
+        // The title band, its label padded off the edges, and a hairline under it so the
+        // title reads as a heading rather than a floating strip.
         frame.fill_rect(Rect::new(0, 0, w, TITLE_H), colours::TITLE);
         text(frame, "Wi-Fi", PAD, centre(0, TITLE_H), colours::TEXT);
+        frame.fill_rect(Rect::new(0, TITLE_H - 1, w, 1), colours::SEPARATOR);
 
         let (status_text, status_colour) = self.status_line();
         let status_y = h.saturating_sub(STATUS_H);
         frame.fill_rect(Rect::new(0, status_y, w, STATUS_H), status_colour);
+        frame.fill_rect(Rect::new(0, status_y, w, 1), colours::SEPARATOR);
         text(
             frame,
             &status_text,
@@ -325,6 +338,10 @@ impl Picker {
             let y = TITLE_H + i as u32 * ROW_H;
             if i == self.selected {
                 frame.fill_rect(Rect::new(0, y, w, ROW_H), colours::SELECTED);
+            }
+            // A hairline between rows; the status line draws its own above it.
+            if i + 1 < visible_rows(h) {
+                frame.fill_rect(Rect::new(0, y + ROW_H - 1, w, 1), colours::SEPARATOR);
             }
             text(frame, &n.ssid, PAD, centre(y, ROW_H), colours::TEXT);
             let mut right = format!("{:>3}%", n.strength);
