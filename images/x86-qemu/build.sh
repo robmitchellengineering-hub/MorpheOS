@@ -84,7 +84,7 @@ mkdir -p "$WORK"
 # installed, by name, in a hook; the firmware stays the chosen sets below. The extra modules
 # also carry mac80211_hwsim, the simulated Wi-Fi the E5 test connects through.
 BASE="$WORK/rootfs-base"
-BASE_PKGS=systemd-sysv,udev,kmod,linux-image-virtual,initramfs-tools,systemd-boot,dosfstools,libpixman-1-0,libxkbcommon0,libinput10,libseat1,seatd,pciutils,usbutils,pci.ids,usb.ids,linux-firmware-amd-graphics,linux-firmware-intel-graphics,linux-firmware-intel-wireless,linux-firmware-mediatek,linux-firmware-realtek,linux-firmware-broadcom-wireless,firmware-sof-signed
+BASE_PKGS=systemd-sysv,udev,kmod,linux-image-virtual,initramfs-tools,systemd-boot,dosfstools,libpixman-1-0,libxkbcommon0,libinput10,libseat1,seatd,pciutils,usbutils,pci.ids,usb.ids,linux-firmware-amd-graphics,linux-firmware-intel-graphics,linux-firmware-intel-wireless,linux-firmware-mediatek,linux-firmware-realtek,linux-firmware-broadcom-wireless,firmware-sof-signed,firmware-b43-installer
 MODULES_EXTRA_HOOK='chroot "$1" sh -c "apt-get install -y -q linux-modules-extra-\$(ls /usr/lib/modules | sort -V | tail -1)"'
 BASE_KEY="$BASE_PKGS,(linux-modules-extra)"
 if [ "$(cat "$BASE/.complete" 2>/dev/null)" != "$BASE_KEY" ]; then
@@ -94,8 +94,8 @@ if [ "$(cat "$BASE/.complete" 2>/dev/null)" != "$BASE_KEY" ]; then
         --aptopt='APT::Install-Recommends "false"' \
         --customize-hook="$MODULES_EXTRA_HOOK" \
         "$SUITE" "$BASE" \
-        "deb $MIRROR $SUITE main universe" \
-        "deb $MIRROR $SUITE-updates main universe"
+        "deb $MIRROR $SUITE main universe multiverse" \
+        "deb $MIRROR $SUITE-updates main universe multiverse"
     echo "$BASE_KEY" > "$BASE/.complete"
 fi
 
@@ -139,8 +139,8 @@ if [ "$SCENARIO" = browser ] || [ "$SCENARIO" = plain ]; then
             --customize-hook="$MODULES_EXTRA_HOOK" \
             --setup-hook='mkdir -p "$1/etc/apt/preferences.d" && printf "Package: *\nPin: origin packages.mozilla.org\nPin-Priority: 1000\n" > "$1/etc/apt/preferences.d/mozilla"' \
             "$SUITE" "$BROWSER_BASE" \
-            "deb $MIRROR $SUITE main universe" \
-            "deb $MIRROR $SUITE-updates main universe" \
+            "deb $MIRROR $SUITE main universe multiverse" \
+            "deb $MIRROR $SUITE-updates main universe multiverse" \
             "deb [signed-by=$keyring] https://packages.mozilla.org/apt mozilla main"
         # Say which Firefox went in, and prove it is Mozilla's and not the snap stub.
         version=$(chroot "$BROWSER_BASE" dpkg-query -W -f='${Version}' firefox)
@@ -168,8 +168,8 @@ if [ "$SCENARIO" = wifi ]; then
             --aptopt='APT::Install-Recommends "false"' \
             --customize-hook="$MODULES_EXTRA_HOOK" \
             "$SUITE" "$WIFI_BASE" \
-            "deb $MIRROR $SUITE main universe" \
-            "deb $MIRROR $SUITE-updates main universe"
+            "deb $MIRROR $SUITE main universe multiverse" \
+            "deb $MIRROR $SUITE-updates main universe multiverse"
         echo "$WIFI_KEY" > "$WIFI_BASE/.complete"
     fi
     BASE="$WIFI_BASE"
@@ -233,11 +233,8 @@ make_root() {
     install -D -m 0644 /dev/null "$dir/usr/lib/morpheos/release"
     echo "$RELEASE" > "$dir/usr/lib/morpheos/release"
     install -m 0755 "$STRATA" "$dir/usr/bin/strata"
-    # The 2012 MacBook Pro's BCM4331 Wi-Fi (E6): `b43` needs Broadcom's proprietary firmware
-    # (not redistributable), so blacklist it and ship the free `brcmsmac` firmware instead.
-    install -D -m 0644 "$REPO/images/common/firmware/brcm/bcm43xx-0.fw" "$dir/lib/firmware/brcm/bcm43xx-0.fw"
-    install -D -m 0644 "$REPO/images/common/firmware/brcm/bcm43xx_hdr-0.fw" "$dir/lib/firmware/brcm/bcm43xx_hdr-0.fw"
-    printf 'blacklist b43\n' > "$dir/etc/modprobe.d/morpheos-wifi.conf"
+    # The 2012 MacBook Pro's BCM4331 Wi-Fi (E6): the `b43` driver is the one that works with
+    # this chip; its firmware comes from `firmware-b43-installer` (multiverse), asserted below.
     echo "morpheos-$slot" > "$dir/etc/hostname"
     : > "$dir/etc/machine-id"
     cat > "$dir/etc/fstab" <<EOF
@@ -327,7 +324,7 @@ EOF
         # it), its touchscreen, its wired network. Each of these was missing until the extra
         # modules went in, with the firmware for them already on the image.
         for mod in usb-storage uas xhci-hcd ahci sd_mod ext4 vfat \
-            amdgpu i915 xe cfg80211 mac80211 iwlwifi mt7921e brcmfmac brcmsmac hid-multitouch r8169; do
+            amdgpu i915 xe cfg80211 mac80211 iwlwifi mt7921e brcmfmac b43 hid-multitouch r8169; do
             found=$(find "$dir/usr/lib/modules" -name "$mod.ko*" -print -quit 2>/dev/null || true)
             if [ -z "$found" ] && ! printf '%s' "$builtin" | grep -q "/$mod\.ko"; then
                 missing="$missing $mod"
@@ -338,11 +335,11 @@ EOF
             echo "kernel flavour: $(ls "$dir"/boot/vmlinuz-* 2>/dev/null | xargs -n1 basename)" >&2
             exit 1
         fi
-        # The firmware brcmsmac loads for the BCM4331 (MacBookPro9,1). Assert it landed, not
+        # The firmware b43 loads for the BCM4331 (MacBookPro9,1). Assert it landed, not
         # just that the module did: a missing .fw is the exact "no Wi-Fi" the hardware report
         # found, and it reads as green until a person boots it.
-        [ -f "$dir/lib/firmware/brcm/bcm43xx-0.fw" ] \
-            || { echo "brcmsmac firmware is missing from $dir: BCM4331 Wi-Fi cannot start" >&2; exit 1; }
+        [ -f "$dir/lib/firmware/b43/ucode29_mimo.fw" ] \
+            || { echo "b43 firmware is missing from $dir: BCM4331 Wi-Fi cannot start" >&2; exit 1; }
         # The screen, asserted from the kernel's own config instead: `efifb` is built into this
         # kernel, so it has no .ko to look for, and a check that looked for one failed a good
         # image. A dark screen with no serial port is a machine nobody can use.
