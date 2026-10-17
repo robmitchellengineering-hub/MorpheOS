@@ -460,6 +460,15 @@ rm -f "$WORK/root-recovery"/etc/systemd/system/multi-user.target.wants/*.service
 cp -a "$HERE/overlay-recovery/." "$WORK/root-recovery/"
 ln -sf /usr/lib/systemd/system/morph-recover.service \
     "$WORK/root-recovery/etc/systemd/system/multi-user.target.wants/morph-recover.service"
+echo "morpheos-recovery" > "$WORK/root-recovery/etc/hostname"
+# The recovery root must NOT mount /persist (or its /home and Strata bind mounts): those
+# are the slots' read-write data partition, and recovery leaves it untouched. Assert the
+# recovery fstab actually replaced the slots' one — a silent no-op would ship a recovery
+# that mounts the data partition.
+if grep -q '/persist' "$WORK/root-recovery/etc/fstab"; then
+    echo "the recovery root still mounts /persist — its own fstab did not land" >&2
+    exit 1
+fi
 
 # 3. ESP contents.
 ESPDIR="$WORK/esp"
