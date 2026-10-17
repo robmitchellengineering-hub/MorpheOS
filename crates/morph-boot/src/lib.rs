@@ -153,17 +153,21 @@ pub fn update_target(bc: &dyn BootControl) -> Result<Slot> {
 /// Recovery is the third, immutable system that rebuilds both slots when their roots are
 /// lost. Anything that runs there — `morph-heal recover` — must be certain it *is* there,
 /// because the one mistake that cannot be undone is overwriting a slot that is running.
-/// Two independent facts must agree:
+/// Three facts must agree:
 ///
-/// - `morph.recovery=1` on the kernel command line — what the recovery boot entry says; and
-/// - `/` mounted from the `recovery` partition, read from `/proc/self/mountinfo` — where
-///   the kernel actually put the root.
+/// - `morph.recovery=1` on the kernel command line — the recovery boot entry's marker;
+/// - `root=PARTLABEL=recovery` on the same line — the recovery entry is the only one whose
+///   root is the recovery partition (the slots say `root-a`/`root-b`); and
+/// - `/` actually mounted from a block device, read from `/proc/self/mountinfo`.
 ///
-/// Neither alone is enough: a command line is a file someone can edit, and a mount of `/`
-/// on a partition named `recovery` is meaningless unless the boot entry chose it. The pair
-/// is what separates "I am the recovery system" from "a slot that resembles one".
+/// The middle fact is what names the partition: `/proc/self/mountinfo` records the
+/// *resolved* device (e.g. `/dev/vda5`), not the label the boot entry used, so the mount
+/// source alone cannot say "recovery". But `root=PARTLABEL=recovery` is what the kernel
+/// mounted — if `/` is mounted at all, it is mounted from that partition. The marker and
+/// the mounted root together separate "I am the recovery system" from "a slot that
+/// resembles one".
 pub fn is_recovery(cmdline: &str, mountinfo: &str) -> bool {
-    cmdline_has_recovery(cmdline) && root_is_recovery(mountinfo)
+    cmdline_has_recovery(cmdline) && cmdline_roots_recovery(cmdline) && root_is_mounted(mountinfo)
 }
 
 fn cmdline_has_recovery(cmdline: &str) -> bool {
@@ -171,6 +175,13 @@ fn cmdline_has_recovery(cmdline: &str) -> bool {
         .split_whitespace()
         .find_map(|w| w.strip_prefix("morph.recovery="))
         == Some("1")
+}
+
+/// The recovery boot entry is the only one whose `root=` is `PARTLABEL=recovery`.
+fn cmdline_roots_recovery(cmdline: &str) -> bool {
+    cmdline
+        .split_whitespace()
+        .any(|w| w == "root=PARTLABEL=recovery")
 }
 
 /// The mount source of `/` (the field after the `- <fstype>` pair), if `/` is mounted.
@@ -187,14 +198,9 @@ fn root_mount_source(mountinfo: &str) -> Option<&str> {
     None
 }
 
-/// `/` is the recovery partition: its mount source is the `by-partlabel/recovery` device the
-/// recovery entry boots from, or a device whose final component is `recovery` — the same
-/// partition reached by another name. "recovery" is the partition name the image build gives
-/// it (`PARTLABEL=recovery`, filesystem label `recovery`).
-fn root_is_recovery(mountinfo: &str) -> bool {
-    root_mount_source(mountinfo).is_some_and(|src| {
-        src == "/dev/disk/by-partlabel/recovery" || src.rsplit('/').next() == Some("recovery")
-    })
+/// `/` is mounted from a real block device, not still in the initramfs or on a tmpfs/overlay.
+fn root_is_mounted(mountinfo: &str) -> bool {
+    root_mount_source(mountinfo).is_some_and(|src| src.starts_with("/dev/"))
 }
 
 /// Where this machine's boot control lives, as the command line describes it.
@@ -321,20 +327,30 @@ mod tests {
     }
 
     #[test]
-    fn recovery_requires_both_the_cmdline_and_the_mount() {
+    fn recovery_requires_the_cmdline_and_the_mounted_root() {
         assert!(is_recovery(
             RECOVERY_CMDLINE,
             &mountinfo("/dev/disk/by-partlabel/recovery")
         ));
-        // Either one alone is not enough.
+        // A slot boot, however recovery-marked, is not recovery: its root is a slot.
         assert!(!is_recovery(
-            RECOVERY_CMDLINE,
+            "root=PARTLABEL=root-a ro morph.recovery=1 panic=5",
             &mountinfo("/dev/disk/by-partlabel/root-a")
         ));
+        // The recovery root without the marker is not recovery either.
         assert!(!is_recovery(
             SLOT_A_CMDLINE,
             &mountinfo("/dev/disk/by-partlabel/recovery")
         ));
+    }
+
+    #[test]
+    fn the_resolved_device_is_still_recovery() {
+        // /proc/self/mountinfo records the RESOLVED device (e.g. /dev/vda5), not the
+        // PARTLABEL the boot entry used. The cmdline's root=PARTLABEL=recovery is what
+        // names it recovery, so the resolved name must not break the check.
+        assert!(is_recovery(RECOVERY_CMDLINE, &mountinfo("/dev/vda5")));
+        assert!(is_recovery(RECOVERY_CMDLINE, &mountinfo("/dev/sda5")));
     }
 
     #[test]
@@ -353,23 +369,17 @@ mod tests {
     }
 
     #[test]
-    fn the_root_mount_must_be_the_recovery_partition() {
-        // A slot's root, however recovery-like the cmdline, is not recovery.
-        assert!(!is_recovery(
-            RECOVERY_CMDLINE,
-            &mountinfo("/dev/disk/by-partlabel/root-b")
-        ));
+    fn the_root_must_actually_be_mounted() {
         // A mountinfo with no / mount at all cannot prove anything.
         assert!(!is_recovery(
             RECOVERY_CMDLINE,
             "1 1 8:1 /efi /efi rw - vfat /dev/sda1 rw\n"
         ));
-    }
-
-    #[test]
-    fn the_recovery_partition_is_recognised_by_other_names() {
-        // The same partition reached without the by-partlabel symlink.
-        assert!(is_recovery(RECOVERY_CMDLINE, &mountinfo("/dev/recovery")));
+        // / mounted on a tmpfs (still in the initramfs) is not the recovery partition.
+        assert!(!is_recovery(
+            RECOVERY_CMDLINE,
+            "1 1 0:1 / / rw - tmpfs tmpfs rw\n"
+        ));
     }
 
     #[test]

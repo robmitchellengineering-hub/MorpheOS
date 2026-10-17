@@ -1,0 +1,24 @@
+#!/bin/sh
+# Put bootctl into the initramfs so the recovery "way in" can arm the recovery entry
+# (`bootctl set-oneshot morpheos-recovery.conf`) when a slot's root is lost (S4, step 3.3).
+# Without bootctl the hook could only hang or loop, because systemd has not started and no
+# watchdog is armed yet.
+set -e
+
+PREREQ=""
+prereqs()
+{
+    echo "$PREREQ"
+}
+
+case $1 in
+prereqs)
+    prereqs
+    exit 0
+    ;;
+esac
+
+. /usr/share/initramfs-tools/hook-functions
+
+# copy_exec <binary> <dest-dir> copies the binary and its shared libraries into the initrd.
+copy_exec /usr/bin/bootctl /usr/bin
