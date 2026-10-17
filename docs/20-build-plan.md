@@ -1178,7 +1178,7 @@ the release numbering, drafted for his answer as [ADR 0019](adr/0019-release-sig
    3. The image and `test-autoupdate.sh good`.
    4. `bad` and `tampered`.
 
-### S4 · The recovery image (rung H4) · open
+### S4 · The recovery image (rung H4) · open · parallel
 
 **What:** a third, immutable system, the recovery image. It is a known-good, signed copy of
 the system on its own partition, with its own boot entry, written only when the disk is made.
