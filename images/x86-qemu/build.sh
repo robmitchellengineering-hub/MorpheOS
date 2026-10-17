@@ -454,20 +454,27 @@ make_root b
 # Built before the ESP so its kernel and initrd can be copied into /morpheos/recovery.
 # Drop every boot service first — recovery runs only morph-recover — then add the
 # recovery units and enable them.
-rm -rf "$WORK/root-recovery"
-cp -a "$WORK/root-a" "$WORK/root-recovery"
-rm -f "$WORK/root-recovery"/etc/systemd/system/multi-user.target.wants/*.service
-cp -a "$HERE/overlay-recovery/." "$WORK/root-recovery/"
-ln -sf /usr/lib/systemd/system/morph-recover.service \
-    "$WORK/root-recovery/etc/systemd/system/multi-user.target.wants/morph-recover.service"
-echo "morpheos-recovery" > "$WORK/root-recovery/etc/hostname"
-# The recovery root must NOT mount /persist (or its /home and Strata bind mounts): those
-# are the slots' read-write data partition, and recovery leaves it untouched. Assert the
-# recovery fstab actually replaced the slots' one — a silent no-op would ship a recovery
-# that mounts the data partition.
-if grep -q '/persist' "$WORK/root-recovery/etc/fstab"; then
-    echo "the recovery root still mounts /persist — its own fstab did not land" >&2
-    exit 1
+#
+# Built only for the person-facing images (HARDWARE=1): the self-test scenarios do not
+# use recovery, and each disk carries a whole extra slot's worth of space, which the CI
+# runner's disk does not have to spare (doc 20, S4 note 6). `plain` is the image a
+# person boots, so it always carries recovery.
+if [ "$HARDWARE" = 1 ]; then
+    rm -rf "$WORK/root-recovery"
+    cp -a "$WORK/root-a" "$WORK/root-recovery"
+    rm -f "$WORK/root-recovery"/etc/systemd/system/multi-user.target.wants/*.service
+    cp -a "$HERE/overlay-recovery/." "$WORK/root-recovery/"
+    ln -sf /usr/lib/systemd/system/morph-recover.service \
+        "$WORK/root-recovery/etc/systemd/system/multi-user.target.wants/morph-recover.service"
+    echo "morpheos-recovery" > "$WORK/root-recovery/etc/hostname"
+    # The recovery root must NOT mount /persist (or its /home and Strata bind mounts): those
+    # are the slots' read-write data partition, and recovery leaves it untouched. Assert the
+    # recovery fstab actually replaced the slots' one — a silent no-op would ship a recovery
+    # that mounts the data partition.
+    if grep -q '/persist' "$WORK/root-recovery/etc/fstab"; then
+        echo "the recovery root still mounts /persist — its own fstab did not land" >&2
+        exit 1
+    fi
 fi
 
 # 3. ESP contents.
@@ -503,23 +510,26 @@ options root=PARTLABEL=root-$slot ro morph.slot=$slot $console panic=5$extra
 EOF
 done
 # The recovery entry (S4): a one-shot target the boot chain arms when a slot is lost.
-mkdir -p "$ESPDIR/morpheos/recovery"
-rkernel=$(ls "$WORK/root-recovery"/boot/vmlinuz-* | sort | tail -1)
-rinitrd=$(ls "$WORK/root-recovery"/boot/initrd.img-* | sort | tail -1)
-# A recovery root with no kernel is a recovery image that cannot boot: fail the build,
-# not silently ship an entry whose vmlinuz never made it into the ESP.
-if [ -z "$rkernel" ] || [ -z "$rinitrd" ]; then
-    echo "recovery root has no kernel/initrd in $WORK/root-recovery/boot" >&2
-    exit 1
-fi
-cp "$rkernel" "$ESPDIR/morpheos/recovery/vmlinuz"
-cp "$rinitrd" "$ESPDIR/morpheos/recovery/initrd.img"
-cat > "$ESPDIR/loader/entries/morpheos-recovery.conf" <<EOF
+# Only on the person-facing images (see the recovery root above).
+if [ "$HARDWARE" = 1 ]; then
+    mkdir -p "$ESPDIR/morpheos/recovery"
+    rkernel=$(ls "$WORK/root-recovery"/boot/vmlinuz-* | sort | tail -1)
+    rinitrd=$(ls "$WORK/root-recovery"/boot/initrd.img-* | sort | tail -1)
+    # A recovery root with no kernel is a recovery image that cannot boot: fail the build,
+    # not silently ship an entry whose vmlinuz never made it into the ESP.
+    if [ -z "$rkernel" ] || [ -z "$rinitrd" ]; then
+        echo "recovery root has no kernel/initrd in $WORK/root-recovery/boot" >&2
+        exit 1
+    fi
+    cp "$rkernel" "$ESPDIR/morpheos/recovery/vmlinuz"
+    cp "$rinitrd" "$ESPDIR/morpheos/recovery/initrd.img"
+    cat > "$ESPDIR/loader/entries/morpheos-recovery.conf" <<EOF
 title   MorpheOS (recovery)
 linux   /morpheos/recovery/vmlinuz
 initrd  /morpheos/recovery/initrd.img
 options root=PARTLABEL=recovery ro morph.recovery=1 systemd.unit=morph-recovery.target $console panic=5
 EOF
+fi
 
 # 4. The data partition's starting tree: one user's home, and the store's
 #    folder, private to the service as Strata::open makes it.
@@ -553,26 +563,33 @@ rm -f "$WORK/data.img"
 mkfs.ext4 -q -L data -d "$DATADIR" "$WORK/data.img" "${DATA_MB}M"
 # The recovery root (S4): slot A's tree with every boot service dropped — assembled
 # above, before the ESP, so its kernel/initrd reach /morpheos/recovery. It boots into
-# morph-recover, not the shell.
-rm -f "$WORK/recovery.img"
-mkfs.ext4 -q -L recovery -d "$WORK/root-recovery" "$WORK/recovery.img" "${ROOT_MB}M"
+# morph-recover, not the shell. Built only for the person-facing images (HARDWARE=1),
+# which is where the factory reset is reachable.
+RECOVERY_MB=0
+if [ "$HARDWARE" = 1 ]; then
+    rm -f "$WORK/recovery.img"
+    mkfs.ext4 -q -L recovery -d "$WORK/root-recovery" "$WORK/recovery.img" "${ROOT_MB}M"
+    RECOVERY_MB=$ROOT_MB
+fi
 
 DISK="$WORK/disk-$SCENARIO.img"
 rm -f "$DISK"
-truncate -s $((1 + ESP_MB + 2 * ROOT_MB + DATA_MB + ROOT_MB + 1))M "$DISK"
-sfdisk -q "$DISK" <<EOF
-label: gpt
-start=1MiB, size=${ESP_MB}MiB, type=uefi, name=esp
-size=${ROOT_MB}MiB, type=4f68bce3-e8cd-4db1-96e7-fbcaf984b709, name=root-a
-size=${ROOT_MB}MiB, type=4f68bce3-e8cd-4db1-96e7-fbcaf984b709, name=root-b
-size=${DATA_MB}MiB, type=linux, name=data
-size=${ROOT_MB}MiB, type=4f68bce3-e8cd-4db1-96e7-fbcaf984b709, name=recovery
-EOF
+truncate -s $((1 + ESP_MB + 2 * ROOT_MB + DATA_MB + RECOVERY_MB + 1))M "$DISK"
+{
+    echo "label: gpt"
+    echo "start=1MiB, size=${ESP_MB}MiB, type=uefi, name=esp"
+    echo "size=${ROOT_MB}MiB, type=4f68bce3-e8cd-4db1-96e7-fbcaf984b709, name=root-a"
+    echo "size=${ROOT_MB}MiB, type=4f68bce3-e8cd-4db1-96e7-fbcaf984b709, name=root-b"
+    echo "size=${DATA_MB}MiB, type=linux, name=data"
+    [ "$HARDWARE" = 1 ] && echo "size=${ROOT_MB}MiB, type=4f68bce3-e8cd-4db1-96e7-fbcaf984b709, name=recovery"
+} | sfdisk -q "$DISK"
 dd if="$WORK/esp.img" of="$DISK" bs=1M seek=1 conv=notrunc status=none
 # conv=sparse: the disk file is freshly truncated (all zeros), so skipping the filesystems' zero
 # blocks writes the same disk and keeps the file sparse, which keeps the CI runner's disk free.
 dd if="$WORK/root-a.img" of="$DISK" bs=1M seek=$((1 + ESP_MB)) conv=notrunc,sparse status=none
 dd if="$WORK/root-b.img" of="$DISK" bs=1M seek=$((1 + ESP_MB + ROOT_MB)) conv=notrunc,sparse status=none
 dd if="$WORK/data.img" of="$DISK" bs=1M seek=$((1 + ESP_MB + 2 * ROOT_MB)) conv=notrunc,sparse status=none
-dd if="$WORK/recovery.img" of="$DISK" bs=1M seek=$((1 + ESP_MB + 2 * ROOT_MB + DATA_MB)) conv=notrunc,sparse status=none
+if [ "$HARDWARE" = 1 ]; then
+    dd if="$WORK/recovery.img" of="$DISK" bs=1M seek=$((1 + ESP_MB + 2 * ROOT_MB + DATA_MB)) conv=notrunc,sparse status=none
+fi
 echo "$DISK"
