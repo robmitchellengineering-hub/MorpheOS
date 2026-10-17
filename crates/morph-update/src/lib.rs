@@ -570,6 +570,13 @@ fn write_image(dst: &Path, src: &Path) -> Result<u64> {
 /// write. It is checked against the policy and never used in place of it: a caller that
 /// has decided wrongly should be told, not obeyed.
 ///
+/// The policy lives here and only here: which slot may be written
+/// ([`morph_boot::update_target`]), that the payload is not older than the running system,
+/// and that the slot is not mid-update. The mechanical write-and-verify of a specific slot
+/// is [`write_slot`], which this calls once the policy has chosen a target. Recovery
+/// (`morph-heal recover`) writes **both** slots and so calls [`write_slot`] directly —
+/// never this, because the two slots it must write are exactly the two this refuses.
+///
 /// **This does not trial the slot.** Writing and booting are separate decisions on
 /// purpose — `morph-boot trial <slot>` is what makes the machine boot it, and keeping
 /// them apart means a verified write is still a verified write if the operator decides
@@ -610,6 +617,21 @@ pub fn install(
         )));
     }
 
+    write_slot(payload, layout, target)
+}
+
+/// Write `payload` into `slot` and verify what was written. No policy.
+///
+/// This is the mechanical half of an update with every policy decision removed: it does
+/// not ask which slot may be written, does not compare releases, and does not refuse on a
+/// stale incomplete marker. It writes exactly the slot it is told to, verifies it, and
+/// clears its own marker.
+///
+/// The split exists for recovery (`morph-heal recover`), which writes both slots — a thing
+/// no boot policy would ever allow, because in the recovery system neither slot is running.
+/// It is also the H7 answer: the invariant "never write the running system" stays in
+/// [`install`], where a caller reaching straight for the write cannot bypass it.
+pub fn write_slot(payload: &mut Payload, layout: &Layout, slot: Slot) -> Result<Outcome> {
     // 1. The payload is sound BEFORE the slot is touched.
     payload.check()?;
     let root_bytes = payload
@@ -620,11 +642,12 @@ pub fn install(
         .ok_or_else(|| Error::BadPayload("root image digest unknown".into()))?
         .to_string();
 
-    let boot_dir = layout.boot_dir(target);
+    let boot_dir = layout.boot_dir(slot);
     std::fs::create_dir_all(&boot_dir).map_err(io(format!("creating {}", boot_dir.display())))?;
 
     // 2. Say out loud that this slot is mid-update. From here on, an interruption is
     //    visible instead of looking like a slot that is ready to trial.
+    let marker = layout.marker(slot);
     write_atomic(&marker, b"an update to this slot did not finish\n")?;
 
     // 3. Write.
@@ -644,14 +667,14 @@ pub fn install(
     let root_got = hash_prefix(&layout.root_device, root_bytes)?;
     if root_got != root_want {
         return Err(Error::VerifyFailed(format!(
-            "slot {target} root re-read hashes to {root_got}, but the payload declared {root_want}"
+            "slot {slot} root re-read hashes to {root_got}, but the payload declared {root_want}"
         )));
     }
     for name in [KERNEL, INITRD] {
         let (got, _) = hash_file(&boot_dir.join(name))?;
         if Some(got.as_str()) != payload.digest_of(name) {
             return Err(Error::VerifyFailed(format!(
-                "{name} in slot {target}'s boot directory does not match the payload"
+                "{name} in slot {slot}'s boot directory does not match the payload"
             )));
         }
     }
@@ -660,7 +683,7 @@ pub fn install(
     std::fs::remove_file(&marker).map_err(io(format!("removing {}", marker.display())))?;
 
     Ok(Outcome {
-        slot: target,
+        slot,
         release: payload.release(),
         root_bytes,
         root_digest: root_got,

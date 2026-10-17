@@ -64,6 +64,8 @@ impl Machine {
             esp,
             history: base.join("esp/morph-boot/history.jsonl"),
             report: base.join("esp/morph-boot/repairs.json"),
+            recovery_record: base.join("esp/morph-boot/recovery.json"),
+            recovery_dir: base.join("esp/morpheos/recovery"),
             stage: base.join("stage"),
             release_file,
         };

@@ -47,10 +47,15 @@ pub struct Heal {
     pub history: PathBuf,
     /// Where repairs are recorded, so the same failure is not repaired twice.
     pub report: PathBuf,
+    /// Where a successful recovery is recorded, naming both slots as rebuilt.
+    pub recovery_record: PathBuf,
     /// Scratch space for assembling the payload. Must not be the read-only root.
     pub stage: PathBuf,
     /// Which release the running system is: the repair reinstalls exactly that one.
     pub release_file: PathBuf,
+    /// The recovery image's payload directory on the ESP: its kernel and initrd, which
+    /// `recover` stages with the recovery partition as the root image.
+    pub recovery_dir: PathBuf,
 }
 
 impl Heal {
@@ -61,8 +66,10 @@ impl Heal {
         Heal {
             history: esp.join("morph-boot/history.jsonl"),
             report: esp.join("morph-boot/repairs.json"),
+            recovery_record: esp.join("morph-boot/recovery.json"),
             stage: PathBuf::from("/run/morph-heal"),
             release_file: PathBuf::from(morph_update::RELEASE_FILE),
+            recovery_dir: esp.join("morpheos/recovery"),
             esp,
         }
     }
@@ -79,6 +86,19 @@ pub struct Failure {
     pub index: usize,
 }
 
+/// What `recover` did: both slots rebuilt from the recovery image, and the new default.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Recovered {
+    /// The release the recovery image wrote into both slots.
+    pub release: u64,
+    /// Slot A, rebuilt and verified.
+    pub a: Outcome,
+    /// Slot B, rebuilt and verified.
+    pub b: Outcome,
+    /// The slot the firmware boots next — always A.
+    pub default: Slot,
+}
+
 #[derive(Debug)]
 pub enum Error {
     Io {
@@ -89,6 +109,10 @@ pub enum Error {
     History(String),
     /// There is nothing to repair, or this process is not the one to do it.
     Refused(String),
+    /// The boot policy would not answer, or refused: kept separate from `Refused` because
+    /// "you asked for the wrong slot" and "the machine will not tell me its state" are
+    /// different problems with different fixes.
+    Boot(morph_boot::Error),
     /// `morph-update` refused or failed: carried through so the reason survives.
     Update(morph_update::Error),
 }
@@ -99,6 +123,7 @@ impl std::fmt::Display for Error {
             Error::Io { what, source } => write!(f, "{what}: {source}"),
             Error::History(m) => write!(f, "boot history: {m}"),
             Error::Refused(m) => write!(f, "refused: {m}"),
+            Error::Boot(e) => write!(f, "boot policy: {e}"),
             Error::Update(e) => write!(f, "{e}"),
         }
     }
@@ -109,6 +134,12 @@ impl std::error::Error for Error {}
 impl From<morph_update::Error> for Error {
     fn from(e: morph_update::Error) -> Self {
         Error::Update(e)
+    }
+}
+
+impl From<morph_boot::Error> for Error {
+    fn from(e: morph_boot::Error) -> Self {
+        Error::Boot(e)
     }
 }
 
@@ -304,5 +335,136 @@ impl Heal {
         // The scratch copy is a full system image; it has no business outliving the repair.
         let _ = std::fs::remove_dir_all(&self.stage);
         Ok((failure, outcome))
+    }
+
+    /// Rebuild both slots from the recovery image, make slot A the default, and record it.
+    ///
+    /// This is the rung below the A/B pair (S4, H4): when a slot's root is lost and neither
+    /// slot can boot, the machine starts the recovery system and runs this. It is the same
+    /// verified write as an update, but with the recovery partition as the source and both
+    /// slots as targets — exactly what the boot policy would never allow — so it writes
+    /// through `morph_update::write_slot` (no policy), never `install`.
+    ///
+    /// Two independent checks are made before anything is written:
+    ///
+    /// 1. **We are the recovery system.** `morph.recovery=1` on the command line **and** `/`
+    ///    mounted from the recovery partition ([`morph_boot::is_recovery`]). Either alone is
+    ///    forgeable; the pair is what stops a slot that merely resembles recovery from
+    ///    overwriting the very slot it is running from.
+    /// 2. **The slot roots are not the recovery partition itself**, so the source is not
+    ///    overwritten by one of its own targets.
+    ///
+    /// The payload is sealed and signed for this one run, exactly as [`repair`] does — there
+    /// is no way to open an unsigned payload, and this one is the machine's own running image,
+    /// read from its own recovery partition. (Checking the recovery image against its
+    /// factory-signed manifest is the corrupt-recovery refusal, a later rung.)
+    ///
+    /// "Slot A is the factory image" is a policy property — the recovery image is built as
+    /// slot A's tree — not a proof that A boots on this machine. It is chosen because it is
+    /// the slot the factory image ships as the committed default, and it is said plainly
+    /// here rather than dressed up as a guarantee.
+    pub fn recover(
+        &self,
+        bc: &mut dyn BootControl,
+        cmdline: &str,
+        mountinfo: &str,
+        recovery_root: &Path,
+        root_a: &Path,
+        root_b: &Path,
+    ) -> Result<Recovered> {
+        if !morph_boot::is_recovery(cmdline, mountinfo) {
+            return Err(Error::Refused(
+                "recover runs only from the recovery system: the command line must carry \
+                 morph.recovery=1 and / must be the recovery partition"
+                    .into(),
+            ));
+        }
+        if root_a == recovery_root || root_b == recovery_root {
+            return Err(Error::Refused(format!(
+                "refusing to write the recovery partition {} as a slot root",
+                recovery_root.display()
+            )));
+        }
+
+        // Stage the recovery image as a payload: the recovery partition is the root image,
+        // **referenced, not copied** (it is a block device; a copy would need a whole slot's
+        // worth of scratch, the same reason `repair` symlinks). The kernel and initrd come
+        // from the ESP, beside the recovery entry.
+        let stage = self.stage.join("recovery");
+        let _ = std::fs::remove_dir_all(&self.stage);
+        std::fs::create_dir_all(&stage).map_err(io(format!("creating {}", stage.display())))?;
+        let image = stage.join(morph_update::ROOT_IMAGE);
+        std::os::unix::fs::symlink(recovery_root, &image).map_err(io(format!(
+            "referencing the recovery partition {}",
+            recovery_root.display()
+        )))?;
+        for name in [morph_update::KERNEL, morph_update::INITRD] {
+            let from = self.recovery_dir.join(name);
+            std::fs::copy(&from, stage.join(name))
+                .map_err(io(format!("reading {}", from.display())))?;
+        }
+        // The release the recovery image says it is, read from the recovery system itself;
+        // both slots are rebuilt at that release.
+        let release = morph_update::read_release(&self.release_file)?;
+        morph_update::seal(&stage, release)?;
+        // There is no unsigned way to open a payload (doc 20, S2), and this one needs no
+        // vendor's signature: it is the machine's own running recovery image, read from its
+        // own recovery partition. So it is signed with a key made for this one recovery and
+        // opened trusting only that key.
+        let (secret, public) = morph_update::keygen()?;
+        morph_update::sign(&stage, &secret)?;
+        let trusted = TrustedKeys::from_public_hex("this recovery's own key", &public)?;
+        let mut payload = Payload::open(&stage, &trusted)?;
+
+        // Write both slots, A then B. `write_slot` has no policy by design; the recovery-only
+        // guard above is what makes writing the running system impossible here.
+        let outcome_a = morph_update::write_slot(
+            &mut payload,
+            &Layout {
+                esp: self.esp.clone(),
+                root_device: root_a.to_path_buf(),
+                running_release: release,
+            },
+            Slot::A,
+        )?;
+        let outcome_b = morph_update::write_slot(
+            &mut payload,
+            &Layout {
+                esp: self.esp.clone(),
+                root_device: root_b.to_path_buf(),
+                running_release: release,
+            },
+            Slot::B,
+        )?;
+
+        // Slot A is the factory image, so it is the default the machine returns to.
+        bc.set_default_slot(Slot::A)?;
+
+        // The recovery record names both slots, and is written only after both verified.
+        let record = self.recovery_record.clone();
+        if let Some(dir) = record.parent() {
+            std::fs::create_dir_all(dir).map_err(io(format!("creating {}", dir.display())))?;
+        }
+        let text = serde_json::json!({
+            "action": "recovered",
+            "from": "recovery",
+            "release": release,
+            "slots": ["a", "b"],
+            "default": "a",
+        });
+        std::fs::write(
+            &record,
+            serde_json::to_string_pretty(&text).unwrap_or_default(),
+        )
+        .map_err(io(format!("writing {}", record.display())))?;
+
+        // The scratch image is a full system image; it has no business outliving the recovery.
+        let _ = std::fs::remove_dir_all(&self.stage);
+        Ok(Recovered {
+            release,
+            a: outcome_a,
+            b: outcome_b,
+            default: Slot::A,
+        })
     }
 }
