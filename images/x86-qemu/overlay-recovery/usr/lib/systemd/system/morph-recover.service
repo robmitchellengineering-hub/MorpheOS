@@ -1,0 +1,10 @@
+[Unit]
+Description=Rebuild the slots from the recovery root (S4)
+DefaultDependencies=no
+After=local-fs.target
+
+[Service]
+Type=oneshot
+# First increment: prove the recovery target boots instead of the shell. The actual
+# rebuild (morph-heal recover) is the next increment; for now just mark the boot and stop.
+ExecStart=/bin/sh -c 'echo "morpheos: recovery booted (factory slot A)" && poweroff -f'

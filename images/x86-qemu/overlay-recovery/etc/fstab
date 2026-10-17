@@ -1,0 +1,9 @@
+# The recovery system's own fstab (S4). It deliberately does NOT mount /persist, /home or
+# the Strata store: those bind-mounts come from the slots' fstab, and recovery must leave
+# the shared data partition untouched. Only the ESP (for the recovery record and the signed
+# BLAKE3SUMS) and the tmpfs state systemd's own services need are mounted.
+PARTLABEL=esp    /efi             vfat   umask=0077,nofail  0  0
+tmpfs            /tmp             tmpfs  mode=1777          0  0
+tmpfs            /var/lib/systemd/linger     tmpfs  mode=0755  0  0
+tmpfs            /var/lib/systemd/rfkill     tmpfs  mode=0755  0  0
+tmpfs            /var/lib/systemd/backlight  tmpfs  mode=0755  0  0
