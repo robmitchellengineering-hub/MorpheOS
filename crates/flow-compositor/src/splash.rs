@@ -490,10 +490,16 @@ impl Canvas<'_> {
 /// One of the three data rings.
 struct Ring {
     radius: f32,
+    /// The tube's cross-section radius (the cable's thickness, in world units).
+    tube_r: f32,
     colour: (u8, u8, u8),
     spin: f32,
     precess: f32,
     phase: f32,
+    /// How fast the travelling bulge moves around the ring, in rings per second.
+    speed: f32,
+    /// Where the bulge starts, in rings (0..1).
+    ball_t: f32,
 }
 
 /// The twinkling star field (fixed seed; a few stars are green).
@@ -527,29 +533,40 @@ fn draw_stars(canvas: &mut Canvas<'_>, cam: &Cam, t: f32) {
     }
 }
 
-/// The three data rings (magenta, cyan, blue), each a circle spinning and precessing.
+/// The three data rings (magenta, cyan, blue), each a cable tube that spins and precesses,
+/// with the login.html flow and travelling bulge: the tube's colour carries a moving wave
+/// and a bright white pulse rides around it.
 fn draw_rings(canvas: &mut Canvas<'_>, cam: &Cam, t: f32) {
     const RINGS: [Ring; 3] = [
         Ring {
             radius: 3.0,
+            tube_r: 0.045,
             colour: (0xff, 0x2f, 0xd6),
             spin: 0.9,
             precess: 0.5,
             phase: 0.0,
+            speed: 0.16,
+            ball_t: 0.0,
         },
         Ring {
             radius: 3.6,
+            tube_r: 0.038,
             colour: (0x06, 0xb6, 0xd4),
             spin: -0.7,
             precess: -0.4,
             phase: 1.7,
+            speed: -0.12,
+            ball_t: 0.55,
         },
         Ring {
             radius: 4.15,
+            tube_r: 0.032,
             colour: (0x4d, 0x6b, 0xfe),
             spin: 0.65,
             precess: 0.55,
             phase: 3.4,
+            speed: 0.11,
+            ball_t: 0.2,
         },
     ];
     let scale = 0.8 + 0.2 * ease_out((t / 1.4).min(1.0));
@@ -562,9 +579,9 @@ fn draw_rings(canvas: &mut Canvas<'_>, cam: &Cam, t: f32) {
         }
         .normalize();
         let angle = t * ring.spin;
-        let colour = Colour::rgb(ring.colour.0, ring.colour.1, ring.colour.2);
-        let mut prev: Option<(f32, f32)> = None;
-        for i in 0..=64 {
+        // The travelling bulge's position around the ring, in rings (0..1).
+        let pulse_t = (ring.ball_t + t * ring.speed).rem_euclid(1.0);
+        for i in 0..64 {
             let ang = i as f32 / 64.0 * std::f32::consts::TAU;
             let pt = rotate_axis(
                 V3 {
@@ -576,16 +593,26 @@ fn draw_rings(canvas: &mut Canvas<'_>, cam: &Cam, t: f32) {
                 angle,
             )
             .scale(scale);
-            match cam.project(pt) {
-                Some((sx, sy, _)) => {
-                    if let Some((px, py)) = prev {
-                        canvas.line(px, py, sx, sy, colour);
-                    }
-                    prev = Some((sx, sy));
-                }
-                // A point behind the camera breaks the ring; start a fresh segment.
-                None => prev = None,
-            }
+            let Some((sx, sy, z)) = cam.project(pt) else {
+                continue;
+            };
+            // The shader's `flow` (a wave moving along the tube) and `pulse` (the white
+            // bulge), as in login.html's fragment shader; the shortest arc wraps the pulse
+            // cleanly around the seam.
+            let along = ang / std::f32::consts::TAU;
+            let flow = 0.5 + 0.5 * (along * 18.0 - t * 2.6).sin();
+            let dp = (along - pulse_t).rem_euclid(1.0);
+            let dp = dp.min(1.0 - dp);
+            let pulse = (-(dp * 2.0).powi(2)).exp();
+            let base = 0.24 + flow * 0.17;
+            let (r, g, b) = ring.colour;
+            let cr = (f32::from(r) * base + 255.0 * pulse * 0.90).min(255.0) as u8;
+            let cg = (f32::from(g) * base + 255.0 * pulse * 0.90).min(255.0) as u8;
+            let cb = (f32::from(b) * base + 255.0 * pulse * 0.90).min(255.0) as u8;
+            // The tube's screen radius (diameter), with a floor so the thin cables stay
+            // visible; the glow gives the additive-blended cable its soft falloff.
+            let sr = (2.0 * ring.tube_r * 62.0 / z * scale).max(0.9);
+            canvas.glow(sx, sy, sr, (cr, cg, cb), 0.8);
         }
     }
 }
