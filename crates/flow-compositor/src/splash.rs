@@ -39,10 +39,10 @@ pub const FADE_SEC: f32 = 0.5;
 pub const TOTAL_SEC: f32 = DRAW_SEC + SETTLE_SEC + FADE_SEC;
 
 /// Whether the compositor shows this software port at boot. It does NOT (E19 rework): the real
-/// Three.js `design/login.html` is the launch screen now, run by Firefox in the image. This port
-/// stays as pure, tested reference code and for the headless `--splash` frame.
+/// The native boot splash (E19): the compositor itself draws the geomesh as the machine
+/// boots — not Firefox. `design/login.html` remains the design reference this port matches.
 pub fn shown_at_boot() -> bool {
-    false
+    true
 }
 
 /// The brand background the mark sits on (design/README.md: "the depth the OS lives in").
@@ -65,6 +65,12 @@ const STARS: usize = 420;
 const WORDMARK: &[u8] = include_bytes!("logo-wordmark.argb");
 const WORDMARK_W: u32 = 400;
 const WORDMARK_H: u32 = 120;
+
+/// The embedded tagline (`design/logo-tagline.svg`, rasterized by `scripts/rasterize-tagline.py`):
+/// "Never breaks · Heals itself" in the muted green, background keyed out to transparent.
+const TAGLINE: &[u8] = include_bytes!("logo-tagline.argb");
+const TAGLINE_W: u32 = 400;
+const TAGLINE_H: u32 = 30;
 
 /// Whether the splash is still showing, and how far it has faded out.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -378,6 +384,7 @@ pub fn frame(width: u32, height: u32, elapsed: Duration) -> Frame {
     draw_geomesh(&mut canvas, &cam, t);
     draw_settle(&mut canvas, &cam, t);
     draw_wordmark(&mut canvas, t);
+    draw_tagline(&mut canvas, t);
 
     if fade < 1.0 {
         let (_, br, bg, bb) = BRAND_BLACK.channels();
@@ -681,6 +688,44 @@ fn draw_wordmark(canvas: &mut Canvas<'_>, t: f32) {
                 continue;
             }
             let rgb = (WORDMARK[i + 1], WORDMARK[i + 2], WORDMARK[i + 3]);
+            canvas.blend(x, y, rgb, f32::from(a) / 255.0 * alpha);
+        }
+    }
+}
+
+/// Where the tagline's top-left corner goes: centred, its bottom at 92% of the height
+/// (the login.html `.tag` sits at `bottom: 8%`).
+#[must_use]
+fn tagline_origin(width: u32, height: u32) -> (i32, i32) {
+    let ox = (width.saturating_sub(TAGLINE_W) / 2) as i32;
+    let oy = (height as f32 * 0.92) as i32 - TAGLINE_H as i32;
+    (ox, oy)
+}
+
+/// The tagline, rising in below the wordmark once the mesh has settled (the login.html
+/// `.tag` rises at 1.5 s).
+fn draw_tagline(canvas: &mut Canvas<'_>, t: f32) {
+    let alpha = ease_out(((t - 1.5) / 1.8).clamp(0.0, 1.0));
+    if alpha <= 0.0 {
+        return;
+    }
+    let (ox, oy) = tagline_origin(canvas.width, canvas.height);
+    for row in 0..TAGLINE_H {
+        let y = oy + row as i32;
+        if y < 0 || y >= canvas.height as i32 {
+            continue;
+        }
+        for col in 0..TAGLINE_W {
+            let x = ox + col as i32;
+            if x < 0 || x >= canvas.width as i32 {
+                continue;
+            }
+            let i = ((row * TAGLINE_W + col) * 4) as usize;
+            let a = TAGLINE[i];
+            if a == 0 {
+                continue;
+            }
+            let rgb = (TAGLINE[i + 1], TAGLINE[i + 2], TAGLINE[i + 3]);
             canvas.blend(x, y, rgb, f32::from(a) / 255.0 * alpha);
         }
     }
