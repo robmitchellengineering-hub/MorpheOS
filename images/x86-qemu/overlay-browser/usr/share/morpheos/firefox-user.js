@@ -4,7 +4,10 @@
 // manual reload. Never auto-enter offline mode, and clear any residual flag.
 user_pref("network.manage-offline-status", false);
 user_pref("browser.offline", false);
-// WebGL on the reference laptop's NVIDIA chip (nouveau) has no working GL context, so the
-// launch animation cannot render and only flashes. Force WebGL even without hardware GL —
-// with LIBGL_ALWAYS_SOFTWARE=1 (flow-browser.service) Mesa renders it on the CPU.
+// WebGL on the reference laptop's NVIDIA chip (nouveau) renders garbage, so the launch
+// animation only flashes. Force Firefox's whole render path to software (llvmpipe): the
+// env var alone was not enough because Firefox on Wayland loads its own GL. Software
+// WebRender makes WebGL software too.
 user_pref("webgl.force-enabled", true);
+user_pref("gfx.webrender.software", true);
+user_pref("layers.acceleration.disabled", true);
