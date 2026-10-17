@@ -157,6 +157,11 @@ fn announce(device: &mut smithay::reexports::input::Device) {
         if let Err(e) = device.config_accel_set_speed(POINTER_ACCEL_SPEED) {
             eprintln!("flow-compositor: pointer speed on {}: {e:?}", device.name());
         }
+        // Tap-to-click: libinput leaves it OFF by default, and the reference trackpad
+        // (bcm5974) is physical-click-only without it. Unsupported (a mouse) is fine.
+        if let Err(e) = device.config_tap_set_enabled(true) {
+            eprintln!("flow-compositor: tap-to-click on {}: {e:?}", device.name());
+        }
     }
 }
 
