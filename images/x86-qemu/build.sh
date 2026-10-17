@@ -315,7 +315,7 @@ EOF
         # itself when the machine has no network.
         apps=flow-demo-window
         case "$SCENARIO" in
-            plain) apps="flow-browser NetworkManager flow-wifi tailscaled morpheos-tailscale-up" ;;
+            plain) apps="flow-browser NetworkManager flow-wifi morpheos-tailscale-up" ;;
             browser) apps="flow-browser NetworkManager flow-wifi" ;;
             wifi) apps="flow-browser NetworkManager flow-wifi morph-wifi-test-ap" ;;
         esac
@@ -332,6 +332,18 @@ EOF
             ln -sf "/usr/lib/systemd/system/$unit.service" \
                 "$dir/etc/systemd/system/multi-user.target.wants/$unit.service"
         done
+        # tailscaled ships at /lib/systemd/system (the Debian convention), which is
+        # /usr/lib/systemd/system on a usrmerged image. Link to whichever the package
+        # actually created, and fail loudly if neither does — a silently broken link is
+        # exactly how it did not start on the reference laptop.
+        if [ "$SCENARIO" = plain ]; then
+            ts_unit=""
+            for p in "$dir/usr/lib/systemd/system/tailscaled.service" "$dir/lib/systemd/system/tailscaled.service"; do
+                if [ -f "$p" ]; then ts_unit="${p#$dir}"; break; fi
+            done
+            [ -n "$ts_unit" ] || { echo "tailscaled.service is missing from the image: the tailscale package did not install it" >&2; exit 1; }
+            ln -sf "$ts_unit" "$dir/etc/systemd/system/multi-user.target.wants/tailscaled.service"
+        fi
         # The root console lives on VT2 while the shell has VT1 (Ctrl+Alt+F2 reaches it).
         # Started at boot under its own name, so its drop-in applies (logind's on-demand
         # `autovt@tty2` would not pick up a `getty@tty2` drop-in).
