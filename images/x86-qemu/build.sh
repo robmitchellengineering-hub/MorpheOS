@@ -480,6 +480,16 @@ initrd  /morpheos/$slot/initrd.img
 options root=PARTLABEL=root-$slot ro morph.slot=$slot $console panic=5$extra
 EOF
 done
+# The recovery entry (S4): a one-shot target the boot chain arms when a slot is lost.
+mkdir -p "$ESPDIR/morpheos/recovery"
+cp "$(ls "$WORK/root-recovery"/boot/vmlinuz-* | sort | tail -1)" "$ESPDIR/morpheos/recovery/vmlinuz"
+cp "$(ls "$WORK/root-recovery"/boot/initrd.img-* | sort | tail -1)" "$ESPDIR/morpheos/recovery/initrd.img"
+cat > "$ESPDIR/loader/entries/morpheos-recovery.conf" <<EOF
+title   MorpheOS (recovery)
+linux   /morpheos/recovery/vmlinuz
+initrd  /morpheos/recovery/initrd.img
+options root=PARTLABEL=recovery ro morph.recovery=1 systemd.unit=morph-recovery.target $console panic=5
+EOF
 
 # 4. The data partition's starting tree: one user's home, and the store's
 #    folder, private to the service as Strata::open makes it.
@@ -512,15 +522,28 @@ done
 rm -f "$WORK/data.img"
 mkfs.ext4 -q -L data -d "$DATADIR" "$WORK/data.img" "${DATA_MB}M"
 
+# The recovery root (S4): slot A's tree, but it boots into morph-recover, not the shell.
+# Drop every boot service first — recovery runs only morph-recover — then add the recovery
+# units and enable them.
+rm -rf "$WORK/root-recovery"
+cp -a "$WORK/root-a" "$WORK/root-recovery"
+rm -f "$WORK/root-recovery"/etc/systemd/system/multi-user.target.wants/*.service
+cp -a "$HERE/overlay-recovery/." "$WORK/root-recovery/"
+ln -sf /usr/lib/systemd/system/morph-recover.service \
+    "$WORK/root-recovery/etc/systemd/system/multi-user.target.wants/morph-recover.service"
+rm -f "$WORK/recovery.img"
+mkfs.ext4 -q -L recovery -d "$WORK/root-recovery" "$WORK/recovery.img" "${ROOT_MB}M"
+
 DISK="$WORK/disk-$SCENARIO.img"
 rm -f "$DISK"
-truncate -s $((1 + ESP_MB + 2 * ROOT_MB + DATA_MB + 1))M "$DISK"
+truncate -s $((1 + ESP_MB + 2 * ROOT_MB + DATA_MB + ROOT_MB + 1))M "$DISK"
 sfdisk -q "$DISK" <<EOF
 label: gpt
 start=1MiB, size=${ESP_MB}MiB, type=uefi, name=esp
 size=${ROOT_MB}MiB, type=4f68bce3-e8cd-4db1-96e7-fbcaf984b709, name=root-a
 size=${ROOT_MB}MiB, type=4f68bce3-e8cd-4db1-96e7-fbcaf984b709, name=root-b
 size=${DATA_MB}MiB, type=linux, name=data
+size=${ROOT_MB}MiB, type=4f68bce3-e8cd-4db1-96e7-fbcaf984b709, name=recovery
 EOF
 dd if="$WORK/esp.img" of="$DISK" bs=1M seek=1 conv=notrunc status=none
 # conv=sparse: the disk file is freshly truncated (all zeros), so skipping the filesystems' zero
@@ -528,4 +551,5 @@ dd if="$WORK/esp.img" of="$DISK" bs=1M seek=1 conv=notrunc status=none
 dd if="$WORK/root-a.img" of="$DISK" bs=1M seek=$((1 + ESP_MB)) conv=notrunc,sparse status=none
 dd if="$WORK/root-b.img" of="$DISK" bs=1M seek=$((1 + ESP_MB + ROOT_MB)) conv=notrunc,sparse status=none
 dd if="$WORK/data.img" of="$DISK" bs=1M seek=$((1 + ESP_MB + 2 * ROOT_MB)) conv=notrunc,sparse status=none
+dd if="$WORK/recovery.img" of="$DISK" bs=1M seek=$((1 + ESP_MB + 2 * ROOT_MB + DATA_MB)) conv=notrunc,sparse status=none
 echo "$DISK"

@@ -1,0 +1,4 @@
+[Unit]
+Description=MorpheOS recovery (S4)
+Wants=morph-recover.service
+AllowIsolate=yes
