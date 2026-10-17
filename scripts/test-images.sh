@@ -41,6 +41,8 @@ if [ "$WHAT" = scenarios ] || [ "$WHAT" = all ]; then
     sudo images/x86-qemu/test-fallback.sh "$WORK" good unhealthy crash update heal
     step "ransomware against Strata"
     sudo images/x86-qemu/test-ransomware.sh "$WORK"
+    step "the recovery image (S4)"
+    sudo images/x86-qemu/test-recovery.sh "$WORK"
 fi
 if [ "$WHAT" = shell ] || [ "$WHAT" = all ]; then
     step "the shell on a real display, with a keyboard and a mouse"

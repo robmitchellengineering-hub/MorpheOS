@@ -1,10 +1,27 @@
 [Unit]
 Description=Rebuild the slots from the recovery root (S4)
 DefaultDependencies=no
+# morph-recovery.target is the boot target, so nothing pulls the fstab mounts by the usual
+# chain — without this /efi is never mounted and recover cannot read the recovery payload.
+# /efi is mounted with `nofail`, so local-fs.target does not WAIT for it; order after
+# efi.mount explicitly or recover races the mount and finds no /efi/morpheos/recovery/vmlinuz.
+Requires=local-fs.target
 After=local-fs.target
+Requires=efi.mount
+After=efi.mount
 
 [Service]
 Type=oneshot
-# First increment: prove the recovery target boots instead of the shell. The actual
-# rebuild (morph-heal recover) is the next increment; for now just mark the boot and stop.
-ExecStart=/bin/sh -c 'echo "morpheos: recovery booted (factory slot A)" && poweroff -f'
+# The recovery service must say WHY on the serial console: with DefaultDependencies=no its
+# stdout/stderr are not wired to the journal, and a failed recovery is exactly the moment a
+# person is staring at a dark screen.
+StandardOutput=journal+console
+StandardError=journal+console
+# Rebuild both slots from the recovery image, then boot the factory slot. morph-heal
+# recover refuses unless it is running from the recovery system (morph.recovery=1 and /
+# on the recovery partition), so a mis-armed boot cannot overwrite a slot. On success the
+# default becomes slot A; reboot into it. ExecStartPost runs only on success, so a failed
+# recovery stays put instead of reboot-looping (the corrupt-recovery self-check that makes
+# a failure deliberate is the next increment).
+ExecStart=/usr/bin/morph-heal --esp /efi recover
+ExecStartPost=/bin/systemctl reboot

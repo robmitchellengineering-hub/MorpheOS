@@ -1,4 +1,10 @@
 [Unit]
 Description=MorpheOS recovery (S4)
 Wants=morph-recover.service
+# morph-recovery.target is the boot target, so the usual basic.target -> sysinit chain is
+# NOT pulled for it — but recovery still needs udev (for /dev/disk/by-partlabel/esp) and the
+# fstab mounts (local-fs.target). Pull the fundamental targets, NOT multi-user.target: that
+# is what keeps boot-check, the shell and Strata from running in recovery.
+Requires=basic.target
+After=basic.target
 AllowIsolate=yes

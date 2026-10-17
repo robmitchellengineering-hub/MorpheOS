@@ -1,0 +1,59 @@
+#!/bin/sh
+# Recovery test driver (S4, test images only). The harness writes the mode to the ESP
+# before the first boot, and this walks it:
+#   step 0 + mode "arm":  arm the recovery entry the way morph-boot arms a trial
+#                         (`bootctl set-oneshot morpheos-recovery.conf`), step=1, reboot.
+#   step 0 + mode "seed": seed a known set of files under /home and record their checksums
+#                         on the ESP, step=1, power off (the harness then zeroes both slot
+#                         partitions before the next run).
+#   step 1:               the machine has recovered into slot A; power off so the harness
+#                         can read the disk.
+set -eu
+# The recovery driver has its OWN directory. Do not read MORPH_TEST_DIR here: the generic
+# x86 overlay's morph-boot-check drop-in (10-esp.conf) sets MORPH_TEST_DIR=/efi/morph-test
+# for the self-test drivers, and that would point this driver at an empty directory while
+# the harness writes "arm"/"seed" to /efi/morph-recovery-test. The two must name the same
+# place, so pin it.
+dir=/efi/morph-recovery-test
+mkdir -p "$dir"
+step=$(cat "$dir/step" 2>/dev/null || echo 0)
+say() { echo "morph-recovery-test: $*"; }
+say "step $step"
+
+case "$step" in
+    0)
+        mode=$(cat "$dir/mode" 2>/dev/null || echo arm)
+        echo 1 > "$dir/step"; sync
+        case "$mode" in
+            arm)
+                say "arming the recovery entry"
+                bootctl --esp-path=/efi set-oneshot morpheos-recovery.conf
+                say "rebooting into recovery"
+                systemctl reboot
+                ;;
+            seed)
+                say "seeding /home and recording checksums"
+                mkdir -p /home/morph/Documents
+                n=1
+                while [ "$n" -le 24 ]; do
+                    awk -v n="$n" 'BEGIN { for (l=1; l<=40; l++) printf "recovery seed %04d line %02d\n", n, l }' \
+                        > "/home/morph/Documents/seed-$n.txt"
+                    n=$((n+1))
+                done
+                (cd /home/morph/Documents && find . -type f -name 'seed-*' | sort | xargs sha256sum) \
+                    > "$dir/before.sha256"
+                sync
+                say "$(wc -l < "$dir/before.sha256") files seeded"
+                systemctl poweroff
+                ;;
+            *)
+                say "unknown mode '$mode'"
+                exit 1
+                ;;
+        esac
+        ;;
+    *)
+        say "recovered; powering off for the harness"
+        systemctl poweroff
+        ;;
+esac

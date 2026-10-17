@@ -17,8 +17,8 @@
 #   4 data    ext4   shared by both slots, mounted at /persist. /home and the
 #                    Strata store (/var/lib/strata) are bind mounts from it, so
 #                    files and their history survive reboots and updates.
-#   5 recovery ext4 slot A's tree with every boot service dropped: it boots into
-#                    morph-recover, not the shell (S4).
+#   5 recovery ext4 slot A's full tree (the factory image) plus the recovery units: it
+#                    boots into morph-recover, not the shell (S4).
 #
 # Needs root (mmdebstrap), plus: mmdebstrap mtools dosfstools e2fsprogs fdisk
 # systemd-boot-efi, and built morph-boot and strata binaries
@@ -27,7 +27,7 @@ set -euo pipefail
 
 WORK=${1:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
 SCENARIO=${2:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
-case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell|browser|wifi|broken-shell|hung-shell) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
+case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell|browser|wifi|broken-shell|hung-shell|recovery) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
 # `plain` is the one that leaves the CI harness behind and is meant to be booted by a person:
 # the Flow shell drawing the screen and taking the keyboard and mouse, Firefox on a local
 # start page, NetworkManager, and the Wi-Fi picker when there is no network (doc 20, E4 and
@@ -44,6 +44,9 @@ SHELL_UI=0
 case "$SCENARIO" in
     plain|shell|browser|wifi) HARDWARE=1; SHELL_UI=1 ;;
     broken-shell|hung-shell) SHELL_UI=1 ;;
+    # The recovery test (S4): a person-facing image — so it carries the recovery partition —
+    # but no shell, and the recovery-test driver instead (see make_root).
+    recovery) HARDWARE=1 ;;
 esac
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -227,6 +230,23 @@ if [ ! -f "$UPDATE_KEY.pub" ]; then
 fi
 
 # 2. Slot root filesystems: base + MorpheOS overlay (+ test hook, + scenario damage for B).
+# Regenerate the initrd AFTER the overlay has landed: the base's initrd was built by
+# mmdebstrap's kernel postinst, before the overlay — which carries the recovery "way in"
+# boot script (local-bottom/morpheos-recovery) and the bootctl build hook — existed. Without
+# this the hook and bootctl would be missing from the initrd that /boot ships.
+regenerate_initrd() {
+    local dir=$1 mounted=""
+    for m in proc sys dev; do
+        if mount --bind "/$m" "$dir/$m" 2>/dev/null; then mounted="$mounted $dir/$m"; fi
+    done
+    if ! chroot "$dir" update-initramfs -u -k all; then
+        echo "update-initramfs failed in $dir: the recovery hook would not reach the initrd" >&2
+        for m in $mounted; do umount "$m" 2>/dev/null || true; done
+        exit 1
+    fi
+    for m in $mounted; do umount "$m" 2>/dev/null || true; done
+}
+
 make_root() {
     local slot=$1 dir="$WORK/root-$1"
     rm -rf "$dir"
@@ -257,6 +277,11 @@ make_root() {
         if [ -x "$MORPH_HEAL" ]; then install -m 0755 "$MORPH_HEAL" "$dir/usr/bin/morph-heal"; fi
     else
         cp -a "$REPO/images/common/selftest-overlay/." "$dir/"
+    fi
+    if [ "$SCENARIO" = recovery ]; then
+        # The recovery test's own driver: arms the recovery entry, or seeds /home for the
+        # wipe part. It is a test hook, so it runs from boot-check (see the overlay).
+        cp -a "$HERE/overlay-recovery-test/." "$dir/"
     fi
     install -m 0755 "$MORPH_BOOT" "$dir/usr/bin/morph-boot"
     # The updater and the keys it accepts, in the image's own read-only root: an update
@@ -446,14 +471,17 @@ EOF
         ln -sf /usr/lib/systemd/system/morph-broken.service \
             "$dir/etc/systemd/system/multi-user.target.wants/morph-broken.service"
     fi
+    # The overlay (recovery hook + bootctl) must be inside the initrd the ESP ships.
+    regenerate_initrd "$dir"
 }
 make_root a
 make_root b
 
-# The recovery root (S4): slot A's tree, but it boots into morph-recover, not the shell.
-# Built before the ESP so its kernel and initrd can be copied into /morpheos/recovery.
-# Drop every boot service first — recovery runs only morph-recover — then add the
-# recovery units and enable them.
+# The recovery root (S4): slot A's FULL tree — the factory image — so that when recovery
+# rebuilds slot A it is a complete system, plus the recovery units. Built before the ESP so
+# its kernel and initrd can be copied into /morpheos/recovery. The recovery BOOT runs only
+# morph-recover because its entry boots morph-recovery.target (systemd.unit=…), not
+# multi-user.target — the boot services are left IN the tree, they are just never reached.
 #
 # Built only for the person-facing images (HARDWARE=1): the self-test scenarios do not
 # use recovery, and each disk carries a whole extra slot's worth of space, which the CI
@@ -462,10 +490,13 @@ make_root b
 if [ "$HARDWARE" = 1 ]; then
     rm -rf "$WORK/root-recovery"
     cp -a "$WORK/root-a" "$WORK/root-recovery"
-    rm -f "$WORK/root-recovery"/etc/systemd/system/multi-user.target.wants/*.service
+    # The recovery root is slot A's FULL tree — every boot service left in — so that when
+    # recovery rebuilds slot A (morph-heal recover writes this same tree into both slots),
+    # slot A is a complete system that boots and commits, not a husk with the services
+    # stripped. The recovery BOOT does not run those services because its entry boots
+    # morph-recovery.target (systemd.unit=morph-recovery.target), not multi-user.target;
+    # morph-recover.service is Wanted by that target, so it needs no multi-user symlink.
     cp -a "$HERE/overlay-recovery/." "$WORK/root-recovery/"
-    ln -sf /usr/lib/systemd/system/morph-recover.service \
-        "$WORK/root-recovery/etc/systemd/system/multi-user.target.wants/morph-recover.service"
     echo "morpheos-recovery" > "$WORK/root-recovery/etc/hostname"
     # The recovery root must NOT mount /persist (or its /home and Strata bind mounts): those
     # are the slots' read-write data partition, and recovery leaves it untouched. Assert the

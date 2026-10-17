@@ -1,0 +1,70 @@
+#!/bin/sh
+# The recovery "way in" (S4, step 3.3). If the slot's root has no init to run, arm the
+# recovery entry and reboot instead of falling into the initramfs panic shell.
+#
+# WHY LOCAL-BOTTOM. The plan's trap says a wiped partition is caught before the root is
+# awaited and an emptied filesystem after it is mounted. Against this image's actual
+# initramfs-tools (Ubuntu 24.04, 0.142ubuntu25) both cases land here: local-top runs
+# BEFORE the root device is resolved (ROOT is still the raw `PARTLABEL=root-*`), so it
+# cannot inspect the filesystem, and the mount of a wiped ext4 partition FAILS but does
+# NOT panic — the script falls through to local-bottom, where ${rootmnt} is empty, and to
+# the init script's "No init found" panic a few lines later. Checking `${rootmnt}/sbin/init`
+# here catches BOTH a wiped partition (empty rootmnt) and an emptied filesystem (mounted,
+# but no /sbin/init), before either the mount failure or the panic can hang the machine.
+#
+# The recovery entry itself boots with morph.recovery=1 and a real /sbin/init, so this
+# script does nothing there — it must never re-arm recovery, which would be a boot loop.
+
+# Standard initramfs-tools boot-script guard: mkinitramfs sources every boot script with
+# `$1 = prereqs` to build the ORDER file, and at that point `rootmnt` is not set (it is an
+# init-script variable that only exists at boot). Without this the main body below would run
+# during `update-initramfs` and either error on the unset variable or, worse, mount the ESP
+# and arm recovery on the machine that is building the image.
+PREREQ=""
+prereqs() {
+    echo "$PREREQ"
+}
+case $1 in
+    prereqs)
+        prereqs
+        exit 0
+        ;;
+esac
+
+set -u
+
+for w in $(cat /proc/cmdline); do
+    [ "$w" = "morph.recovery=1" ] && exit 0
+done
+
+# The slot is fine: it has the init systemd will be switched to.
+[ -x "${rootmnt}/sbin/init" ] && exit 0
+
+echo "morpheos-initramfs: no ${rootmnt}/sbin/init — arming the recovery entry"
+
+# bootctl set-oneshot writes the LoaderEntryOneShot EFI variable, which needs efivarfs.
+mkdir -p /sys/firmware/efi/efivars
+mount -t efivarfs efivarfs /sys/firmware/efi/efivars 2>/dev/null || true
+
+# The ESP holds loader/entries/morpheos-recovery.conf and is found by its partition label.
+esp=/run/morpheos-esp
+mkdir -p "$esp"
+if ! mount /dev/disk/by-partlabel/esp "$esp" 2>/dev/null; then
+    echo "morpheos-initramfs: could not mount the ESP to arm recovery" >&2
+    exit 1
+fi
+
+bootctl --esp-path="$esp" set-oneshot morpheos-recovery.conf
+rc=$?
+umount "$esp" 2>/dev/null || true
+umount /sys/firmware/efi/efivars 2>/dev/null || true
+
+if [ "$rc" != 0 ]; then
+    echo "morpheos-initramfs: bootctl set-oneshot failed (exit $rc)" >&2
+    exit 1
+fi
+
+echo "morpheos-initramfs: recovery armed; rebooting"
+reboot -f
+# If reboot -f is somehow ignored, let the init script's panic take over rather than loop.
+exit 0

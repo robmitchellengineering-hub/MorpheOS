@@ -103,6 +103,12 @@ jobs:
         run: sudo images/x86-qemu/test-fallback.sh "$RUNNER_TEMP/img" good unhealthy crash update heal
       - name: Ransomware against Strata
         run: sudo images/x86-qemu/test-ransomware.sh "$RUNNER_TEMP/img"
+      # Doc 20, S4: the recovery image. Arm the recovery entry by hand (recovery-boot), then
+      # zero both slot partitions from the harness (wipe) — each time the machine must rebuild
+      # both slots and boot slot A committed. Verdicts read off the disk: boot history,
+      # recovery record, /etc/hostname on both slots, and /home checksums on the data partition.
+      - name: The recovery image (S4)
+        run: sudo images/x86-qemu/test-recovery.sh "$RUNNER_TEMP/img"
       # Doc 20, E3 and E10: the compositor drives a real (virtio-gpu) display and the VM's
       # own keyboard and mouse, and every verdict is a screenshot's pixels. Its system
       # libraries came from setup-linux.sh above.
