@@ -6,11 +6,13 @@ RequiresMountsFor=/persist
 
 [Service]
 Type=oneshot
-# `tailscale up` prints a one-time login URL and waits for it to be approved. No timeout, so
-# that wait is never killed into a failed unit; once logged in it returns at once on every
-# later boot. The URL is teed to /persist/tailscale-login.txt so it can be read from the
-# shell's file view, and pipefail keeps a real failure retried rather than masked by tee.
-ExecStart=/bin/bash -c 'set -o pipefail; /usr/bin/tailscale up --hostname=morpheos-2012 --accept-dns=false 2>&1 | tee /persist/tailscale-login.txt'
+# Join unattended when a pre-auth key is present on the ESP (written at flash time, never in
+# the public image): /efi/morpheos-tailscale.key. With the key it authenticates and returns
+# at once; without it, it prints a one-time login URL and waits for approval (no timeout, so
+# that wait is never killed into a failed unit). The output is teed to /persist/tailscale-
+# login.txt so it can be read from the shell's file view, and pipefail keeps a real failure
+# retried rather than masked by tee.
+ExecStart=/bin/bash -c 'set -o pipefail; AUTH=""; if [ -f /efi/morpheos-tailscale.key ]; then AUTH="--auth-key=$(cat /efi/morpheos-tailscale.key)"; fi; /usr/bin/tailscale up --hostname=morpheos-2012 --accept-dns=false $AUTH 2>&1 | tee /persist/tailscale-login.txt'
 TimeoutStartSec=0
 RemainAfterExit=yes
 Restart=on-failure
