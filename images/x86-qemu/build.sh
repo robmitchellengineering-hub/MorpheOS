@@ -581,7 +581,9 @@ truncate -s $((1 + ESP_MB + 2 * ROOT_MB + DATA_MB + RECOVERY_MB + 1))M "$DISK"
     echo "size=${ROOT_MB}MiB, type=4f68bce3-e8cd-4db1-96e7-fbcaf984b709, name=root-a"
     echo "size=${ROOT_MB}MiB, type=4f68bce3-e8cd-4db1-96e7-fbcaf984b709, name=root-b"
     echo "size=${DATA_MB}MiB, type=linux, name=data"
-    [ "$HARDWARE" = 1 ] && echo "size=${ROOT_MB}MiB, type=4f68bce3-e8cd-4db1-96e7-fbcaf984b709, name=recovery"
+    if [ "$HARDWARE" = 1 ]; then
+        echo "size=${ROOT_MB}MiB, type=4f68bce3-e8cd-4db1-96e7-fbcaf984b709, name=recovery"
+    fi
 } | sfdisk -q "$DISK"
 dd if="$WORK/esp.img" of="$DISK" bs=1M seek=1 conv=notrunc status=none
 # conv=sparse: the disk file is freshly truncated (all zeros), so skipping the filesystems' zero
