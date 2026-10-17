@@ -2,12 +2,9 @@
 // network.manage-offline-status (default true) flips it into "Work Offline" and it does not
 // clear when NetworkManager brings Wi-Fi up — the browser stays on its offline page until a
 // manual reload. Never auto-enter offline mode, and clear any residual flag.
+//
+// NOTE (2026-10-17): no rendering/WebGL prefs belong here. The animation renders exactly as
+// designed; the reference laptop's garbage frames are a GPU-selection bug (nouveau vs the
+// Intel i915), fixed by blacklisting nouveau — not by changing how Firefox draws.
 user_pref("network.manage-offline-status", false);
 user_pref("browser.offline", false);
-// WebGL on the reference laptop's NVIDIA chip (nouveau) renders garbage, so the launch
-// animation only flashes. Force Firefox's whole render path to software (llvmpipe): the
-// env var alone was not enough because Firefox on Wayland loads its own GL. Software
-// WebRender makes WebGL software too.
-user_pref("webgl.force-enabled", true);
-user_pref("gfx.webrender.software", true);
-user_pref("layers.acceleration.disabled", true);

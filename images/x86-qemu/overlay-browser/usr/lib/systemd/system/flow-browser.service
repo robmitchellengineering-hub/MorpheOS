@@ -9,7 +9,7 @@ After=flow-shell.service
 RequiresMountsFor=/home /persist
 
 [Service]
-Environment=XDG_RUNTIME_DIR=/run/flow WAYLAND_DISPLAY=wayland-0 MOZ_ENABLE_WAYLAND=1 LIBGL_ALWAYS_SOFTWARE=1
+Environment=XDG_RUNTIME_DIR=/run/flow WAYLAND_DISPLAY=wayland-0 MOZ_ENABLE_WAYLAND=1
 Environment=HOME=/home/browser NO_AT_BRIDGE=1 XDG_CACHE_HOME=/persist/browser/cache
 # The socket appears when the compositor has bound it; wait for it rather than guessing.
 ExecStartPre=/bin/sh -c 'for i in $(seq 1 300); do [ -S /run/flow/wayland-0 ] && exit 0; sleep 0.1; done; exit 1'
