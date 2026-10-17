@@ -470,9 +470,10 @@ if [ "$HARDWARE" = 1 ]; then
     # The recovery root must NOT mount /persist (or its /home and Strata bind mounts): those
     # are the slots' read-write data partition, and recovery leaves it untouched. Assert the
     # recovery fstab actually replaced the slots' one — a silent no-op would ship a recovery
-    # that mounts the data partition.
-    if grep -q '/persist' "$WORK/root-recovery/etc/fstab"; then
-        echo "the recovery root still mounts /persist — its own fstab did not land" >&2
+    # that mounts the data partition. The marker is the `PARTLABEL=data` mount itself, not
+    # the word "/persist" (which the recovery fstab's own comment also mentions).
+    if grep -q 'PARTLABEL=data' "$WORK/root-recovery/etc/fstab"; then
+        echo "the recovery root still mounts the data partition — its own fstab did not land" >&2
         exit 1
     fi
 fi
