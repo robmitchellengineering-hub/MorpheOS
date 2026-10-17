@@ -17,6 +17,8 @@
 #   4 data    ext4   shared by both slots, mounted at /persist. /home and the
 #                    Strata store (/var/lib/strata) are bind mounts from it, so
 #                    files and their history survive reboots and updates.
+#   5 recovery ext4 slot A's tree with every boot service dropped: it boots into
+#                    morph-recover, not the shell (S4).
 #
 # Needs root (mmdebstrap), plus: mmdebstrap mtools dosfstools e2fsprogs fdisk
 # systemd-boot-efi, and built morph-boot and strata binaries
@@ -448,6 +450,17 @@ EOF
 make_root a
 make_root b
 
+# The recovery root (S4): slot A's tree, but it boots into morph-recover, not the shell.
+# Built before the ESP so its kernel and initrd can be copied into /morpheos/recovery.
+# Drop every boot service first — recovery runs only morph-recover — then add the
+# recovery units and enable them.
+rm -rf "$WORK/root-recovery"
+cp -a "$WORK/root-a" "$WORK/root-recovery"
+rm -f "$WORK/root-recovery"/etc/systemd/system/multi-user.target.wants/*.service
+cp -a "$HERE/overlay-recovery/." "$WORK/root-recovery/"
+ln -sf /usr/lib/systemd/system/morph-recover.service \
+    "$WORK/root-recovery/etc/systemd/system/multi-user.target.wants/morph-recover.service"
+
 # 3. ESP contents.
 ESPDIR="$WORK/esp"
 rm -rf "$ESPDIR"
@@ -482,8 +495,16 @@ EOF
 done
 # The recovery entry (S4): a one-shot target the boot chain arms when a slot is lost.
 mkdir -p "$ESPDIR/morpheos/recovery"
-cp "$(ls "$WORK/root-recovery"/boot/vmlinuz-* | sort | tail -1)" "$ESPDIR/morpheos/recovery/vmlinuz"
-cp "$(ls "$WORK/root-recovery"/boot/initrd.img-* | sort | tail -1)" "$ESPDIR/morpheos/recovery/initrd.img"
+rkernel=$(ls "$WORK/root-recovery"/boot/vmlinuz-* | sort | tail -1)
+rinitrd=$(ls "$WORK/root-recovery"/boot/initrd.img-* | sort | tail -1)
+# A recovery root with no kernel is a recovery image that cannot boot: fail the build,
+# not silently ship an entry whose vmlinuz never made it into the ESP.
+if [ -z "$rkernel" ] || [ -z "$rinitrd" ]; then
+    echo "recovery root has no kernel/initrd in $WORK/root-recovery/boot" >&2
+    exit 1
+fi
+cp "$rkernel" "$ESPDIR/morpheos/recovery/vmlinuz"
+cp "$rinitrd" "$ESPDIR/morpheos/recovery/initrd.img"
 cat > "$ESPDIR/loader/entries/morpheos-recovery.conf" <<EOF
 title   MorpheOS (recovery)
 linux   /morpheos/recovery/vmlinuz
@@ -521,16 +542,9 @@ for slot in a b; do
 done
 rm -f "$WORK/data.img"
 mkfs.ext4 -q -L data -d "$DATADIR" "$WORK/data.img" "${DATA_MB}M"
-
-# The recovery root (S4): slot A's tree, but it boots into morph-recover, not the shell.
-# Drop every boot service first — recovery runs only morph-recover — then add the recovery
-# units and enable them.
-rm -rf "$WORK/root-recovery"
-cp -a "$WORK/root-a" "$WORK/root-recovery"
-rm -f "$WORK/root-recovery"/etc/systemd/system/multi-user.target.wants/*.service
-cp -a "$HERE/overlay-recovery/." "$WORK/root-recovery/"
-ln -sf /usr/lib/systemd/system/morph-recover.service \
-    "$WORK/root-recovery/etc/systemd/system/multi-user.target.wants/morph-recover.service"
+# The recovery root (S4): slot A's tree with every boot service dropped — assembled
+# above, before the ESP, so its kernel/initrd reach /morpheos/recovery. It boots into
+# morph-recover, not the shell.
 rm -f "$WORK/recovery.img"
 mkfs.ext4 -q -L recovery -d "$WORK/root-recovery" "$WORK/recovery.img" "${ROOT_MB}M"
 
