@@ -1,0 +1,22 @@
+[Unit]
+Description=Join the mesh tailnet (Tailscale up)
+Wants=network-online.target
+After=network-online.target tailscaled.service
+RequiresMountsFor=/persist
+
+[Service]
+Type=oneshot
+# `tailscale up` prints a one-time login URL and waits for it to be approved. No timeout, so
+# that wait is never killed into a failed unit; once logged in it returns at once on every
+# later boot. The URL is teed to /persist/tailscale-login.txt so it can be read from the
+# shell's file view, and pipefail keeps a real failure retried rather than masked by tee.
+ExecStart=/bin/bash -c 'set -o pipefail; /usr/bin/tailscale up --hostname=morpheos-2012 --accept-dns=false 2>&1 | tee /persist/tailscale-login.txt'
+TimeoutStartSec=0
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

@@ -113,11 +113,14 @@ fi
 # the image's own sources.list at that copy.
 MOZILLA_KEY_URL=https://packages.mozilla.org/apt/repo-signing-key.gpg
 MOZILLA_FPR=35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3
+# Tailscale (the mesh's reach layer): shipped from its own APT repository. The key file is
+# already de-armored (".noarmor.gpg"), so it is used directly as a keyring — no `gpg --dearmor`.
+TAILSCALE_KEY_URL=https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg
 # NetworkManager (A6) with what Wi-Fi needs (wpasupplicant, a "recommends" we would skip) and
 # systemd-resolved for DNS: the browser has to reach the network (E5).
 # Mesa, because Firefox needs GL to render (WebRender), and the base carries none: with no
 # GL it comes up blank — "no Firefox" on a screen that otherwise works (E6, MacBookPro9,1).
-BROWSER_PKGS="$BASE_PKGS,firefox,fonts-dejavu-core,network-manager,wpasupplicant,systemd-resolved,libgl1-mesa-dri,libegl-mesa0,libgbm1,libglx-mesa0,pipewire,pipewire-pulse,wireplumber,alsa-ucm-conf"
+BROWSER_PKGS="$BASE_PKGS,firefox,fonts-dejavu-core,network-manager,wpasupplicant,systemd-resolved,libgl1-mesa-dri,libegl-mesa0,libgbm1,libglx-mesa0,pipewire,pipewire-pulse,wireplumber,alsa-ucm-conf,tailscale"
 BROWSER_KEY="$BROWSER_PKGS,(linux-modules-extra)"
 if [ "$SCENARIO" = browser ] || [ "$SCENARIO" = plain ]; then
     BROWSER_BASE="$WORK/rootfs-browser"
@@ -132,16 +135,20 @@ if [ "$SCENARIO" = browser ] || [ "$SCENARIO" = plain ]; then
         fi
         keyring="$WORK/packages.mozilla.org.gpg"
         gpg --dearmor < "$key" > "$keyring"
+        ts_key="$WORK/tailscale-keyring.gpg"
+        curl -fsSL "$TAILSCALE_KEY_URL" -o "$ts_key"
         mmdebstrap --variant=apt \
             --include="$BROWSER_PKGS" \
             --aptopt='APT::Install-Recommends "false"' \
             --customize-hook="mkdir -p \"\$1/etc/apt/keyrings\" && cp '$keyring' \"\$1/etc/apt/keyrings/packages.mozilla.org.gpg\" && sed -i 's|signed-by=$keyring|signed-by=/etc/apt/keyrings/packages.mozilla.org.gpg|' \"\$1/etc/apt/sources.list\"" \
+            --customize-hook="mkdir -p \"\$1/etc/apt/keyrings\" && cp '$ts_key' \"\$1/etc/apt/keyrings/tailscale-keyring.gpg\" && sed -i 's|signed-by=$ts_key|signed-by=/etc/apt/keyrings/tailscale-keyring.gpg|' \"\$1/etc/apt/sources.list\"" \
             --customize-hook="$MODULES_EXTRA_HOOK" \
             --setup-hook='mkdir -p "$1/etc/apt/preferences.d" && printf "Package: *\nPin: origin packages.mozilla.org\nPin-Priority: 1000\n" > "$1/etc/apt/preferences.d/mozilla"' \
             "$SUITE" "$BROWSER_BASE" \
             "deb $MIRROR $SUITE main universe multiverse" \
             "deb $MIRROR $SUITE-updates main universe multiverse" \
-            "deb [signed-by=$keyring] https://packages.mozilla.org/apt mozilla main"
+            "deb [signed-by=$keyring] https://packages.mozilla.org/apt mozilla main" \
+            "deb [signed-by=$ts_key] https://pkgs.tailscale.com/stable/ubuntu noble main"
         # Say which Firefox went in, and prove it is Mozilla's and not the snap stub.
         version=$(chroot "$BROWSER_BASE" dpkg-query -W -f='${Version}' firefox)
         [ -x "$BROWSER_BASE/usr/lib/firefox/firefox" ] || {
@@ -308,7 +315,8 @@ EOF
         # itself when the machine has no network.
         apps=flow-demo-window
         case "$SCENARIO" in
-            plain|browser) apps="flow-browser NetworkManager flow-wifi" ;;
+            plain) apps="flow-browser NetworkManager flow-wifi tailscaled morpheos-tailscale-up" ;;
+            browser) apps="flow-browser NetworkManager flow-wifi" ;;
             wifi) apps="flow-browser NetworkManager flow-wifi morph-wifi-test-ap" ;;
         esac
         case "$SCENARIO" in plain|browser|wifi) cp -a "$HERE/overlay-network/." "$dir/" ;; esac
