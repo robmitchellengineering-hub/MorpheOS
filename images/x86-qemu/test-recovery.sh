@@ -20,7 +20,7 @@ WORK=${1:?usage: test-recovery.sh <workdir>}
 HERE=$(cd "$(dirname "$0")" && pwd)
 TYPE=4f68bce3-e8cd-4db1-96e7-fbcaf984b709
 
-esp() { mtype -i "$disk@@1M" "::/$1" 2>/dev/null; }
+esp() { mtype -i "$disk@@1M" "::/$1" 2>/dev/null || true; }
 esp_write() { # esp_write <src-file> <dst-path>
     mmd -i "$disk@@1M" "::/morph-recovery-test" 2>/dev/null || true
     mcopy -i "$disk@@1M" "$1" "::/morph-recovery-test/$2"
