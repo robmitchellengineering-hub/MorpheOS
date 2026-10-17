@@ -15,6 +15,22 @@
 # The recovery entry itself boots with morph.recovery=1 and a real /sbin/init, so this
 # script does nothing there — it must never re-arm recovery, which would be a boot loop.
 
+# Standard initramfs-tools boot-script guard: mkinitramfs sources every boot script with
+# `$1 = prereqs` to build the ORDER file, and at that point `rootmnt` is not set (it is an
+# init-script variable that only exists at boot). Without this the main body below would run
+# during `update-initramfs` and either error on the unset variable or, worse, mount the ESP
+# and arm recovery on the machine that is building the image.
+PREREQ=""
+prereqs() {
+    echo "$PREREQ"
+}
+case $1 in
+    prereqs)
+        prereqs
+        exit 0
+        ;;
+esac
+
 set -u
 
 for w in $(cat /proc/cmdline); do

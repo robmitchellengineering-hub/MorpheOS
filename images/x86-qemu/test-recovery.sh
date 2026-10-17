@@ -28,7 +28,8 @@ esp_write() { # esp_write <src-file> <dst-path>
 
 # A slot partition's /etc/hostname, read off the disk (debugfs finds it = a valid filesystem).
 hostname_present() { # hostname_present <root-a|root-b>
-    local name="$1" img="$WORK/slot-$name.img"
+    local name="$1"
+    local img="$WORK/slot-$name.img"
     read -r start size < <(sfdisk -d "$disk" | sed -nE "s/.*start= *([0-9]+), size= *([0-9]+),.*name=\"$name\".*/\1 \2/p")
     [ -n "$start" ] || { echo "no $name partition on $disk" >&2; return 1; }
     dd if="$disk" of="$img" bs=512 skip="$start" count="$size" status=none
