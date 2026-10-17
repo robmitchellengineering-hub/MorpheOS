@@ -66,7 +66,6 @@ impl Machine {
             report: base.join("esp/morph-boot/repairs.json"),
             recovery_record: base.join("esp/morph-boot/recovery.json"),
             recovery_dir: base.join("esp/morpheos/recovery"),
-            trusted_keys: base.join("update-keys"),
             stage: base.join("stage"),
             release_file,
         };

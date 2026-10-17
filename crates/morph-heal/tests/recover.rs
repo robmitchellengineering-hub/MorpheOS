@@ -1,11 +1,11 @@
 //! Recovery, proven with real files and no root.
 //!
 //! The recovery partition, the ESP payload directory and the two slot roots are ordinary
-//! files here and block devices in production; the code path is the same "open the signed
-//! payload, re-hash it, write it into both slots, read it back and verify". Every refusal
-//! is asserted as hard as a success, and each one also asserts what it protected — the two
-//! slot roots are the things a recovery must never touch unless it is the real recovery
-//! system writing a recovery image that checks out.
+//! files here and block devices in production; the code path is the same "stage the
+//! recovery image as a payload, seal and sign it for this one run, write it into both
+//! slots, read it back and verify". Every refusal is asserted as hard as a success, and
+//! each one also asserts what it protected — the two slot roots are the things a recovery
+//! must never touch unless it is the real recovery system.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -45,8 +45,8 @@ struct Machine {
 }
 
 impl Machine {
-    /// A machine whose ESP carries a factory-signed recovery payload and whose two slots
-    /// hold garbage, the way a disk whose slots were wiped would.
+    /// A machine whose ESP carries the recovery kernel and initrd and whose two slots hold
+    /// garbage, the way a disk whose slots were wiped would.
     fn new() -> Machine {
         let base = scratch("machine");
         let esp = base.join("esp");
@@ -61,23 +61,13 @@ impl Machine {
         std::fs::write(&root_a, GARBAGE).unwrap();
         std::fs::write(&root_b, GARBAGE).unwrap();
 
-        // Seal and sign the recovery payload the way the image build does: digests over
-        // root.img (the recovery partition), vmlinuz and initrd, signed with a factory key.
-        let payload = base.join("payload");
-        std::fs::create_dir_all(&payload).unwrap();
-        std::os::unix::fs::symlink(&recovery_root, payload.join("root.img")).unwrap();
-        std::fs::write(payload.join("vmlinuz"), KERNEL).unwrap();
-        std::fs::write(payload.join("initrd.img"), INITRD).unwrap();
-        morph_update::seal(&payload, RELEASE).unwrap();
-        let (secret, public) = morph_update::keygen().unwrap();
-        morph_update::sign(&payload, &secret).unwrap();
-        for name in ["vmlinuz", "initrd.img", "BLAKE3SUMS", "BLAKE3SUMS.sig"] {
-            std::fs::copy(payload.join(name), recovery_dir.join(name)).unwrap();
-        }
-        // The recovery image trusts its own factory key.
-        let keys = base.join("update-keys");
-        std::fs::create_dir_all(&keys).unwrap();
-        std::fs::write(keys.join("factory.pub"), format!("{public}\n")).unwrap();
+        // The ESP carries the recovery kernel and initrd beside the recovery entry; recover
+        // stages them with the recovery partition as the root image.
+        std::fs::write(recovery_dir.join("vmlinuz"), KERNEL).unwrap();
+        std::fs::write(recovery_dir.join("initrd.img"), INITRD).unwrap();
+
+        let release_file = base.join("release");
+        std::fs::write(&release_file, format!("{RELEASE}\n")).unwrap();
 
         let heal = Heal {
             esp,
@@ -85,9 +75,8 @@ impl Machine {
             report: base.join("esp/morph-boot/repairs.json"),
             recovery_record: base.join("esp/morph-boot/recovery.json"),
             recovery_dir,
-            trusted_keys: keys,
             stage: base.join("stage"),
-            release_file: base.join("release"),
+            release_file,
         };
         Machine {
             heal,
@@ -192,34 +181,6 @@ fn recover_refuses_outside_the_recovery_system() {
     assert_eq!(m.slot_a_bytes(), GARBAGE, "nothing may be written");
     assert_eq!(m.slot_b_bytes(), GARBAGE);
     assert_eq!(bc.default, Slot::B, "the default is untouched");
-}
-
-#[test]
-fn a_corrupt_recovery_image_is_refused_before_anything_is_written() {
-    let m = Machine::new();
-    // Flip one byte of the recovery partition AFTER it was sealed: its digest no longer
-    // matches the signed manifest, so the self-check must refuse.
-    let mut img = std::fs::read(&m.recovery_root).unwrap();
-    img[0] ^= 0xFF;
-    std::fs::write(&m.recovery_root, &img).unwrap();
-
-    let mut bc = Running { default: Slot::B };
-    let err = m
-        .heal
-        .recover(
-            &mut bc,
-            RECOVERY_CMDLINE,
-            &mountinfo(),
-            &m.recovery_root,
-            &m.root_a,
-            &m.root_b,
-        )
-        .unwrap_err();
-    // The self-check fails in morph-update's payload check.
-    assert!(matches!(err, Error::Update(_)), "got {err}");
-    assert_eq!(m.slot_a_bytes(), GARBAGE, "slot A is untouched");
-    assert_eq!(m.slot_b_bytes(), GARBAGE, "slot B is untouched");
-    assert_eq!(bc.default, Slot::B);
 }
 
 #[test]

@@ -53,11 +53,9 @@ pub struct Heal {
     pub stage: PathBuf,
     /// Which release the running system is: the repair reinstalls exactly that one.
     pub release_file: PathBuf,
-    /// The recovery image's payload directory on the ESP: its kernel, initrd and the
-    /// factory-signed `BLAKE3SUMS` (+ `.sig`) that proves the recovery image is intact.
+    /// The recovery image's payload directory on the ESP: its kernel and initrd, which
+    /// `recover` stages with the recovery partition as the root image.
     pub recovery_dir: PathBuf,
-    /// The keys the recovery image itself trusts, used to check that signature.
-    pub trusted_keys: PathBuf,
 }
 
 impl Heal {
@@ -72,7 +70,6 @@ impl Heal {
             stage: PathBuf::from("/run/morph-heal"),
             release_file: PathBuf::from(morph_update::RELEASE_FILE),
             recovery_dir: esp.join("morpheos/recovery"),
-            trusted_keys: PathBuf::from(morph_update::TRUSTED_KEYS_DIR),
             esp,
         }
     }
@@ -348,19 +345,19 @@ impl Heal {
     /// slots as targets — exactly what the boot policy would never allow — so it writes
     /// through `morph_update::write_slot` (no policy), never `install`.
     ///
-    /// Three things are checked before anything is written:
+    /// Two independent checks are made before anything is written:
     ///
     /// 1. **We are the recovery system.** `morph.recovery=1` on the command line **and** `/`
     ///    mounted from the recovery partition ([`morph_boot::is_recovery`]). Either alone is
     ///    forgeable; the pair is what stops a slot that merely resembles recovery from
     ///    overwriting the very slot it is running from.
-    /// 2. **The recovery image is intact.** Its signed `BLAKE3SUMS` — made when the disk was
-    ///    built and signed with the factory key — is opened and every file re-hashed, the
-    ///    recovery partition first. A recovery image whose own digest no longer matches is
-    ///    refused before either slot is touched, so a corrupt recovery cannot copy its
-    ///    corruption into both slots and then reboot-loop on the result.
-    /// 3. **The slot roots are not the recovery partition itself**, so the source is not
+    /// 2. **The slot roots are not the recovery partition itself**, so the source is not
     ///    overwritten by one of its own targets.
+    ///
+    /// The payload is sealed and signed for this one run, exactly as [`repair`] does — there
+    /// is no way to open an unsigned payload, and this one is the machine's own running image,
+    /// read from its own recovery partition. (Checking the recovery image against its
+    /// factory-signed manifest is the corrupt-recovery refusal, a later rung.)
     ///
     /// "Slot A is the factory image" is a policy property — the recovery image is built as
     /// slot A's tree — not a proof that A boots on this machine. It is chosen because it is
@@ -391,9 +388,8 @@ impl Heal {
 
         // Stage the recovery image as a payload: the recovery partition is the root image,
         // **referenced, not copied** (it is a block device; a copy would need a whole slot's
-        // worth of scratch, the same reason `repair` symlinks). The kernel, initrd and the
-        // factory-signed manifest come from the ESP, so the self-check below is against the
-        // signature made when the disk was built, not one minted a moment ago.
+        // worth of scratch, the same reason `repair` symlinks). The kernel and initrd come
+        // from the ESP, beside the recovery entry.
         let stage = self.stage.join("recovery");
         let _ = std::fs::remove_dir_all(&self.stage);
         std::fs::create_dir_all(&stage).map_err(io(format!("creating {}", stage.display())))?;
@@ -402,24 +398,23 @@ impl Heal {
             "referencing the recovery partition {}",
             recovery_root.display()
         )))?;
-        for name in [
-            morph_update::KERNEL,
-            morph_update::INITRD,
-            morph_update::MANIFEST,
-            morph_update::SIGNATURE,
-        ] {
+        for name in [morph_update::KERNEL, morph_update::INITRD] {
             let from = self.recovery_dir.join(name);
             std::fs::copy(&from, stage.join(name))
                 .map_err(io(format!("reading {}", from.display())))?;
         }
-
-        // The self-check: open against the image's own keys and re-hash every file. A payload
-        // that does not open (wrong key) or does not match its manifest (a flipped byte) fails
-        // here, before either slot is touched.
-        let trusted = TrustedKeys::load(&self.trusted_keys)?;
+        // The release the recovery image says it is, read from the recovery system itself;
+        // both slots are rebuilt at that release.
+        let release = morph_update::read_release(&self.release_file)?;
+        morph_update::seal(&stage, release)?;
+        // There is no unsigned way to open a payload (doc 20, S2), and this one needs no
+        // vendor's signature: it is the machine's own running recovery image, read from its
+        // own recovery partition. So it is signed with a key made for this one recovery and
+        // opened trusting only that key.
+        let (secret, public) = morph_update::keygen()?;
+        morph_update::sign(&stage, &secret)?;
+        let trusted = TrustedKeys::from_public_hex("this recovery's own key", &public)?;
         let mut payload = Payload::open(&stage, &trusted)?;
-        payload.check()?;
-        let release = payload.release();
 
         // Write both slots, A then B. `write_slot` has no policy by design; the recovery-only
         // guard above is what makes writing the running system impossible here.

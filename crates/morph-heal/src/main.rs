@@ -25,7 +25,6 @@ options:
   --report PATH              where repairs are recorded (default <esp>/morph-boot/repairs.json)
   --recovery-record PATH     where a recovery is recorded (default <esp>/morph-boot/recovery.json)
   --recovery-dir PATH        the recovery payload on the ESP (default <esp>/morpheos/recovery)
-  --trusted-keys PATH        keys that sign the recovery image (default /usr/share/morpheos/update-keys)
   --stage PATH               scratch space for the image being assembled (default /run/morph-heal)
   --release-file PATH        which release is running (default /usr/lib/morpheos/release)
   --root-running PATH        the running slot's root (default /dev/disk/by-partlabel/root-<slot>)
@@ -46,7 +45,6 @@ struct Opts {
     report: Option<PathBuf>,
     recovery_record: Option<PathBuf>,
     recovery_dir: Option<PathBuf>,
-    trusted_keys: Option<PathBuf>,
     stage: Option<PathBuf>,
     release_file: Option<PathBuf>,
     root_running: Option<PathBuf>,
@@ -67,7 +65,6 @@ impl Default for Opts {
             report: None,
             recovery_record: None,
             recovery_dir: None,
-            trusted_keys: None,
             stage: None,
             release_file: None,
             root_running: None,
@@ -96,7 +93,6 @@ fn parse(args: Vec<String>) -> Option<Opts> {
             "--report" => o.report = Some(it.next()?.into()),
             "--recovery-record" => o.recovery_record = Some(it.next()?.into()),
             "--recovery-dir" => o.recovery_dir = Some(it.next()?.into()),
-            "--trusted-keys" => o.trusted_keys = Some(it.next()?.into()),
             "--stage" => o.stage = Some(it.next()?.into()),
             "--release-file" => o.release_file = Some(it.next()?.into()),
             "--root-running" => o.root_running = Some(it.next()?.into()),
@@ -136,9 +132,6 @@ fn run(o: &Opts) -> Result<(), String> {
     }
     if let Some(r) = &o.recovery_dir {
         heal.recovery_dir = r.clone();
-    }
-    if let Some(t) = &o.trusted_keys {
-        heal.trusted_keys = t.clone();
     }
     if let Some(r) = &o.release_file {
         heal.release_file = r.clone();
