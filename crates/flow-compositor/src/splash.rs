@@ -609,9 +609,10 @@ fn draw_rings(canvas: &mut Canvas<'_>, cam: &Cam, t: f32) {
             let cr = (f32::from(r) * base + 255.0 * pulse * 0.90).min(255.0) as u8;
             let cg = (f32::from(g) * base + 255.0 * pulse * 0.90).min(255.0) as u8;
             let cb = (f32::from(b) * base + 255.0 * pulse * 0.90).min(255.0) as u8;
-            // The tube's screen radius (diameter), with a floor so the thin cables stay
-            // visible; the glow gives the additive-blended cable its soft falloff.
-            let sr = (2.0 * ring.tube_r * 62.0 / z * scale).max(0.9);
+            // The tube's screen radius (its cross-section, projected by the camera's focal
+            // length), with a floor so the thin cables stay visible; the glow gives the
+            // additive-blended cable its soft falloff.
+            let sr = (ring.tube_r * cam.focal / z * scale).max(1.2);
             canvas.glow(sx, sy, sr, (cr, cg, cb), 0.8);
         }
     }
