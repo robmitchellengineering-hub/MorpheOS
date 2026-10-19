@@ -1,0 +1,109 @@
+{
+  "name": "morpheos",
+  "title": "MorpheOS — today",
+  "tag": "Never breaks · Heals itself",
+  "mark": "MO",
+  "lede": "An operating system built on one promise — <em>never breaks, and heals itself</em> — whose unbreakable wedge is <b>already real in a virtual machine</b>: measured, tested, and now graduating onto a real laptop.",
+  "sub": "This page is the results in one read — what is real and measured, and what is honestly not built yet.",
+  "shots": [
+    {
+      "file": "shot1.png",
+      "name": "Landed",
+      "cap": "the geomesh resolves to matrix green, wordmark + tagline (t=6.0s)"
+    },
+    {
+      "file": "shot2.png",
+      "name": "Assembling",
+      "cap": "the mesh draws itself edge by edge, phasing colours (t=2.0s)"
+    },
+    {
+      "file": "shot3.png",
+      "name": "First light",
+      "cap": "early colour phase, rings orbiting (t=0.5s)"
+    }
+  ],
+  "nums": [
+    {
+      "value": "~6–7 s",
+      "label": "Write a new system image into a slot and verify it by reading it back",
+      "sub": "core of heal rung H4 — measured on the x86 test VM, 2026-10-11"
+    },
+    {
+      "value": "~2.4 s",
+      "label": "A boot reaches its health decision",
+      "sub": "measured on the x86 test VM, 2026-10-11"
+    },
+    {
+      "value": "0",
+      "label": "Wrong verdicts in the A/B trial-boot suite",
+      "sub": "good / unhealthy / crash scenarios all assert the exact expected boot sequence"
+    }
+  ],
+  "real": [
+    {
+      "what": "A/B boot — try once, commit on health, fall back automatically",
+      "evidence": "good / unhealthy / crash scenarios, incl. a panicking kernel rolling back by boot counting"
+    },
+    {
+      "what": "Update — write & verify a new system into the spare slot",
+      "evidence": "update scenario: slot B boots the payload's marker"
+    },
+    {
+      "what": "Heal — rebuild the failed slot from the running system",
+      "evidence": "heal scenario (38 s), no 1.2 GiB copy, never the running slot"
+    },
+    {
+      "what": "Transactions that roll themselves back",
+      "evidence": "arm → apply → health-check → commit/rollback; a dead process rolls back, not hangs"
+    },
+    {
+      "what": "Signed updates",
+      "evidence": "payload opens only if a key in the image signed it (unsigned / wrong key / tampered refused)"
+    },
+    {
+      "what": "Strata — versioned storage, rewind, ransomware detection",
+      "evidence": "test-ransomware.sh: 24 files back byte-for-byte"
+    },
+    {
+      "what": "Flow shell — a real Wayland compositor",
+      "evidence": "move / resize / fullscreen / minimize / Alt+Tab on real client paths"
+    },
+    {
+      "what": "Firefox on the shell, a page read off the screen",
+      "evidence": "test-browser.sh reads the page's colours inside the VM"
+    },
+    {
+      "what": "Wi-Fi picker — a WPA2 join typed on the keyboard",
+      "evidence": "test-wifi.sh: wrong password refused, right one joins, DHCP logged"
+    },
+    {
+      "what": "Recovery image, policy & the initramfs \"way in\" (S4)",
+      "evidence": "merged #118–#120, 2026-10-18"
+    },
+    {
+      "what": "Bootable x86 USB image · Pi 5 image",
+      "evidence": "x86 boots in QEMU; Pi builds and is read back (never booted)"
+    }
+  ],
+  "not_built": [
+    {
+      "what": "Booted on real hardware",
+      "status": "never, yet — the 2012 MacBook Pro native install is happening now"
+    },
+    {
+      "what": "H4's immutable recovery image, H5 Phoenix restore",
+      "status": "S4 recovery is in progress; Phoenix not started"
+    },
+    {
+      "what": "morphd (PID 1)",
+      "status": "its transaction half exists; the daemon does not"
+    },
+    {
+      "what": "Capsules (Wine/Android), the AI layer, the mesh",
+      "status": "documents, not code — deliberately re-sequenced behind the express road"
+    }
+  ],
+  "callout": "The boundary that matters: \"VM-proven\" means a CI job boots it and reads the verdict off the disk. It does not mean it has run on a person's machine. Say \"builds\" or \"VM-proven\" — never \"works\" — until a person has sat at it.",
+  "where": "ADR 0014 (\"express road first\") re-sequenced the plan around one exit: a general user boots a laptop, gets online, browses, and cannot make the machine unbootable. The hard part — the unbreakable wedge — is already built and VM-proven; what's left is finishing the shell, then proving the whole stack on one real laptop. Every other dream (capsules, the AI layer, the mesh) stays in a widening backlog — none dropped, all gated behind a machine a person can actually use.",
+  "foot": "Source: github.com/robmitchellengineering-hub/MorpheOS · main 8b31544 (2026-10-18) · Numbers: x86 test VM, 2026-10-11, GitHub Actions run 38114088235 · HANDOFF.md \"Where things stand\" table."
+}
