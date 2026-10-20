@@ -2905,3 +2905,33 @@ any particular vendor or layer. Open question: can a layer be added to a finishe
 image be rebuilt from the pinned commit? ADR 0006 applies layers at build time, so the second is
 the likelier. The signing key for a vendor's own updates is the vendor's (A4 and doc 20 S2 cover
 MorpheOS's), so this task needs Rob's decision on the security model before it is opened.
+
+### W8 · Run a real model on the device, and pooled compute across the mesh · proposed
+**What:** a route Rob asked to record (2026-10-20), not approved work. Two halves, both from the
+pacland research repo (`docs/colibri-evaluation.md`, `docs/physics-compute-roadmap.md`):
+
+1. **A frontier model embedded in the OS** — [Colibri](https://github.com/JustVugg/colibri), a
+   pure-C MoE inference engine that streams expert weights from disk, runs a 744B model on ~25 GB
+   RAM with no GPU. Distinct from W3, which is a small intent-bar model; this is "the OS carries
+   its own real model".
+2. **Pooled compute over the device mesh** — cheap self-contained devices (gaming laptops /
+   handhelds) as compute nodes. The flux-vacua sampling in pacland is embarrassingly parallel and
+   CPU-only, so a pool of cheap nodes is a real alternative to a rented GPU for that workload.
+
+**Done when:** Rob orders it; until then it is a pointer, not work.
+
+**Notes:** the AI layer is doc 06, the mesh is doc 07. Whether this belongs in MorpheOS at all —
+vs staying in pacland / harness-mesh — is part of what opening it would decide.
+
+**Model shortlist to test (Rob, 2026-10-20) — on a 16 GB device, e.g. the Legion Go:**
+
+- **Qwen3.6-35B-A3B** — general OS assistant (thinking + tools); 3B active, ~6–10 tok/s,
+  fits (10 GB floor).
+- **Qwen3-Coder-30B-A3B** — tool calls / actions, no thinking; ~8.5–9.6 tok/s, fits (8 GB floor).
+- **Laya / GLiNER2.5-Decide** (Colibri "System One" decision models) — the intent-bar "which
+  action" path: a calibrated probability in ~250 ms, not a sentence. Matches doc 21's
+  "deterministic matchers, then a 3B model".
+- **Upgrade when a 32 GB device exists:** Qwen3.8-27B **dense** (27B active vs the 35B-A3B's 3B
+  active; ~3.4 tok/s int4, 20 GB) and Qwen3.8-Flash-Next (vision + tools, 24–32 GB).
+
+Test all four on the Legion Go and compare, rather than committing to one.
