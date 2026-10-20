@@ -16,10 +16,12 @@
 //     through CI. The base plan is what counts because the pull request that finishes a task
 //     marks it done: judged against its own copy, the branch would name a done task and be
 //     refused for doing the job;
-//   * on ANY branch, a change that is Rob's to make (a task leaving `proposed`, a task
-//     marked `parallel`, a new task that is not `proposed`, a **Waiting on Rob:** line
-//     removed) carries his words: a line `Rob on <ID>: ...` in the branch's own log file,
-//     docs/log/<date>-<branch>.md. A plan/ pull request cannot open a task by itself.
+//   * on ANY branch, a change that needs a recorded decision carries a line in the branch's
+//     own log file, docs/log/<date>-<branch>.md:
+//       - `DSH on <ID>: ...` (or `Rob on <ID>: ...`) for the agent opening a task — a task
+//         leaving `proposed`, or a new task that is not `proposed`;
+//       - `Rob on <ID>: ...` alone for the calls that stay Rob's — a task marked `parallel`,
+//         or a **Waiting on Rob:** line removed.
 //
 // Run:  node scripts/verify-plan.mjs [--branch NAME [--base FILE]]
 //       node scripts/verify-plan.mjs --self-test     (proves each rule can fail)
@@ -144,41 +146,50 @@ export function robLines(task) {
   };
 }
 
-/** The task IDs a log file records Rob's words on: lines `Rob on <ID>: ...`. */
+/** The task IDs a log file records a decision on: `Rob on <ID>: ...` (his words) or
+ *  `DSH on <ID>: ...` (the agent's own, so the decision is never anonymous). */
+export function decisionWords(logText) {
+  return new Set([...logText.matchAll(/^\s*(?:[-*]\s+)?(?:Rob|DSH) on ([A-Z]\d+)\s*:\s*\S/gm)].map((m) => m[1]));
+}
+
+/** Rob's own words only — for `parallel` and freeing a **Waiting on Rob:** line, the agent
+ *  cannot stand in for him. */
 export function robWords(logText) {
   return new Set([...logText.matchAll(/^\s*(?:[-*]\s+)?Rob on ([A-Z]\d+)\s*:\s*\S/gm)].map((m) => m[1]));
 }
 
-/** The changes from the base plan that only Rob makes, without his words in `words`. */
-export function robGate(text, baseText, words = new Set()) {
+/** The changes from the base plan that need a recorded decision, and the ones that need
+ *  Rob's own words. `decisions` = IDs with a `Rob on` or `DSH on` line (the agent may open
+ *  a task); `rob` = IDs with a `Rob on` line only (`parallel`, **Waiting on Rob:**). */
+export function robGate(text, baseText, decisions = new Set(), rob = new Set()) {
   const now = new Map(parse(text).map((t) => [t.id, t]));
   const base = new Map(parse(baseText).map((t) => [t.id, t]));
   const out = [];
   for (const [id, t] of now) {
-    if (words.has(id)) continue;
     const b = base.get(id);
     if (!b) {
-      if (t.status !== 'proposed') out.push(`${id} is new and ${t.status} (a new task is proposed: only Rob opens it)`);
+      if (t.status !== 'proposed' && !decisions.has(id)) out.push(`${id} is new and ${t.status} (a new task is proposed: open it with a "DSH on ${id}: ..." line in the log)`);
       continue;
     }
-    if (b.status === 'proposed' && t.status !== 'proposed') out.push(`${id} went from proposed to ${t.status}`);
-    if (!b.parallel && t.parallel) out.push(`${id} is newly marked parallel`);
-    if (robLines(b).waiting.length > robLines(t).waiting.length) out.push(`${id} lost its **Waiting on Rob:** line`);
+    if (b.status === 'proposed' && t.status !== 'proposed' && !decisions.has(id)) out.push(`${id} went from proposed to ${t.status} without a decision line`);
+    if (!b.parallel && t.parallel && !rob.has(id)) out.push(`${id} is newly marked parallel`);
+    if (robLines(b).waiting.length > robLines(t).waiting.length && !rob.has(id)) out.push(`${id} lost its **Waiting on Rob:** line`);
   }
   if (out.length === 0) return null;
-  return `these changes are Rob's to make: ${out.join('; ')}. When he has made them, record his words in this branch's log file, one line each: "Rob on <ID>: <what he said, and when>" (docs/log/README.md)`;
+  return `these changes need a recorded decision in the branch's log file: ${out.join('; ')}. A task the agent opens carries "DSH on <ID>: <reason, when>"; parallel and **Waiting on Rob:** carry "Rob on <ID>: <what he said, and when>" (docs/log/README.md)`;
 }
 
 /** Why this branch may not merge, or null when it may. A feat/ branch works on ONE task that
  * is in progress, or one that may start (see `startable`) and is not waiting on Rob: naming
  * an open task whose needs are not done, or one in a later milestone, is refused, because
- * green must not read as permission. `words` is the set of IDs the branch's log records
- * Rob's words on (see `robGate`). */
-export function checkBranch(branch, text, baseText = text, words = new Set()) {
+ * green must not read as permission. `decisions` = IDs with a `Rob on` or `DSH on` line in
+ * the log (the agent may open a task); `rob` = IDs with a `Rob on` line only (parallel,
+ * Waiting on Rob). */
+export function checkBranch(branch, text, baseText = text, decisions = new Set(), rob = new Set()) {
   if (!/^(feat|fix|plan)\//.test(branch)) {
     return `branch "${branch}" is not feat/<id>-<slug>, fix/<slug> or plan/<slug> (AGENTS.md, "Branches")`;
   }
-  const gate = robGate(text, baseText, words);
+  const gate = robGate(text, baseText, decisions, rob);
   if (gate) return gate;
   if (/^(fix|plan)\//.test(branch)) return null;
   const tasks = parse(baseText);
@@ -196,7 +207,7 @@ export function checkBranch(branch, text, baseText = text, words = new Set()) {
   const ok = tasks.find((t) => named.includes(t.id) && (t.status === 'in progress' || may.has(t.id)));
   if (ok) {
     const waiting = robLines(ok).waiting;
-    if (waiting.length && !words.has(ok.id)) {
+    if (waiting.length && !rob.has(ok.id)) {
       return `${ok.id} is waiting on Rob: ${waiting.join(' ')} Ask him (HANDOFF.md, "While you wait"). When he answers, this branch's log records it ("Rob on ${ok.id}: ...") and removes the line, or a plan/ PR does`;
     }
     return null;
@@ -272,24 +283,27 @@ function selfTest() {
     if (!ok) failed++;
     console.log(`${ok ? 'ok  ' : 'FAIL'} branch ${b} ${want === null ? 'passes' : 'is refused'}`);
   }
-  // Rob's changes: refused without his words in the branch's log, accepted with them.
+  // Decisions: a task the agent may open (proposed->open, new open task) passes with a
+  // `DSH on` or `Rob on` line; the calls that stay Rob's (parallel, Waiting on Rob) pass
+  // only with a `Rob on` line.
   const rob = [
-    ['proposed to open', good.replace('### P1 · Idea · proposed', '### P1 · Idea · open'), 'P1'],
-    ['newly parallel', good.replace('### S1 · Later · open', '### S1 · Later · open · parallel'), 'S1'],
-    ['a new open task', good + '\n### Z1 · New · open\n**Done when:** z.\n', 'Z1'],
-    ['a Waiting line removed', good.replace('**Waiting on Rob:** which disk.', ''), 'W1'],
+    ['proposed to open', good.replace('### P1 · Idea · proposed', '### P1 · Idea · open'), 'P1', false],
+    ['newly parallel', good.replace('### S1 · Later · open', '### S1 · Later · open · parallel'), 'S1', true],
+    ['a new open task', good + '\n### Z1 · New · open\n**Done when:** z.\n', 'Z1', false],
+    ['a Waiting line removed', good.replace('**Waiting on Rob:** which disk.', ''), 'W1', true],
   ];
-  for (const [name, text, id] of rob) {
+  for (const [name, text, id, robOnly] of rob) {
     const refused = checkBranch('plan/x', text, good) !== null;
-    const allowed = checkBranch('plan/x', text, good, robWords(`# log\n- Rob on ${id}: yes, 2026-10-16.\n`)) === null;
-    const ok = refused && allowed;
+    const dsh = checkBranch('plan/x', text, good, decisionWords(`# log\n- DSH on ${id}: opened, 2026-10-20.\n`), new Set()) === null;
+    const robw = checkBranch('plan/x', text, good, decisionWords(`# log\n- Rob on ${id}: yes, 2026-10-16.\n`), robWords(`# log\n- Rob on ${id}: yes, 2026-10-16.\n`)) === null;
+    const ok = refused && robw && (robOnly ? !dsh : dsh);
     if (!ok) failed++;
-    console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}: refused without Rob's words, passes with them`);
+    console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}: refused without a decision, ${robOnly ? 'only Rob' : 'agent or Rob'} passes`);
   }
   const newProposed = checkBranch('plan/x', good + '\n### Z2 · Idea · proposed\n**Done when:** z.\n', good) === null;
   if (!newProposed) failed++;
   console.log(`${newProposed ? 'ok  ' : 'FAIL'} a new proposed task needs no one's words`);
-  const answered = checkBranch('feat/w1-waiting', good, good, robWords('Rob on W1: the whole disk.')) === null;
+  const answered = checkBranch('feat/w1-waiting', good, good, new Set(), robWords('Rob on W1: the whole disk.')) === null;
   if (!answered) failed++;
   console.log(`${answered ? 'ok  ' : 'FAIL'} a waiting task's branch passes once its log has Rob's answer`);
   const lines = robLines(parse(good).find((t) => t.id === 'W1'));
@@ -327,12 +341,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       const branch = args[bi + 1];
       const ba = args.indexOf('--base');
       const base = ba >= 0 ? readFileSync(args[ba + 1], 'utf8') : text;
-      // Rob's words, from this branch's own log file (docs/log/<date>-<branch>.md).
+      // Decisions and Rob's words, from this branch's own log file (docs/log/<date>-<branch>.md).
       const slug = branch.replaceAll('/', '-');
       const logDir = join(REPO, 'docs/log');
       const logs = existsSync(logDir) ? readdirSync(logDir).filter((f) => new RegExp(`^\\d{4}-\\d{2}-\\d{2}-${slug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.md$`).test(f)) : [];
-      const words = new Set(logs.flatMap((f) => [...robWords(readFileSync(join(logDir, f), 'utf8'))]));
-      const why = checkBranch(branch, text, base, words);
+      const decisions = new Set(logs.flatMap((f) => [...decisionWords(readFileSync(join(logDir, f), 'utf8'))]));
+      const rob = new Set(logs.flatMap((f) => [...robWords(readFileSync(join(logDir, f), 'utf8'))]));
+      const why = checkBranch(branch, text, base, decisions, rob);
       if (why) problems.push(why);
     }
     if (problems.length) {
