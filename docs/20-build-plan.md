@@ -2904,3 +2904,20 @@ any particular vendor or layer. Open question: can a layer be added to a finishe
 image be rebuilt from the pinned commit? ADR 0006 applies layers at build time, so the second is
 the likelier. The signing key for a vendor's own updates is the vendor's (A4 and doc 20 S2 cover
 MorpheOS's), so this task needs Rob's decision on the security model before it is opened.
+
+### W8 · Run a real model on the device, and pooled compute across the mesh · proposed
+**What:** a route Rob asked to record (2026-10-20), not approved work. Two halves, both from the
+pacland research repo (`docs/colibri-evaluation.md`, `docs/physics-compute-roadmap.md`):
+
+1. **A frontier model embedded in the OS** — [Colibri](https://github.com/JustVugg/colibri), a
+   pure-C MoE inference engine that streams expert weights from disk, runs a 744B model on ~25 GB
+   RAM with no GPU. Distinct from W3, which is a small intent-bar model; this is "the OS carries
+   its own real model".
+2. **Pooled compute over the device mesh** — cheap self-contained devices (gaming laptops /
+   handhelds) as compute nodes. The flux-vacua sampling in pacland is embarrassingly parallel and
+   CPU-only, so a pool of cheap nodes is a real alternative to a rented GPU for that workload.
+
+**Done when:** Rob orders it; until then it is a pointer, not work.
+
+**Notes:** the AI layer is doc 06, the mesh is doc 07. Whether this belongs in MorpheOS at all —
+vs staying in pacland / harness-mesh — is part of what opening it would decide.
