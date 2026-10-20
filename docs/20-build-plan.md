@@ -12,9 +12,10 @@ pick up without having to guess. `scripts/verify-plan.mjs` checks it in CI.
   can check, never "it works". A `done` task also has an **Evidence:** line: a pull request,
   a CI run, an artifact or a file in this repository.
 - **Statuses:** `proposed` (an idea, not approved), `open`, `in progress`, `blocked`, `done`.
-  Only Rob turns `proposed` into `open`, or marks a task `parallel`. `verify-plan.mjs` refuses
-  either change, on any branch, unless the branch's log file carries his words as a line
-  `Rob on <ID>: <what he said, and when>`.
+  The DSH session may turn `proposed` into `open` (recorded as a `DSH on <ID>: ...` line in
+  the branch's log); only Rob marks a task `parallel` or frees a **Waiting on Rob:** line
+  (recorded as `Rob on <ID>: <what he said, and when>`). `verify-plan.mjs` refuses the change
+  without the matching line, on any branch.
 - **What waits on Rob is written in three fields**, and nowhere else: `**Waiting on Rob:**`
   (the task may not start until he answers: `verify-plan.mjs` refuses a `feat/` branch for it),
   `**Ask Rob to open:**` (a proposed task worth opening now, and why), and
