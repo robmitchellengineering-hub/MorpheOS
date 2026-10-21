@@ -1017,6 +1017,12 @@ dependencies = [
 [[package]]
 name = "morphd"
 version = "0.1.0"
+dependencies = [
+ "morph-manifest",
+ "morph-transaction",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "num-traits"
