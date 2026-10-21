@@ -1,0 +1,18 @@
+# A new generation the manifest test applies: a different hostname and a different retention.
+[machine]
+name = "studio"
+profile = "desk"
+arch = "x86_64"
+
+[storage]
+accept_single_copy = true
+
+[storage.retention]
+all_versions_hours = 7
+hourly_days = 14
+daily_days = 90
+
+[[users]]
+name = "morph"
+admin = true
+recovery_key = true

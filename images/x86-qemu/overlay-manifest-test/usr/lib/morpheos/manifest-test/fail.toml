@@ -1,0 +1,20 @@
+# A generation whose hostname the kernel refuses (longer than its 64-byte limit). `morphd apply`
+# arms the trial, the hostname applier refuses, and the whole change is rolled back — the
+# machine's hostname and Strata's policy must be unchanged.
+[machine]
+name = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+profile = "desk"
+arch = "x86_64"
+
+[storage]
+accept_single_copy = true
+
+[storage.retention]
+all_versions_hours = 3
+hourly_days = 7
+daily_days = 30
+
+[[users]]
+name = "morph"
+admin = true
+recovery_key = true

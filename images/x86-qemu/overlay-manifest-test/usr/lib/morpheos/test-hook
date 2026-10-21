@@ -1,0 +1,20 @@
+#!/bin/sh
+# Manifest test driver (S11, test images only). One boot per mode: run `morphd apply` with the
+# mode's Manifest, then record what the MACHINE shows — the kernel hostname and Strata's own
+# policy — to the ESP, so the harness reads the machine, never morphd's log.
+set -eu
+dir=/efi/morph-manifest-test
+mkdir -p "$dir"
+mode=$(cat "$dir/mode" 2>/dev/null || echo apply)
+say() { echo "morph-manifest-test: $*"; }
+say "applying $mode"
+
+if /usr/bin/morphd apply "/usr/lib/morpheos/manifest-test/$mode.toml" --approved-by test; then
+    say "apply committed"
+else
+    say "apply refused or rolled back"
+fi
+cat /proc/sys/kernel/hostname > "$dir/hostname"
+/usr/bin/strata policy > "$dir/policy"
+sync
+systemctl poweroff

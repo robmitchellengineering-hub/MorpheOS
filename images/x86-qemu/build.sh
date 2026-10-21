@@ -27,7 +27,7 @@ set -euo pipefail
 
 WORK=${1:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
 SCENARIO=${2:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
-case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell|browser|wifi|broken-shell|hung-shell|recovery) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
+case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell|browser|wifi|broken-shell|hung-shell|recovery|manifest) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
 # `plain` is the one that leaves the CI harness behind and is meant to be booted by a person:
 # the Flow shell drawing the screen and taking the keyboard and mouse, Firefox on a local
 # start page, NetworkManager, and the Wi-Fi picker when there is no network (doc 20, E4 and
@@ -284,6 +284,11 @@ make_root() {
         # The recovery test's own driver: arms the recovery entry, or seeds /home for the
         # wipe part. It is a test hook, so it runs from boot-check (see the overlay).
         cp -a "$HERE/overlay-recovery-test/." "$dir/"
+    fi
+    if [ "$SCENARIO" = manifest ]; then
+        # The manifest test's driver (S11): runs `morphd apply` with the mode's Manifest and
+        # records the machine's hostname and Strata's policy. A test hook, run from boot-check.
+        cp -a "$HERE/overlay-manifest-test/." "$dir/"
     fi
     install -m 0755 "$MORPH_BOOT" "$dir/usr/bin/morph-boot"
     # The updater and the keys it accepts, in the image's own read-only root: an update
