@@ -1621,7 +1621,7 @@ attempted before the transactional apply exists.
    1. The digest and `morphd`'s check, with unit tests.
    2. The scenario and the notice.
 
-### S11 · The Manifest is obeyed: `morphd` v0 applies its first settings · proposed
+### S11 · The Manifest is obeyed: `morphd` v0 applies its first settings · open · parallel
 
 **What:** the smallest `morphd` (a service under systemd, ADR 0017) that makes the current
 Manifest generation real on the machine, through `morph-transaction`: plan, apply, health
@@ -1636,8 +1636,6 @@ longer lists `/storage/retention`. Made exact: in `images/x86-qemu/test-manifest
 writes the kernel's hostname (`/proc/sys/kernel/hostname`) and the policy Strata itself reports
 to a file on the ESP after each step. The test reads that file with `mtype`, and reads the
 store's `current` off the data partition.
-
-**Ask Rob to open:** S7 and S8 need it, and nothing inside it changes the security model.
 
 **Notes:** proposed 2026-10-14 by Claude Code, while picking up S8. It unblocks S8 (a
 Manifest-managed setting to corrupt) and S7 (Strata pruning by `storage.retention`). Rob opens
