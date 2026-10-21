@@ -56,3 +56,24 @@ recovery partition and boots recovery — the refusal is proven by the unit test
 "stays put" half by increment 3's service design, but the end-to-end corrupt-refusal VM proof
 is left to a follow-up if the reviewer wants the refusal shown on real hardware rather than in
 the test suite.
+
+## CI found it red, and the cause is now fixed (2026-10-21)
+
+The x86 job hit its 90-minute timeout. The serial log names the cause exactly:
+
+```
+boot-check[370]: wipefs: error: /dev/disk/by-partlabel/root-a: probing initialization failed: Device or resource busy
+```
+
+`wipefs -a` opens the device exclusively, so it cannot run on a *mounted* partition (EBUSY) —
+under `set -e` the driver died before the `dd` and the reboot, and the machine sat at the login
+prompt until the harness gave up. Two fixes, both on this branch:
+
+1. **Drop `wipefs`.** The wipe is now the `dd` zero alone (the same 64 MiB the harness-side
+   wipe uses), which is what the S4 card's "zero both slot partitions" already meant.
+2. **Allow writing the mounted device.** The kernel refuses it unless `bdev_allow_write_mounted`
+   is on the command line (the "verify, don't assume" point in S4 note 4 — the card's "default y"
+   was wrong, the boot override is the real mechanism). `build.sh` adds that option only for the
+   `recovery` test image, never the person-facing image. The `dd` is guarded so a refusal is
+   reported and the machine still reboots (a fast, visible failure instead of a silent 30-minute
+   hang — AGENTS.md H11).

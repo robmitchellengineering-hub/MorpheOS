@@ -534,6 +534,13 @@ for slot in a b; do
         # An "update" whose init dies immediately: the kernel panics.
         extra=" init=/bin/false"
     fi
+    if [ "$SCENARIO" = recovery ]; then
+        # The in-machine wipe (S4, note 4) writes the mounted slot root from inside the
+        # running machine. The kernel refuses that unless it is allowed to write mounted
+        # block devices (CONFIG_BLK_DEV_WRITE_MOUNTED); `bdev_allow_write_mounted` is the
+        # boot override. Test image only — this is the very thing the scenario proves.
+        extra="$extra bdev_allow_write_mounted"
+    fi
     cat > "$ESPDIR/loader/entries/morpheos-$slot.conf" <<EOF
 title   MorpheOS (slot $slot)
 linux   /morpheos/$slot/vmlinuz

@@ -7,9 +7,9 @@
 #                         on the ESP, step=1, power off (the harness then zeroes both slot
 #                         partitions before the next run).
 #   step 0 + mode "wipe": seed /home, then destroy BOTH slot partitions from inside the
-#                         running machine (wipefs + zero the first 64 MiB) and force a
-#                         reboot — the initramfs "way in" must arm recovery and heal, with
-#                         every /home file surviving on the data partition.
+#                         running machine (zero the first 64 MiB) and force a reboot — the
+#                         initramfs "way in" must arm recovery and heal, with every /home
+#                         file surviving on the data partition.
 #   step 1:               the machine has recovered into slot A; power off so the harness
 #                         can read the disk.
 set -eu
@@ -44,18 +44,20 @@ seed_home() {
 }
 
 # Destroy both slot partitions from inside the running machine, then force a reboot. The
-# running root is one of the two partitions being wiped; Ubuntu 24.04's 6.8 kernel allows a
-# root process to write a block device whose filesystem is mounted (CONFIG_BLK_DEV_WRITE_MOUNTED,
-# default y) — that is the very thing this proves, not an assumption. `wipefs` removes the
-# signature and the zeroing makes the partition read as empty, exactly what the harness-side
-# wipe does with dd between runs.
+# running root is one of the two partitions being wiped. The kernel refuses writing a mounted
+# block device unless `bdev_allow_write_mounted` is on the command line (build.sh adds it for
+# the recovery test image) — that is the very thing this scenario proves, not an assumption.
+# `wipefs` is NOT used: it opens the device exclusively and fails EBUSY on a mounted one (the
+# 90-minute CI timeout that prompted this fix). The zeroing alone removes the filesystem
+# signature, exactly what the harness-side wipe does with dd between runs.
 wipe_slots() {
     say "wiping both slot partitions from inside the running machine"
     for part in root-a root-b; do
-        wipefs -a "/dev/disk/by-partlabel/$part"
-        dd if=/dev/zero of="/dev/disk/by-partlabel/$part" bs=1M count=64 conv=notrunc status=none
+        if ! dd if=/dev/zero of="/dev/disk/by-partlabel/$part" bs=1M count=64 conv=notrunc status=none; then
+            say "FAILED to wipe $part: writing the mounted device was refused"
+        fi
     done
-    say "both slot partitions wiped; forcing a reboot"
+    say "forcing a reboot"
     echo b > /proc/sysrq-trigger
     # Reached only if the magic sysrq did not fire (kernel.sysrq=0): force a reboot without
     # sync — the running root is already wiped, so a sync would be writing to a gone system.
