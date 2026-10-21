@@ -1,0 +1,12 @@
+[Unit]
+Description=Apply the Manifest generation in force
+RequiresMountsFor=/persist
+Before=strata.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/morphd boot
+
+[Install]
+WantedBy=multi-user.target
