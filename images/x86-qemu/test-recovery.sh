@@ -1,5 +1,5 @@
 #!/bin/bash
-# "Try to Break It", part 4: the recovery image (S4). Two proofs, in one script:
+# "Try to Break It", part 4: the recovery image (S4). Three proofs, in one script:
 #
 #   sudo images/x86-qemu/test-recovery.sh <workdir>
 #
@@ -11,6 +11,11 @@
 #                    slot partitions from the harness; the next boot must arm recovery from
 #                    the initramfs (the "way in") and heal, with every /home file surviving
 #                    on the data partition.
+#   wipe-in-machine — seed /home, then the running machine destroys BOTH slot partitions
+#                    itself (wipefs + zero) and force-reboots; the initramfs "way in" must
+#                    arm recovery and heal, with every /home file surviving on the data
+#                    partition. This is the same destruction a person could cause from a
+#                    root shell, done by the machine rather than by the harness.
 #
 # The verdict is read from the disk after the VM powers off (the same rule as
 # test-fallback.sh: the serial console is diagnostics only, never the source of truth).
@@ -107,6 +112,41 @@ check "root-a holds a valid filesystem (/etc/hostname present)" 'hostname_presen
 check "root-b holds a valid filesystem (/etc/hostname present)" 'hostname_present root-b'
 
 # Every /home file survived on the data partition (which the wipe never touched).
+read -r dstart dsize < <(sfdisk -d "$disk" | sed -nE 's/.*start= *([0-9]+), size= *([0-9]+),.*name="data".*/\1 \2/p')
+data="$WORK/data-out.img"
+dd if="$disk" of="$data" bs=512 skip="$dstart" count="$dsize" status=none
+esp morph-recovery-test/before.sha256 > "$WORK/before.sha256"
+out="$WORK/home-out"
+rm -rf "$out" && mkdir -p "$out"
+debugfs -R "rdump /home/morph/Documents $out" "$data" >/dev/null 2>&1 || true
+check "every /home file matches its checksum from before the wipe" \
+    '(cd "$out/Documents" && sha256sum --quiet -c "$WORK/before.sha256")'
+
+# ---------------------------------------------------------------------------
+# Part 3: wipe-in-machine — the machine destroys its own slots and recovers.
+# ---------------------------------------------------------------------------
+echo "=== scenario: wipe-in-machine"
+disk=$("$HERE/build.sh" "$WORK" recovery | tail -1)
+rm -f "${disk%.img}.vars.fd"
+echo wipe > "$WORK/recovery-mode.txt"
+esp_write "$WORK/recovery-mode.txt" mode
+
+# One run: slot A commits, then the driver seeds /home, wipes both slot partitions from
+# inside the running machine, and force-reboots. The initramfs "way in" arms recovery, which
+# rebuilds both slots, and the machine lands back on slot A.
+log="$WORK/serial-wipe-in-machine.log"
+"$HERE/run-vm.sh" "$disk" "$log" "${VM_TIMEOUT:-1800}" || { echo "    VM did not power off cleanly"; fail=1; }
+
+check "slot A committed before and after the in-machine wipe and heal (got: $(boots))" \
+    '[ "$(boots)" = "a/committed/none a/committed/none " ]'
+check "the recovery record names both slots as rebuilt" \
+    '[ -n "$(recovered)" ] && printf "%s" "$(recovered)" | grep -q "\"a\"" && printf "%s" "$(recovered)" | grep -q "\"b\""'
+check "root-a holds a valid filesystem (/etc/hostname present)" 'hostname_present root-a'
+check "root-b holds a valid filesystem (/etc/hostname present)" 'hostname_present root-b'
+n=$(esp morph-recovery-test/before.sha256 | wc -l)
+check "the driver seeded and recorded checksums for 24 files (got $n)" '[ "$n" -eq 24 ]'
+
+# Every /home file survived on the data partition (which the in-machine wipe never touched).
 read -r dstart dsize < <(sfdisk -d "$disk" | sed -nE 's/.*start= *([0-9]+), size= *([0-9]+),.*name="data".*/\1 \2/p')
 data="$WORK/data-out.img"
 dd if="$disk" of="$data" bs=512 skip="$dstart" count="$dsize" status=none

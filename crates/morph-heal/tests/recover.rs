@@ -66,6 +66,28 @@ impl Machine {
         std::fs::write(recovery_dir.join("vmlinuz"), KERNEL).unwrap();
         std::fs::write(recovery_dir.join("initrd.img"), INITRD).unwrap();
 
+        // The factory manifest (S4 self-check): at image build time the recovery payload is
+        // sealed and signed with the factory key, and BLAKE3SUMS + .sig ride the ESP beside
+        // the recovery kernel. The factory public key is what the recovery system trusts.
+        let (secret, public) = morph_update::keygen().unwrap();
+        let recovery_keys = base.join("recovery-keys");
+        std::fs::create_dir_all(&recovery_keys).unwrap();
+        std::fs::write(recovery_keys.join("build.pub"), format!("{public}\n")).unwrap();
+
+        let payload = base.join("recovery-payload");
+        std::fs::create_dir_all(&payload).unwrap();
+        std::fs::copy(&recovery_root, payload.join("root.img")).unwrap();
+        std::fs::write(payload.join("vmlinuz"), KERNEL).unwrap();
+        std::fs::write(payload.join("initrd.img"), INITRD).unwrap();
+        morph_update::seal(&payload, RELEASE).unwrap();
+        morph_update::sign(&payload, &secret).unwrap();
+        std::fs::copy(payload.join("BLAKE3SUMS"), recovery_dir.join("BLAKE3SUMS")).unwrap();
+        std::fs::copy(
+            payload.join("BLAKE3SUMS.sig"),
+            recovery_dir.join("BLAKE3SUMS.sig"),
+        )
+        .unwrap();
+
         let release_file = base.join("release");
         std::fs::write(&release_file, format!("{RELEASE}\n")).unwrap();
 
@@ -75,6 +97,7 @@ impl Machine {
             report: base.join("esp/morph-boot/repairs.json"),
             recovery_record: base.join("esp/morph-boot/recovery.json"),
             recovery_dir,
+            recovery_keys,
             stage: base.join("stage"),
             release_file,
         };
@@ -210,4 +233,36 @@ fn recover_refuses_to_write_the_recovery_partition_as_a_slot() {
 fn the_recovery_record_does_not_exist_until_a_recovery_has_succeeded() {
     let m = Machine::new();
     assert!(!Path::new(&m.heal.recovery_record).exists());
+}
+
+#[test]
+fn recover_refuses_a_corrupted_recovery_image_and_writes_nothing() {
+    let m = Machine::new();
+    let mut bc = Running { default: Slot::B };
+
+    // Flip one byte of the recovery partition. The factory manifest still verifies, but the
+    // recovery image it describes no longer matches what is on the device.
+    let mut corrupted = std::fs::read(&m.recovery_root).unwrap();
+    corrupted[0] ^= 0xFF;
+    std::fs::write(&m.recovery_root, &corrupted).unwrap();
+
+    let err = m
+        .heal
+        .recover(
+            &mut bc,
+            RECOVERY_CMDLINE,
+            &mountinfo(),
+            &m.recovery_root,
+            &m.root_a,
+            &m.root_b,
+        )
+        .unwrap_err();
+    assert!(matches!(err, Error::Refused(_)), "got {err}");
+    assert_eq!(m.slot_a_bytes(), GARBAGE, "nothing may be written");
+    assert_eq!(m.slot_b_bytes(), GARBAGE, "nothing may be written");
+    assert_eq!(bc.default, Slot::B, "the default is untouched");
+    assert!(
+        !Path::new(&m.heal.recovery_record).exists(),
+        "a refused recovery must not record itself as having recovered"
+    );
 }
