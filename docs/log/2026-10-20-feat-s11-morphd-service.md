@@ -19,3 +19,20 @@ Verified: `cargo build/test -p morphd` (7 pass), `cargo fmt`, `cargo clippy -D w
 
 Still to land in this PR (next commit): the seeded generation 1 in `build.sh`
 (`images/x86-qemu/manifest/machine.toml`), and `test-manifest.sh` + the workflow wiring.
+
+## The seeded generation and test-manifest.sh (landed)
+
+- `images/x86-qemu/manifest/machine.toml`: generation 1 (admin user with a recovery key,
+  `accept_single_copy`, retention 24/30/365) — validates clean.
+- `build.sh` installs `morphd` and seeds generation 1 into the data partition
+  (`morph-manifest apply machine.toml machine.toml --store $DATADIR/morph`), and adds the
+  `manifest` scenario's driver overlay.
+- `test-manifest.sh`: two boots. `apply` (hostname → `studio`, retention → 7/14/90) and
+  `fail` (a 65-byte hostname the kernel refuses — the `validate` accepts it, the hostname
+  applier refuses it, the whole change rolls back). Verdicts read off the ESP: the kernel
+  hostname and `strata policy`, the machine's own reports — never `morphd`'s log.
+- Wired into `test-images.sh` and the x86 `images` job (with `morph-manifest` + `morphd` in
+  the cargo build lines).
+
+This closes S11's code: PR 1 (hostname applier), PR 2 (retention + Strata policy +
+`unenforced_settings`), PR 3 (the binary, the service, the seed and the VM proof).
