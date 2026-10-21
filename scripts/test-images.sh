@@ -28,7 +28,7 @@ mkdir -p "$WORK"
 
 # The harness scripts run under sudo, whose PATH has no cargo: build first, as yourself.
 step "build the binaries the images carry"
-cargo build --release -p morph-boot -p strata -p morph-update -p morph-heal -p flow-compositor -p flow-wifi -p flow-files
+cargo build --release -p morph-boot -p strata -p morph-update -p morph-heal -p morph-manifest -p morphd -p flow-compositor -p flow-wifi -p flow-files
 
 if [ "$WHAT" = plain ] || [ "$WHAT" = all ]; then
     step "the image a person uses: build, boot, and read back its report"

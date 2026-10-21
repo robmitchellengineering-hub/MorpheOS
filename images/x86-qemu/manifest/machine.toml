@@ -1,0 +1,19 @@
+# Generation 1 for the test image (doc 20, S11): the Manifest the machine boots with, so a
+# later `morphd apply` has a generation to replace (and to roll back to).
+[machine]
+name = "morpheos-a"
+profile = "desk"
+arch = "x86_64"
+
+[storage]
+accept_single_copy = true
+
+[storage.retention]
+all_versions_hours = 24
+hourly_days = 30
+daily_days = 365
+
+[[users]]
+name = "morph"
+admin = true
+recovery_key = true

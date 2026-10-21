@@ -47,6 +47,7 @@ jobs:
       # has no cargo, so a binary built inside them cannot find its own toolchain.
       - run: cargo build --release -p morph-update
       - run: cargo build --release -p morph-heal
+      - run: cargo build --release -p morph-manifest -p morphd
       # The SAME script the builder runs in WSL2 (doc 20, S10), with the image and VM tools,
       # and KVM opened up if the runner has it.
       - name: Install image and VM tools (scripts/setup-linux.sh --images)
