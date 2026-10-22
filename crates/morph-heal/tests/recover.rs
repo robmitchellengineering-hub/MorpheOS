@@ -240,11 +240,14 @@ fn recover_refuses_a_corrupted_recovery_image_and_writes_nothing() {
     let m = Machine::new();
     let mut bc = Running { default: Slot::B };
 
-    // Flip one byte of the recovery partition. The factory manifest still verifies, but the
-    // recovery image it describes no longer matches what is on the device.
-    let mut corrupted = std::fs::read(&m.recovery_root).unwrap();
+    // Flip one byte of the recovery kernel on the ESP. The factory manifest still verifies,
+    // but the boot file it describes no longer matches what is on the ESP. (The root image is
+    // deliberately NOT hashed — it is the mounted recovery partition, whose raw bytes are not
+    // stable, so hashing it would falsely refuse a healthy system.)
+    let kernel = m.heal.recovery_dir.join("vmlinuz");
+    let mut corrupted = std::fs::read(&kernel).unwrap();
     corrupted[0] ^= 0xFF;
-    std::fs::write(&m.recovery_root, &corrupted).unwrap();
+    std::fs::write(&kernel, &corrupted).unwrap();
 
     let err = m
         .heal

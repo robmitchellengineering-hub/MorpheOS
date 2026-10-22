@@ -412,13 +412,14 @@ impl Heal {
 
         // Self-check (S4, the corrupt-recovery refusal): before anything is written, the
         // staged recovery payload must match the factory-signed manifest written at image
-        // build time and carried beside the recovery kernel on the ESP. A recovery partition
-        // whose bytes no longer match — bit rot, a partial write, a bad flash — must be
-        // refused while both slots still hold whatever they held, rather than let corruption
-        // overwrite the last two systems. The signature is checked against the factory public
-        // key the slots already trust for updates (baked into the recovery root itself), and
-        // the manifest is checked by hashing the very bytes that would be written — root.img
-        // is the symlinked recovery partition, so the hash is over the device, not a copy.
+        // build time and carried beside the recovery kernel on the ESP. A corrupted boot file
+        // must be refused while both slots still hold whatever they held, rather than let
+        // corruption overwrite the last two systems. The signature is checked against the
+        // factory public key the slots already trust for updates (baked into the recovery root
+        // itself). The root image is NOT hashed: it is the mounted recovery partition, and a
+        // mounted filesystem's raw bytes are not stable (the kernel updates the superblock and
+        // journal on mount), so a full-partition hash falsely refuses a healthy system.
+        // `check_boot` verifies the kernel and initrd, which live on the ESP and are stable.
         let manifest = stage.join(morph_update::MANIFEST);
         let signature = stage.join(morph_update::SIGNATURE);
         std::fs::copy(self.recovery_dir.join(morph_update::MANIFEST), &manifest).map_err(io(
@@ -435,7 +436,7 @@ impl Heal {
         ))?;
         let factory = TrustedKeys::load(&self.recovery_keys)?;
         let mut factory_payload = Payload::open(&stage, &factory)?;
-        if let Err(e) = factory_payload.check() {
+        if let Err(e) = factory_payload.check_boot() {
             return Err(Error::Refused(format!(
                 "the recovery image does not match its factory-signed manifest; refusing to \
                  rebuild both slots from a corrupted recovery image: {e}"

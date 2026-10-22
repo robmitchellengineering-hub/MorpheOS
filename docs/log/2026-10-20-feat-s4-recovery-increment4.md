@@ -77,3 +77,21 @@ prompt until the harness gave up. Two fixes, both on this branch:
    `recovery` test image, never the person-facing image. The `dd` is guarded so a refusal is
    reported and the machine still reboots (a fast, visible failure instead of a silent 30-minute
    hang — AGENTS.md H11).
+
+## Second CI failure, second root cause, second fix (2026-10-21, late)
+
+The x86 job timed out again — and the serial log named a DIFFERENT bug, in the other half of
+increment 4: the corrupt-recovery self-check.
+
+```
+morph-heal: refused: the recovery image does not match its factory-signed manifest …
+root.img hashes to caf0f1…, but the manifest says e0c011…
+```
+
+`recover` hashed the **mounted** recovery partition's raw bytes against the build-time image.
+A mounted filesystem's raw bytes are not stable — the kernel updates the superblock and
+journal on mount — so a healthy recovery was falsely refused. The fix: `morph-update` gains
+`Payload::check_boot`, which verifies the factory-signed kernel and initrd (stable, on the ESP)
+and deliberately skips `root.img`. The corrupt-refusal unit test now flips a byte of the kernel
+instead of the root partition. The root partition itself is not byte-verified; it is the
+running, kernel-checked system, and `write_slot` still re-reads and verifies what it writes.

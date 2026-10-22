@@ -451,6 +451,32 @@ impl Payload {
         Ok(&self.sizes)
     }
 
+    /// Hash the kernel and initrd against the manifest, but **not** the root image.
+    ///
+    /// The root image may be a mounted block device — the recovery partition — whose raw
+    /// bytes are not stable: the kernel updates the superblock and journal on mount, so a
+    /// full-partition hash would falsely refuse a healthy system. The boot files live on the
+    /// ESP and are stable, so they are still checked.
+    pub fn check_boot(&mut self) -> Result<()> {
+        for name in [KERNEL, INITRD] {
+            let path = self.dir.join(name);
+            if !readable(&path) {
+                return Err(Error::BadPayload(format!(
+                    "{} cannot be read",
+                    path.display()
+                )));
+            }
+            let (got, _size) = hash_file(&path)?;
+            let want = &self.digests[name];
+            if &got != want {
+                return Err(Error::BadPayload(format!(
+                    "{name} hashes to {got}, but the manifest says {want}"
+                )));
+            }
+        }
+        Ok(())
+    }
+
     pub fn dir(&self) -> &Path {
         &self.dir
     }
