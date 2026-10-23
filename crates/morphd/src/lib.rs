@@ -21,8 +21,10 @@
 //! change is safe to take back is that taking it back is the same operation in reverse.
 
 pub mod hostname;
+pub mod retention;
 
 pub use hostname::{Hostname, Kernel};
+pub use retention::{Retention, RetentionPolicy};
 
 /// A single reversible setting change.
 pub trait Applier {
