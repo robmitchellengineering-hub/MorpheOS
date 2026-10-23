@@ -95,7 +95,9 @@ fn a_person_chooses_a_moment_confirms_the_dry_run_and_rewinds_it() {
     let dir = runtime_dir("rewind");
     let f: Vec<PathBuf> = (0..6).map(|i| dir.join(format!("{i}.ppm"))).collect();
     let script = format!(
-        "settle 300\nframe {f0}\n\
+        // A window that opens is raised but not focused (wm.rs, ADR 0013), so click it first,
+        // the way flow-wifi's test does, before the keys can reach it.
+        "settle 300\nclick 40 30\nframe {f0}\n\
          key {KEY_DOWN}\nframe {f1}\nkey {KEY_UP}\n\
          key {KEY_ENTER}\nsettle 300\nframe {f2}\n\
          key {KEY_ENTER}\nsettle 120\nframe {f3}\n\
