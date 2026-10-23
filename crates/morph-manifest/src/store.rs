@@ -486,8 +486,8 @@ fn numbers(history: &[Generation]) -> String {
 /// read to it, so a generation that changed on disk — by hand or by bit rot — reads as corrupt
 /// rather than as the manifest that was approved.
 fn digest_file(path: &Path) -> Result<String, Error> {
-    let bytes = std::fs::read(path)
-        .map_err(|e| Error::Invalid(format!("{}: {e}", path.display())))?;
+    let bytes =
+        std::fs::read(path).map_err(|e| Error::Invalid(format!("{}: {e}", path.display())))?;
     Ok(blake3::hash(&bytes).to_hex().to_string())
 }
 

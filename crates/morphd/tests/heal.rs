@@ -94,7 +94,11 @@ fn a_corrupt_manifest_rolls_back_and_names_the_generation() {
     assert_eq!(records[0]["bad"], 3);
     assert_eq!(records[0]["now"], 2);
     // Do not delete N, and the next generation is still `next_number()`, never `current + 1`.
-    assert_eq!(store.history().unwrap().len(), 3, "generation 3 is not deleted");
+    assert_eq!(
+        store.history().unwrap().len(),
+        3,
+        "generation 3 is not deleted"
+    );
     assert_eq!(store.next_number().unwrap(), 4);
 }
 
