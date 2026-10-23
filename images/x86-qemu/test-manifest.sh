@@ -6,7 +6,8 @@
 #   apply — a new generation changes the hostname and the retention, and the machine shows
 #           both (read from /proc/sys/kernel/hostname and `strata policy`, never morphd's log).
 #   fail  — a generation whose hostname the kernel refuses is rolled back: the machine's
-#           hostname and Strata's policy are the seeded generation's again.
+#           hostname and Strata's policy are the previously-committed generation's again
+#           (the apply run's "studio" / 7 hours), not the seed.
 #
 # The verdict is read from the ESP after the VM powers off (the same rule as test-recovery.sh).
 set -euo pipefail
@@ -46,10 +47,10 @@ echo fail > "$WORK/manifest-mode.txt"
 esp_write "$WORK/manifest-mode.txt" mode
 "$HERE/run-vm.sh" "$disk" "$WORK/serial-manifest-fail.log" "${VM_TIMEOUT:-1800}" || { echo "    VM did not power off cleanly"; fail=1; }
 
-check "the hostname is the seeded one again (got: $(esp morph-manifest-test/hostname))" \
-    '[ "$(esp morph-manifest-test/hostname)" = "morpheos-a" ]'
-check "Strata reports the seeded retention again" \
-    'printf "%s" "$(esp morph-manifest-test/policy)" | grep -q "24 hours"'
+check "the hostname is the previously-applied one again (got: $(esp morph-manifest-test/hostname))" \
+    '[ "$(esp morph-manifest-test/hostname)" = "studio" ]'
+check "Strata reports the previously-applied retention again" \
+    'printf "%s" "$(esp morph-manifest-test/policy)" | grep -q "7 hours"'
 
 if [ $fail = 0 ]; then echo "    PASS"; else echo "    see $WORK/serial-manifest-*.log"; fi
 exit $fail
