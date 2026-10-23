@@ -1637,8 +1637,9 @@ writes the kernel's hostname (`/proc/sys/kernel/hostname`) and the policy Strata
 to a file on the ESP after each step. The test reads that file with `mtype`, and reads the
 store's `current` off the data partition.
 
-**Evidence:** PR #128, the "Try to Break It: A/B updates (x86 VM)" job green — the
-`manifest` scenario applies hostname+retention and rolls back the refused generation.
+**Evidence:** PR #128 — `images/x86-qemu/test-manifest.sh` is green in the "Try to Break It:
+A/B updates (x86 VM)" job: the `manifest` scenario applies hostname+retention and rolls back
+the refused generation.
 
 **Notes:** proposed 2026-10-14 by Claude Code, while picking up S8. It unblocks S8 (a
 Manifest-managed setting to corrupt) and S7 (Strata pruning by `storage.retention`). Rob opens
