@@ -54,7 +54,7 @@ use serde::Serialize;
 pub use morph_boot::Slot;
 
 mod decision;
-pub use decision::{decide, AutoDecision};
+pub use decision::{AutoDecision, decide};
 
 mod fetch;
 pub use fetch::fetch;

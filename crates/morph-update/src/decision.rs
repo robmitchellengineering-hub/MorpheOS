@@ -73,11 +73,46 @@ mod tests {
     fn table_of_decisions() {
         let cases = [
             // (phase, running, server, tried, armed, expected)
-            (Phase::Trial, 1, 2, &[][..], false, skip("a trial is in progress")),
-            (Phase::Committed, 1, 2, &[][..], true, skip("a trial is in progress")),
-            (Phase::Committed, 2, 2, &[][..], false, skip("nothing newer than the running release")),
-            (Phase::Committed, 2, 1, &[][..], false, skip("nothing newer than the running release")),
-            (Phase::Committed, 1, 2, &[2][..], false, skip("this release already failed a trial")),
+            (
+                Phase::Trial,
+                1,
+                2,
+                &[][..],
+                false,
+                skip("a trial is in progress"),
+            ),
+            (
+                Phase::Committed,
+                1,
+                2,
+                &[][..],
+                true,
+                skip("a trial is in progress"),
+            ),
+            (
+                Phase::Committed,
+                2,
+                2,
+                &[][..],
+                false,
+                skip("nothing newer than the running release"),
+            ),
+            (
+                Phase::Committed,
+                2,
+                1,
+                &[][..],
+                false,
+                skip("nothing newer than the running release"),
+            ),
+            (
+                Phase::Committed,
+                1,
+                2,
+                &[2][..],
+                false,
+                skip("this release already failed a trial"),
+            ),
             (Phase::Committed, 1, 2, &[][..], false, fetch(2)),
         ];
         for (phase, running, server, tried, armed, want) in cases {

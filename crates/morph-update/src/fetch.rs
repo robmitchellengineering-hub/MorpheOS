@@ -10,7 +10,7 @@
 use std::io::Read;
 use std::path::Path;
 
-use crate::{Error, Payload, Result, TrustedKeys, INITRD, KERNEL, MANIFEST, ROOT_IMAGE, SIGNATURE};
+use crate::{Error, INITRD, KERNEL, MANIFEST, Payload, ROOT_IMAGE, Result, SIGNATURE, TrustedKeys};
 
 /// `GET {base}/stable/{release}/{name}` into `dir/{name}`.
 fn download(base: &str, release: u64, name: &str, dir: &Path) -> Result<()> {

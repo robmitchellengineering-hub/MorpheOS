@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread;
 
-use morph_update::{fetch, TrustedKeys};
+use morph_update::{TrustedKeys, fetch};
 
 fn scratch(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("morph-fetch-{name}-{}", std::process::id()));
@@ -83,7 +83,13 @@ fn fetch_downloads_and_verifies_a_payload() {
     let got = fetch(&base_url, release, &dest, &trusted).unwrap();
 
     assert_eq!(got.release(), release);
-    for name in ["BLAKE3SUMS", "BLAKE3SUMS.sig", "root.img", "vmlinuz", "initrd.img"] {
+    for name in [
+        "BLAKE3SUMS",
+        "BLAKE3SUMS.sig",
+        "root.img",
+        "vmlinuz",
+        "initrd.img",
+    ] {
         assert!(dest.join(name).is_file(), "{name} was not fetched");
     }
 }
