@@ -95,3 +95,25 @@ journal on mount — so a healthy recovery was falsely refused. The fix: `morph-
 and deliberately skips `root.img`. The corrupt-refusal unit test now flips a byte of the kernel
 instead of the root partition. The root partition itself is not byte-verified; it is the
 running, kernel-checked system, and `write_slot` still re-reads and verifies what it writes.
+
+## Third CI failure, third root cause, third fix (2026-10-23)
+
+The x86 job red again, this time on `wipe-in-machine`: `recovery record names both slots` and
+`root-b holds a valid filesystem` failed. The serial log showed the machine booted its still-valid
+slot A and never armed recovery. Root cause: the wipe `dd` to the *mounted* root was buffered in
+the page cache and lost on the `echo b > /proc/sysrq-trigger` (an emergency restart that does NOT
+sync) — so slot A survived the wipe and there was nothing to recover. Fix: `conv=fsync` on the
+wipe `dd` (both slots), so the zeroes reach the device before the reboot. This is the one real
+fix this session; the recovery now arms and rebuilds both slots, proven on the mesh (pacland-rog,
+KVM) and green on CI.
+
+## The /home check looked broken — it was a pacland-rog QEMU artifact, not a bug
+
+After the fsync fix, `every /home file matches` failed locally (pacland-rog) while the same code
+passed on GitHub CI. Seven hypotheses were chased and falsified (sync, syncfs, per-file fsync,
+block-device fsync, a 2-boot seed split, unmounting /persist, and `cache=none` on the QEMU drive):
+`dumpe2fs`/`debugfs` showed the seeded files' inode-table entries zeroed after the wipe, while the
+directory inode and superblock stayed intact. The cause is pacland-rog's QEMU 8.2.2 / host disk
+durability on the unclean remount — it does not reproduce on GitHub's runner (same guest kernel,
+same code). The recovery code was correct; those experiments were all reverted, leaving only the
+`conv=fsync` fix in this PR.
