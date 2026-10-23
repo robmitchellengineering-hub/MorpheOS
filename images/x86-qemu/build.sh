@@ -27,7 +27,7 @@ set -euo pipefail
 
 WORK=${1:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
 SCENARIO=${2:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
-case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell|browser|wifi|broken-shell|hung-shell|recovery) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
+case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell|browser|wifi|broken-shell|hung-shell|recovery|manifest) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
 # `plain` is the one that leaves the CI harness behind and is meant to be booted by a person:
 # the Flow shell drawing the screen and taking the keyboard and mouse, Firefox on a local
 # start page, NetworkManager, and the Wi-Fi picker when there is no network (doc 20, E4 and
@@ -57,6 +57,8 @@ MORPH_BOOT=${MORPH_BOOT:-$REPO/target/release/morph-boot}
 STRATA=${STRATA:-$REPO/target/release/strata}
 MORPH_UPDATE=${MORPH_UPDATE:-$REPO/target/release/morph-update}
 MORPH_HEAL=${MORPH_HEAL:-$REPO/target/release/morph-heal}
+MORPH_MANIFEST=${MORPH_MANIFEST:-$REPO/target/release/morph-manifest}
+MORPH_D=${MORPH_D:-$REPO/target/release/morphd}
 SDBOOT_EFI=${SDBOOT_EFI:-/usr/lib/systemd/boot/efi/systemd-bootx64.efi}
 FLOW_COMPOSITOR=${FLOW_COMPOSITOR:-$REPO/target/release/flow-compositor}
 SOLID_WINDOW=${SOLID_WINDOW:-$REPO/target/release/solid-window}
@@ -283,6 +285,11 @@ make_root() {
         # wipe part. It is a test hook, so it runs from boot-check (see the overlay).
         cp -a "$HERE/overlay-recovery-test/." "$dir/"
     fi
+    if [ "$SCENARIO" = manifest ]; then
+        # The manifest test's driver (S11): runs `morphd apply` with the mode's Manifest and
+        # records the machine's hostname and Strata's policy. A test hook, run from boot-check.
+        cp -a "$HERE/overlay-manifest-test/." "$dir/"
+    fi
     install -m 0755 "$MORPH_BOOT" "$dir/usr/bin/morph-boot"
     # The updater and the keys it accepts, in the image's own read-only root: an update
     # medium's own binary could check nothing, so the machine verifies with these (S2).
@@ -293,6 +300,8 @@ make_root() {
     install -D -m 0644 /dev/null "$dir/usr/lib/morpheos/release"
     echo "$RELEASE" > "$dir/usr/lib/morpheos/release"
     install -m 0755 "$STRATA" "$dir/usr/bin/strata"
+    # The Manifest applier (doc 20, S11): makes the current generation real at every boot.
+    install -m 0755 "$MORPH_D" "$dir/usr/bin/morphd"
     # SSH in, so the mesh can drive this machine over the network (E6: no stick, no console
     # person). Root, key only — the mesh admin key is baked into the image.
     mkdir -p "$dir/root/.ssh" "$dir/etc/ssh/sshd_config.d"
@@ -574,8 +583,15 @@ fi
 #    folder, private to the service as Strata::open makes it.
 DATADIR="$WORK/data"
 rm -rf "$DATADIR"
-mkdir -p "$DATADIR/home/morph/Documents" "$DATADIR/strata"
+mkdir -p "$DATADIR/home/morph/Documents" "$DATADIR/strata" "$DATADIR/morph"
 chmod 0700 "$DATADIR/strata"
+
+# Generation 1 (doc 20, S11): the Manifest the machine boots with. `morphd boot` converges to
+# it at every start, and a later `morphd apply` needs it as the generation to replace. The
+# first generation is not a transaction — it is established here, with the store empty.
+"$MORPH_MANIFEST" apply \
+    "$HERE/manifest/machine.toml" "$HERE/manifest/machine.toml" \
+    --store "$DATADIR/morph" >/dev/null
 
 # 5. Partition images, then the disk. No loop devices or mounts needed.
 # ROOT_MB was 1200 until 2026-10-14, when `plain` took Firefox and the check above measured slot
