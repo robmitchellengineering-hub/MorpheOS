@@ -53,6 +53,9 @@ use serde::Serialize;
 
 pub use morph_boot::Slot;
 
+mod decision;
+pub use decision::{decide, AutoDecision};
+
 /// The three files an update payload consists of, and the manifest that names them.
 pub const ROOT_IMAGE: &str = "root.img";
 pub const KERNEL: &str = "vmlinuz";
