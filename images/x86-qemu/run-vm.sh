@@ -58,7 +58,7 @@ exec timeout --foreground "$TIMEOUT" qemu-system-x86_64 \
     -machine q35,accel="$ACCEL" -cpu max -smp 2 -m "${VM_MEM:-1024}" \
     -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
     -drive if=pflash,format=raw,file="$VARS" \
-    -drive file="$DISK",format=raw,if=virtio,cache=none \
+    -drive file="$DISK",format=raw,if=virtio \
     "${PAYLOAD_ARGS[@]}" "${USB_ARGS[@]}" \
     -device i6300esb -action watchdog=reset \
     "${DISPLAY_ARGS[@]}" "${MONITOR_ARGS[@]}" \

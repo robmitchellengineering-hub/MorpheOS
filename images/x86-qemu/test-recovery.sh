@@ -28,9 +28,6 @@ TYPE=4f68bce3-e8cd-4db1-96e7-fbcaf984b709
 esp() { mtype -i "$disk@@1M" "::/$1" 2>/dev/null || true; }
 esp_write() { # esp_write <src-file> <dst-path>
     mmd -i "$disk@@1M" "::/morph-recovery-test" 2>/dev/null || true
-    # Delete any existing destination first: the wipe-in-machine scenario now writes `mode`
-    # twice (seed, then wipe), and mcopy refuses to overwrite an existing FAT entry.
-    mdel -i "$disk@@1M" "::/morph-recovery-test/$2" 2>/dev/null || true
     mcopy -i "$disk@@1M" "$1" "::/morph-recovery-test/$2"
 }
 
@@ -131,27 +128,17 @@ check "every /home file matches its checksum from before the wipe" \
 echo "=== scenario: wipe-in-machine"
 disk=$("$HERE/build.sh" "$WORK" recovery | tail -1)
 rm -f "${disk%.img}.vars.fd"
-
-# Run 1 (seed): the driver seeds /home and powers off cleanly. The clean unmount is what
-# makes the seed durable — seeding and wiping in the same boot lost the delalloc'd files to
-# the emergency reboot (they came back 0 bytes), so the seed gets its own boot.
-echo seed > "$WORK/recovery-mode.txt"
-esp_write "$WORK/recovery-mode.txt" mode
-"$HERE/run-vm.sh" "$disk" "$WORK/serial-wipe-in-machine-seed.log" "${VM_TIMEOUT:-1800}" \
-    || { echo "    seed VM did not power off cleanly"; fail=1; }
-
-# Run 2 (wipe): reset the step to 0, then the running machine wipes both slot partitions
-# itself and force-reboots. The initramfs "way in" arms recovery, which rebuilds both slots,
-# and the machine lands back on slot A.
 echo wipe > "$WORK/recovery-mode.txt"
 esp_write "$WORK/recovery-mode.txt" mode
-echo 0 > "$WORK/recovery-step.txt"
-esp_write "$WORK/recovery-step.txt" step
+
+# One run: slot A commits, then the driver seeds /home, wipes both slot partitions from
+# inside the running machine, and force-reboots. The initramfs "way in" arms recovery, which
+# rebuilds both slots, and the machine lands back on slot A.
 log="$WORK/serial-wipe-in-machine.log"
 "$HERE/run-vm.sh" "$disk" "$log" "${VM_TIMEOUT:-1800}" || { echo "    VM did not power off cleanly"; fail=1; }
 
 check "slot A committed before and after the in-machine wipe and heal (got: $(boots))" \
-    '[ "$(boots)" = "a/committed/none a/committed/none a/committed/none " ]'
+    '[ "$(boots)" = "a/committed/none a/committed/none " ]'
 check "the recovery record names both slots as rebuilt" \
     '[ -n "$(recovered)" ] && printf "%s" "$(recovered)" | grep -q "\"a\"" && printf "%s" "$(recovered)" | grep -q "\"b\""'
 check "root-a holds a valid filesystem (/etc/hostname present)" 'hostname_present root-a'
