@@ -58,6 +58,14 @@ seed_home() {
 # to the device before the reboot, for the mounted root and the spare alike.
 wipe_slots() {
     say "wiping both slot partitions from inside the running machine"
+    # Unmount the data partition (and its /home and Strata bind mounts) cleanly first. The
+    # reboot below is an emergency sysrq that does not unmount, so a mounted /persist is left
+    # dirty and ext4's journal replay on the next mount loses the seeded /home files. A clean
+    # unmount now marks the data partition clean, so the seed survives the wipe.
+    systemctl stop strata.service 2>/dev/null || true
+    umount /home 2>/dev/null || true
+    umount /var/lib/strata 2>/dev/null || true
+    umount /persist 2>/dev/null || true
     for part in root-a root-b; do
         if ! dd if=/dev/zero of="/dev/disk/by-partlabel/$part" bs=1M count=64 conv=notrunc,fsync status=none; then
             say "FAILED to wipe $part: writing the mounted device was refused"
