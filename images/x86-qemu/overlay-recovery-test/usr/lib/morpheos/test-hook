@@ -33,19 +33,17 @@ seed_home() {
     mkdir -p /home/morph/Documents
     n=1
     while [ "$n" -le 24 ]; do
+        # Pipe through `dd conv=fsync`: a bare `>` leaves the data in ext4's delalloc cache
+        # and the emergency reboot below (sysrq, no sync) loses the inode's size update, so
+        # half the files came back 0 bytes after the journal replay. fsync after each write
+        # commits both the data and the inode size before the reboot.
         awk -v n="$n" 'BEGIN { for (l=1; l<=40; l++) printf "recovery seed %04d line %02d\n", n, l }' \
-            > "/home/morph/Documents/seed-$n.txt"
+            | dd of="/home/morph/Documents/seed-$n.txt" conv=fsync status=none
         n=$((n+1))
     done
     (cd /home/morph/Documents && find . -type f -name 'seed-*' | sort | xargs sha256sum) \
         > "$dir/before.sha256"
     sync
-    # syncfs the data filesystem, not just sync(): a bare sync() left half the seed files
-    # empty (0 bytes, epoch-0 inode) after the emergency reboot below — the sysrq reset does
-    # not flush the device, so the delalloc'd data pages were lost and ext4's journal replay
-    # recovered the dentries with no data. syncfs waits for the data AND the inode size to
-    # reach the device, which is what "survives the wipe" has to mean.
-    sync -f /home/morph/Documents
     say "$(wc -l < "$dir/before.sha256") files seeded"
 }
 
