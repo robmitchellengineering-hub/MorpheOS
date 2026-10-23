@@ -988,6 +988,7 @@ dependencies = [
 name = "morph-manifest"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "schemars",
  "serde",
  "serde_json",
@@ -1018,6 +1019,7 @@ dependencies = [
 name = "morphd"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "morph-manifest",
  "morph-transaction",
  "serde",

@@ -1,6 +1,6 @@
 //! The generation store: what it keeps, what it refuses, and what a rollback may not lose.
 
-use morph_manifest::{Error, Risk, Store};
+use morph_manifest::{DigestCheck, Error, Risk, Store};
 
 const V1: &str = r#"
 [machine]
@@ -429,4 +429,68 @@ fn a_mark_belongs_to_its_generation_and_survives_a_rollback() {
     assert!(store.mark(signed.number).unwrap().is_some());
     assert!(store.mark(unsigned.number).unwrap().is_none());
     assert_eq!(store.marks().unwrap().len(), 1);
+}
+
+// ---------------------------------------------------------------------------
+// The digest (S8): a generation is held to the bytes it was applied as, and a store that
+// predates the digest is "unknown", never "corrupt".
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_generation_records_a_digest_and_matches_it() {
+    let root = scratch("digest-recorded");
+    let store = Store::open(&root);
+    let v1 = value(V1);
+    let v2 = value(&with("[storage]\nmin_free_percent = 12\n"));
+
+    let generation = store.apply(&v1, &v2, None).unwrap();
+    let digest = generation
+        .digest
+        .as_ref()
+        .expect("a fresh apply records a digest");
+    assert!(!digest.is_empty(), "the digest is not a placeholder");
+    assert_eq!(store.digest_check(1).unwrap(), DigestCheck::Match);
+    assert_eq!(store.load(1).unwrap(), v2);
+}
+
+#[test]
+fn an_old_store_without_a_digest_reads_as_unknown_not_corrupt() {
+    let root = scratch("no-digest");
+    let store = Store::open(&root);
+    let v1 = value(V1);
+    let v2 = value(&with("[storage]\nmin_free_percent = 12\n"));
+    store.apply(&v1, &v2, None).unwrap();
+
+    // A store that predates the digest: the same record, minus the `digest` field. It must read
+    // as "unknown" — the file cannot be checked — not as "corrupt", because nothing changed.
+    std::fs::write(
+        root.join("generations/0001.meta.json"),
+        br#"{"number":1,"risk":"reversible-local","changes":1}"#,
+    )
+    .unwrap();
+
+    assert_eq!(store.digest_check(1).unwrap(), DigestCheck::Unknown);
+    // `load` still returns the value: unknown is readable, only corruption refuses.
+    assert_eq!(store.load(1).unwrap(), v2);
+}
+
+#[test]
+fn a_generation_whose_file_changed_reads_as_corrupt() {
+    let root = scratch("digest-mismatch");
+    let store = Store::open(&root);
+    let v1 = value(V1);
+    let v2 = value(&with("[storage]\nmin_free_percent = 12\n"));
+    store.apply(&v1, &v2, None).unwrap();
+
+    // Change the stored file, not through the store: the bytes differ from the digest recorded
+    // at apply. It still parses, so the digest is the only thing that can call it corrupt.
+    let v3 = value(&with("[storage]\nmin_free_percent = 15\n"));
+    std::fs::write(
+        root.join("generations/0001.json"),
+        serde_json::to_vec_pretty(&v3).unwrap(),
+    )
+    .unwrap();
+
+    assert!(matches!(store.digest_check(1), Err(Error::Corrupt(_))));
+    assert!(matches!(store.load(1), Err(Error::Corrupt(_))));
 }

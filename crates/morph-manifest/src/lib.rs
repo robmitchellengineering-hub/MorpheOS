@@ -16,7 +16,7 @@ pub mod validate;
 pub use layer::{resolve, resolve_value};
 pub use model::Manifest;
 pub use plan::{Applied, Plan, Risk, apply, plan_values};
-pub use store::{Generation, Store};
+pub use store::{DigestCheck, Generation, Store};
 pub use validate::{Finding, Report, Severity, unenforced_settings, validate};
 
 use std::fmt;
@@ -37,6 +37,12 @@ pub enum Error {
     /// a blunt one. Distinct from [`Error::Invalid`], which is a defect *in a manifest or in
     /// writing one*.
     Usage(String),
+    /// A stored generation's file no longer matches the digest recorded when it was applied:
+    /// the file changed on disk since it was written. Distinct from [`Error::Invalid`], which
+    /// is a defect in a manifest or in writing one — this is corruption of a generation the
+    /// machine already accepted, and the right answer is to roll it back, not to report a bad
+    /// manifest.
+    Corrupt(String),
 }
 
 impl fmt::Display for Error {
@@ -46,6 +52,7 @@ impl fmt::Display for Error {
             Error::Invalid(message) => write!(f, "invalid manifest: {message}"),
             Error::Refused(message) => write!(f, "refused: {message}"),
             Error::Usage(message) => write!(f, "{message}"),
+            Error::Corrupt(message) => write!(f, "corrupt: {message}"),
         }
     }
 }

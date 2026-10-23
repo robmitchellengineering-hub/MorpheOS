@@ -20,9 +20,11 @@
 //! An applier is deliberately small and side-effect-free beyond its one setting: the reason a
 //! change is safe to take back is that taking it back is the same operation in reverse.
 
+pub mod heal;
 pub mod hostname;
 pub mod retention;
 
+pub use heal::{Convergence, converge};
 pub use hostname::{Hostname, Kernel};
 pub use retention::{Retention, RetentionPolicy};
 

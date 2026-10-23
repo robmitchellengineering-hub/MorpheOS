@@ -6,7 +6,7 @@
 //! destroyed the thing a person would want back.
 //!
 //! So a store keeps every generation it has been given, and `current` names one of them.
-//! Three properties are the whole point, and each has a test that can fail:
+//! Four properties are the whole point, and each has a test that can fail:
 //!
 //! 1. **A refused apply leaves the store exactly as it was.** No generation file, no meta
 //!    file, no change to `current`. The refusal is worth nothing if the store moves anyway.
@@ -18,6 +18,12 @@
 //!    generation; it never deletes one. So a rollback to the wrong generation is itself
 //!    undone by another rollback, which is the only property that makes rollback usable on
 //!    a machine somebody is relying on.
+//! 4. **Corruption is detected, and a store that predates the check is not.** [`Store::apply`]
+//!    records a BLAKE3 digest of the file it writes, and [`Store::load`] holds the file to it,
+//!    so a generation whose bytes changed since it was applied reads as [`Error::Corrupt`]
+//!    rather than as the manifest that was approved. A generation with no digest — one written
+//!    before the digest existed — reads as [`DigestCheck::Unknown`]: it cannot be checked,
+//!    and that is not corruption, so it is not rolled back on its account alone.
 //!
 //! **What this is not.** It stores *Manifests* — configuration generations, a few kilobytes
 //! each. Rolling one back changes which configuration is current; it does not roll back an
@@ -41,7 +47,8 @@ use crate::{Applied, Error, Risk, apply};
 /// A generation, as recorded beside it.
 ///
 /// This is the meta file's shape as well as the return value: the number, how risky the
-/// change was, how many paths it touched, and who took responsibility if anyone had to.
+/// change was, how many paths it touched, who took responsibility if anyone had to, and the
+/// digest of the file that holds it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Generation {
     pub number: u64,
@@ -49,6 +56,24 @@ pub struct Generation {
     pub changes: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approved_by: Option<String>,
+    /// The BLAKE3 digest of the stored manifest, recorded at apply. `None` means the store
+    /// predates the digest, so the file cannot be checked — it is "unknown", not "corrupt".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub digest: Option<String>,
+}
+
+/// The answer to "does the stored file match the digest recorded when it was applied?"
+///
+/// A generation's digest is recorded at [`Store::apply`] and checked at [`Store::load`]; this
+/// is the distinction the two share, exposed so a caller that wants the *classification* —
+/// rather than only "is it corrupt?" — does not have to parse it out of an error message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DigestCheck {
+    /// The file matched the digest recorded when it was applied.
+    Match,
+    /// No digest was recorded — the store predates the digest, so the file cannot be checked.
+    /// It is **not** corrupt.
+    Unknown,
 }
 
 /// **A person's mark on a change** ([ADR 0012]). Written beside the generation it authorises
@@ -244,17 +269,58 @@ impl Store {
         self.meta(number)
     }
 
-    /// Read a stored generation's manifest.
+    /// Read a stored generation's manifest, holding it to the digest recorded when it was
+    /// applied.
+    ///
+    /// A file that no longer parses is an [`Error::Invalid`]; one that parses but no longer
+    /// matches its digest is an [`Error::Corrupt`]. A generation applied before the digest
+    /// existed parses and reads back, but cannot be checked — it is [`DigestCheck::Unknown`],
+    /// not corrupt, so it is still returned.
     pub fn load(&self, number: u64) -> Result<Value, Error> {
         let path = self.path_of(number);
         let bytes = std::fs::read(&path)
             .map_err(|e| Error::Invalid(format!("generation {number}: {}: {e}", path.display())))?;
-        serde_json::from_slice(&bytes).map_err(|e| {
+        let value: Value = serde_json::from_slice(&bytes).map_err(|e| {
             Error::Invalid(format!(
                 "generation {number}: {} is not readable: {e}",
                 path.display()
             ))
-        })
+        })?;
+        // The digest check is the reason `load` refuses a file that parses: a generation whose
+        // bytes changed is not the manifest that was approved, however cleanly it still parses.
+        match self.digest_of_bytes(number, &bytes)? {
+            DigestCheck::Match | DigestCheck::Unknown => Ok(value),
+        }
+    }
+
+    /// Classify a stored generation's file against the digest recorded in its meta record.
+    ///
+    /// [`DigestCheck::Unknown`] means the store predates the digest; `Err` means the file does
+    /// not match what was recorded — corruption, not the absence of a check.
+    pub fn digest_check(&self, number: u64) -> Result<DigestCheck, Error> {
+        let path = self.path_of(number);
+        let bytes = std::fs::read(&path)
+            .map_err(|e| Error::Invalid(format!("generation {number}: {}: {e}", path.display())))?;
+        self.digest_of_bytes(number, &bytes)
+    }
+
+    /// The digest check shared by [`Self::load`] and [`Self::digest_check`], over bytes already
+    /// read, so the comparison lives in exactly one place.
+    fn digest_of_bytes(&self, number: u64, bytes: &[u8]) -> Result<DigestCheck, Error> {
+        match self.meta(number)?.digest {
+            None => Ok(DigestCheck::Unknown),
+            Some(expected) => {
+                let actual = blake3::hash(bytes).to_hex().to_string();
+                if actual == expected {
+                    Ok(DigestCheck::Match)
+                } else {
+                    Err(Error::Corrupt(format!(
+                        "generation {number}: {} does not match the digest recorded when it was applied",
+                        self.path_of(number).display()
+                    )))
+                }
+            }
+        }
     }
 
     /// Validate `new`, refuse it if its tier demands a person, store it, and make it current.
@@ -301,11 +367,19 @@ impl Store {
         // history) but cannot leave `current` pointing at something unfinished.
         let applied: Applied = apply(old, new, &self.path_of(number), approved_by)?;
 
+        // The digest is of the file `apply` just wrote — the resolved, validated JSON — so a
+        // later boot can tell "the bytes changed since this was applied" from "this was written
+        // before digests existed". It is recorded in the meta *before* `current` moves, for the
+        // same reason every other step is: a crash may leave an unrecorded generation, never a
+        // current one whose record does not say what it should match.
+        let digest = digest_file(&self.path_of(number))?;
+
         let generation = Generation {
             number,
             risk: applied.risk,
             changes: applied.changes,
             approved_by: applied.approved_by,
+            digest: Some(digest),
         };
         let meta = serde_json::to_vec_pretty(&generation).map_err(|e| {
             Error::Invalid(format!("the generation record does not serialise: {e}"))
@@ -406,6 +480,15 @@ fn numbers(history: &[Generation]) -> String {
         .map(|g| g.number.to_string())
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// The BLAKE3 digest of a file, as hex. The store records this at apply and holds every later
+/// read to it, so a generation that changed on disk — by hand or by bit rot — reads as corrupt
+/// rather than as the manifest that was approved.
+fn digest_file(path: &Path) -> Result<String, Error> {
+    let bytes = std::fs::read(path)
+        .map_err(|e| Error::Invalid(format!("{}: {e}", path.display())))?;
+    Ok(blake3::hash(&bytes).to_hex().to_string())
 }
 
 /// Write a file that is either fully there or not there at all.
