@@ -40,12 +40,6 @@ seed_home() {
     (cd /home/morph/Documents && find . -type f -name 'seed-*' | sort | xargs sha256sum) \
         > "$dir/before.sha256"
     sync
-    # Flush the data partition's block device itself. A filesystem-level sync/fsync leaves
-    # the inode table and journal dirty, and the emergency reboot below discards them — the
-    # seed files came back 0 bytes (epoch-0 inodes) after ext4's journal replay. This is the
-    # same move as the wipe's `dd conv=fsync` on root-a: a FLUSH on the raw device is the one
-    # thing the sysrq reset cannot swallow.
-    dd if=/dev/null of=/dev/disk/by-partlabel/data bs=512 count=0 conv=fsync status=none
     say "$(wc -l < "$dir/before.sha256") files seeded"
 }
 
@@ -93,7 +87,10 @@ case "$step" in
                 systemctl poweroff
                 ;;
             wipe)
-                seed_home
+                # No seed here: the harness seeds /home and powers off cleanly in a first
+                # run, so the seed is durable before this run wipes the slots (see
+                # test-recovery.sh). Wiping in the same boot as the seed lost the delalloc'd
+                # files to the emergency reboot.
                 wipe_slots
                 ;;
             *)
