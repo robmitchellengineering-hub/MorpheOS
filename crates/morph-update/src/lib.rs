@@ -56,6 +56,9 @@ pub use morph_boot::Slot;
 mod decision;
 pub use decision::{decide, AutoDecision};
 
+mod fetch;
+pub use fetch::fetch;
+
 /// The three files an update payload consists of, and the manifest that names them.
 pub const ROOT_IMAGE: &str = "root.img";
 pub const KERNEL: &str = "vmlinuz";
@@ -116,6 +119,9 @@ pub enum Error {
     Policy(String),
     /// A previous update to this slot never finished.
     Incomplete(String),
+    /// The payload could not be fetched over the network (S3): connection, status, or a
+    /// truncation that the caller reports separately from a local I/O error.
+    Fetch(String),
 }
 
 impl fmt::Display for Error {
@@ -128,6 +134,7 @@ impl fmt::Display for Error {
             Error::Refused(m) => write!(f, "refused: {m}"),
             Error::Policy(m) => write!(f, "boot policy: {m}"),
             Error::Incomplete(m) => write!(f, "incomplete update: {m}"),
+            Error::Fetch(m) => write!(f, "fetch failed: {m}"),
         }
     }
 }

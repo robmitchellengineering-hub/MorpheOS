@@ -13,3 +13,6 @@ ed25519-dalek = "2"
 morph-boot = { path = "../morph-boot" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+# The fetch client (S3). ureq's rustls backend links no system library, matching the
+# blake3/ed25519-dalek/zbus choice; the test server speaks plain HTTP, production HTTPS.
+ureq = "2"
