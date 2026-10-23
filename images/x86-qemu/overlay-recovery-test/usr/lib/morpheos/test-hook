@@ -40,6 +40,12 @@ seed_home() {
     (cd /home/morph/Documents && find . -type f -name 'seed-*' | sort | xargs sha256sum) \
         > "$dir/before.sha256"
     sync
+    # syncfs the data filesystem, not just sync(): a bare sync() left half the seed files
+    # empty (0 bytes, epoch-0 inode) after the emergency reboot below — the sysrq reset does
+    # not flush the device, so the delalloc'd data pages were lost and ext4's journal replay
+    # recovered the dentries with no data. syncfs waits for the data AND the inode size to
+    # reach the device, which is what "survives the wipe" has to mean.
+    sync -f /home/morph/Documents
     say "$(wc -l < "$dir/before.sha256") files seeded"
 }
 
