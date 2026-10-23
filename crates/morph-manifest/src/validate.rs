@@ -300,9 +300,10 @@ pub fn unenforced_settings() -> &'static [(&'static str, &'static str)] {
             "there is no heal engine yet",
         ),
         // Found on 2026-10-14 by reading what each component reads: nothing on a machine
-        // reads the Manifest at all yet (doc 20, S11), and these had no line here. The two
-        // that are now obeyed — /machine/name (morphd's hostname applier) and /storage/retention
-        // (morphd's retention applier + strata prune) — have been removed from this list.
+        // reads the Manifest at all yet (doc 20, S11), and these had no line here. The three
+        // that are now obeyed — /machine/name (morphd's hostname applier), /storage/retention
+        // (morphd's retention applier + strata prune) and /storage/min_free_percent (morphd's
+        // min-free applier + strata guard, doc 20 S7) — have been removed from this list.
         ("/machine/profile", "no component reads a scaling profile"),
         (
             "/machine/arch",
@@ -319,10 +320,6 @@ pub fn unenforced_settings() -> &'static [(&'static str, &'static str)] {
         (
             "/system/recovery_image",
             "there is no recovery image yet (doc 20, S4)",
-        ),
-        (
-            "/storage/min_free_percent",
-            "nothing watches free space yet (doc 20, S7)",
         ),
         (
             "/storage/replicas",

@@ -24,6 +24,8 @@ commands:
   prune [--keep-hours N] [--hourly-days N] [--daily-days N]
                                      thin out old versions (no flags: the policy `morphd`
                                      wrote, else 24 / 30 / 365)
+  guard                              when free space is below the floor `morphd` wrote
+                                     (else 10%), prune by the retention policy
   policy                            the retention policy in force
   alerts [--json]                    ransomware-like bursts seen by `watch`, oldest first,
                                      each with the rewind command that undoes it
@@ -85,12 +87,22 @@ fn flag<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
 /// the other's crate.
 const POLICY_FILE: &str = "/persist/morph/strata-retention.json";
 
+/// Where `morphd` writes the Manifest's `storage.min_free_percent` (doc 20, S7). The same
+/// interface as [`POLICY_FILE`]: the floor is decided in one place and obeyed in another.
+const MIN_FREE_FILE: &str = "/persist/morph/strata-min-free.json";
+
 /// The raw policy the Manifest named, as `morphd` wrote it.
 #[derive(serde::Deserialize)]
 struct WrittenPolicy {
     all_versions_hours: u32,
     hourly_days: u32,
     daily_days: u32,
+}
+
+/// The raw free-space floor the Manifest named, as `morphd` wrote it.
+#[derive(serde::Deserialize)]
+struct WrittenFloor {
+    min_free_percent: u8,
 }
 
 /// The policy `morphd` wrote, or `None` when it has never been written (the machine has not
@@ -104,6 +116,18 @@ fn written_policy() -> Result<Option<WrittenPolicy>, String> {
     serde_json::from_str(&text)
         .map(Some)
         .map_err(|e| format!("{POLICY_FILE} is not a retention policy: {e}"))
+}
+
+/// The floor `morphd` wrote, or `None` when it has never been written.
+fn written_min_free() -> Result<Option<u8>, String> {
+    let text = match std::fs::read_to_string(MIN_FREE_FILE) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(format!("reading {MIN_FREE_FILE}: {e}")),
+    };
+    let floor: WrittenFloor = serde_json::from_str(&text)
+        .map_err(|e| format!("{MIN_FREE_FILE} is not a free-space floor: {e}"))?;
+    Ok(Some(floor.min_free_percent))
 }
 
 fn when(args: &[String]) -> Result<Option<i64>, String> {
@@ -273,6 +297,33 @@ fn run(a: Args) -> Result<(), String> {
                 "{versions} old versions removed; {} objects ({} bytes) freed",
                 gc.objects_removed, gc.bytes_freed
             );
+            Ok(())
+        }
+        ["guard"] => {
+            let mut s = Strata::open(&a.store).map_err(err)?;
+            // The floor is the Manifest's `storage.min_free_percent`, written by `morphd`;
+            // 10 is the base profile's default, used only before `morphd` has run once.
+            let floor = written_min_free()?.unwrap_or(10);
+            let policy = match written_policy()? {
+                Some(p) => {
+                    Retention::from_manifest(p.all_versions_hours, p.hourly_days, p.daily_days)
+                }
+                None => Retention::from_manifest(24, 30, 365),
+            };
+            match strata::guard::guard(&mut s, floor, &policy, time::now_ns()).map_err(err)? {
+                Some(r) => println!(
+                    "free space {}% is below the {}% floor; pruned {} old versions ({} objects, {} bytes freed)",
+                    r.free_percent,
+                    r.floor_percent,
+                    r.versions_removed,
+                    r.objects_removed,
+                    r.bytes_freed
+                ),
+                None => {
+                    let free = strata::guard::free_percent(s.root()).map_err(err)?;
+                    println!("free space {free}% is at or above the {floor}% floor; nothing to do");
+                }
+            }
             Ok(())
         }
         ["policy"] => match written_policy()? {

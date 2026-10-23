@@ -106,13 +106,7 @@ impl ObjectStore {
         let dir = path.parent().expect("object path has a parent");
         fs::create_dir_all(dir).map_err(io(format!("creating {}", dir.display())))?;
         let packed = zstd::encode_all(data, 3).map_err(io("compressing"))?;
-        // Write beside, then rename: a crash leaves either nothing or the whole object.
-        let tmp = path.with_extension(format!("tmp-{}", std::process::id()));
-        let mut f = fs::File::create(&tmp).map_err(io(format!("writing {}", tmp.display())))?;
-        f.write_all(&packed)
-            .and_then(|_| f.sync_all())
-            .map_err(io(format!("writing {}", tmp.display())))?;
-        fs::rename(&tmp, &path).map_err(io(format!("storing {}", path.display())))?;
+        write_atomic(&path, &packed)?;
         Ok(hash)
     }
 
@@ -228,6 +222,29 @@ impl ObjectStore {
         }
         Ok(report)
     }
+}
+
+/// Write `bytes` to `path` so that a reader finds either nothing or the whole object.
+///
+/// The bytes go to a temporary name in the same directory, are fsynced, and are then
+/// renamed over `path`. That is what makes a failed write survivable: when the disk is
+/// full the write fails with ENOSPC part-way through, and the object is only ever
+/// published by the final rename, so the store can never hold a half-written object
+/// under its real name. The temporary file is removed on failure — on a full disk, a
+/// partial leftover would be exactly the space the space guard is trying to recover.
+fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
+    let tmp = path.with_extension(format!("tmp-{}", std::process::id()));
+    let result = (|| {
+        let mut f = fs::File::create(&tmp).map_err(io(format!("writing {}", tmp.display())))?;
+        f.write_all(bytes)
+            .and_then(|_| f.sync_all())
+            .map_err(io(format!("writing {}", tmp.display())))?;
+        fs::rename(&tmp, path).map_err(io(format!("storing {}", path.display())))
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    result
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -346,6 +363,37 @@ mod tests {
         fs::write(&path, zstd::encode_all(&b"tampered"[..], 3).unwrap()).unwrap();
         let err = s.read_file(&stored.content, &mut Vec::new()).unwrap_err();
         assert!(matches!(err, Error::Corrupt(_)), "{err}");
+    }
+
+    #[test]
+    fn a_write_that_cannot_complete_leaves_the_store_readable() {
+        // A full disk fails a write with ENOSPC part-way through, before the object is
+        // renamed into place. This forces the same failure shape portably and for every
+        // user — the temporary name is already a directory, so `File::create` refuses —
+        // and proves the store keeps what it already had and published nothing new.
+        let root = tmp("enospc");
+        let s = ObjectStore::open(&root).unwrap();
+        let good = s
+            .put_file(b"the version that must survive".as_slice())
+            .unwrap();
+
+        let new_data = b"a version that will not fit".to_vec();
+        let hash = hash_hex(&new_data);
+        let shard = root.join("chunks").join(&hash[..2]);
+        fs::create_dir_all(&shard).unwrap();
+        let tmp = shard.join(format!("{}.tmp-{}", &hash[2..], std::process::id()));
+        fs::create_dir(&tmp).unwrap();
+
+        let err = s.put_file(new_data.as_slice()).unwrap_err();
+        assert!(matches!(err, Error::Io { .. }), "{err}");
+
+        // The object stored before the failed write is intact, byte for byte.
+        let mut out = Vec::new();
+        s.read_file(&good.content, &mut out).unwrap();
+        assert_eq!(out, b"the version that must survive");
+
+        // The failed write published no object under the new hash.
+        assert!(!s.path(Kind::Chunk, &hash).exists());
     }
 
     #[test]

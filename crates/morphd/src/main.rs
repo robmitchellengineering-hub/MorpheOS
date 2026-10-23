@@ -9,7 +9,7 @@ use std::process::ExitCode;
 
 use morph_manifest::Manifest;
 use morph_transaction::Transaction;
-use morphd::{Applier, Hostname, Retention, RetentionPolicy};
+use morphd::{Applier, Hostname, MinFreePercent, MinFreePercentPolicy, Retention, RetentionPolicy};
 
 /// Where the store and the transaction live (doc 20, S11 note 1).
 const STORE: &str = "/persist/morph";
@@ -74,7 +74,7 @@ fn resolve_interrupted(transaction: &Transaction) -> Result<(), String> {
     Ok(())
 }
 
-/// Apply the hostname and retention a Manifest names.
+/// Apply the hostname, retention and free-space floor a Manifest names.
 fn apply_settings(manifest: &Manifest) -> Result<(), String> {
     let hostname = Hostname::new();
     hostname.apply(&manifest.machine.name)?;
@@ -83,6 +83,10 @@ fn apply_settings(manifest: &Manifest) -> Result<(), String> {
         all_versions_hours: manifest.storage.retention.all_versions_hours,
         hourly_days: manifest.storage.retention.hourly_days,
         daily_days: manifest.storage.retention.daily_days,
+    })?;
+    let min_free = MinFreePercentPolicy::new();
+    min_free.apply(&MinFreePercent {
+        min_free_percent: manifest.storage.min_free_percent,
     })?;
     Ok(())
 }
@@ -101,13 +105,17 @@ fn healthy(manifest: &Manifest) -> bool {
                 && r.daily_days == manifest.storage.retention.daily_days
         })
         .unwrap_or(false);
+    let min_free_ok = MinFreePercentPolicy::new()
+        .read_back()
+        .map(|f| f.min_free_percent == manifest.storage.min_free_percent)
+        .unwrap_or(false);
     // `strata.service` active is the health check the card names (note 1); a systemd call is
     // the one thing this process does that the appliers do not.
     let strata = std::process::Command::new("systemctl")
         .args(["is-active", "--quiet", "strata.service"])
         .status()
         .is_ok_and(|s| s.success());
-    hostname_ok && retention_ok && strata
+    hostname_ok && retention_ok && min_free_ok && strata
 }
 
 /// Converge the machine to the current generation, first undoing any interrupted change.
@@ -186,6 +194,9 @@ fn undo_settings(old: &Manifest) -> Result<(), String> {
         all_versions_hours: old.storage.retention.all_versions_hours,
         hourly_days: old.storage.retention.hourly_days,
         daily_days: old.storage.retention.daily_days,
+    })?;
+    MinFreePercentPolicy::new().undo(&MinFreePercent {
+        min_free_percent: old.storage.min_free_percent,
     })?;
     Ok(())
 }
