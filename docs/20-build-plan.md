@@ -12,9 +12,10 @@ pick up without having to guess. `scripts/verify-plan.mjs` checks it in CI.
   can check, never "it works". A `done` task also has an **Evidence:** line: a pull request,
   a CI run, an artifact or a file in this repository.
 - **Statuses:** `proposed` (an idea, not approved), `open`, `in progress`, `blocked`, `done`.
-  Only Rob turns `proposed` into `open`, or marks a task `parallel`. `verify-plan.mjs` refuses
-  either change, on any branch, unless the branch's log file carries his words as a line
-  `Rob on <ID>: <what he said, and when>`.
+  The DSH session may turn `proposed` into `open` (recorded as a `DSH on <ID>: ...` line in
+  the branch's log); only Rob marks a task `parallel` or frees a **Waiting on Rob:** line
+  (recorded as `Rob on <ID>: <what he said, and when>`). `verify-plan.mjs` refuses the change
+  without the matching line, on any branch.
 - **What waits on Rob is written in three fields**, and nowhere else: `**Waiting on Rob:**`
   (the task may not start until he answers: `verify-plan.mjs` refuses a `feat/` branch for it),
   `**Ask Rob to open:**` (a proposed task worth opening now, and why), and
@@ -1620,7 +1621,7 @@ attempted before the transactional apply exists.
    1. The digest and `morphd`'s check, with unit tests.
    2. The scenario and the notice.
 
-### S11 · The Manifest is obeyed: `morphd` v0 applies its first settings · proposed
+### S11 · The Manifest is obeyed: `morphd` v0 applies its first settings · open · parallel
 
 **What:** the smallest `morphd` (a service under systemd, ADR 0017) that makes the current
 Manifest generation real on the machine, through `morph-transaction`: plan, apply, health
@@ -1635,8 +1636,6 @@ longer lists `/storage/retention`. Made exact: in `images/x86-qemu/test-manifest
 writes the kernel's hostname (`/proc/sys/kernel/hostname`) and the policy Strata itself reports
 to a file on the ESP after each step. The test reads that file with `mtype`, and reads the
 store's `current` off the data partition.
-
-**Ask Rob to open:** S7 and S8 need it, and nothing inside it changes the security model.
 
 **Notes:** proposed 2026-10-14 by Claude Code, while picking up S8. It unblocks S8 (a
 Manifest-managed setting to corrupt) and S7 (Strata pruning by `storage.retention`). Rob opens
@@ -2904,3 +2903,33 @@ any particular vendor or layer. Open question: can a layer be added to a finishe
 image be rebuilt from the pinned commit? ADR 0006 applies layers at build time, so the second is
 the likelier. The signing key for a vendor's own updates is the vendor's (A4 and doc 20 S2 cover
 MorpheOS's), so this task needs Rob's decision on the security model before it is opened.
+
+### W8 · Run a real model on the device, and pooled compute across the mesh · proposed
+**What:** a route Rob asked to record (2026-10-20), not approved work. Two halves, both from the
+pacland research repo (`docs/colibri-evaluation.md`, `docs/physics-compute-roadmap.md`):
+
+1. **A frontier model embedded in the OS** — [Colibri](https://github.com/JustVugg/colibri), a
+   pure-C MoE inference engine that streams expert weights from disk, runs a 744B model on ~25 GB
+   RAM with no GPU. Distinct from W3, which is a small intent-bar model; this is "the OS carries
+   its own real model".
+2. **Pooled compute over the device mesh** — cheap self-contained devices (gaming laptops /
+   handhelds) as compute nodes. The flux-vacua sampling in pacland is embarrassingly parallel and
+   CPU-only, so a pool of cheap nodes is a real alternative to a rented GPU for that workload.
+
+**Done when:** Rob orders it; until then it is a pointer, not work.
+
+**Notes:** the AI layer is doc 06, the mesh is doc 07. Whether this belongs in MorpheOS at all —
+vs staying in pacland / harness-mesh — is part of what opening it would decide.
+
+**Model shortlist to test (Rob, 2026-10-20) — on a 16 GB device, e.g. the Legion Go:**
+
+- **Qwen3.6-35B-A3B** — general OS assistant (thinking + tools); 3B active, ~6–10 tok/s,
+  fits (10 GB floor).
+- **Qwen3-Coder-30B-A3B** — tool calls / actions, no thinking; ~8.5–9.6 tok/s, fits (8 GB floor).
+- **Laya / GLiNER2.5-Decide** (Colibri "System One" decision models) — the intent-bar "which
+  action" path: a calibrated probability in ~250 ms, not a sentence. Matches doc 21's
+  "deterministic matchers, then a 3B model".
+- **Upgrade when a 32 GB device exists:** Qwen3.8-27B **dense** (27B active vs the 35B-A3B's 3B
+  active; ~3.4 tok/s int4, 20 GB) and Qwen3.8-Flash-Next (vision + tools, 24–32 GB).
+
+Test all four on the Legion Go and compare, rather than committing to one.

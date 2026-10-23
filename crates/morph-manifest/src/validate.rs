@@ -294,21 +294,15 @@ pub fn unenforced_settings() -> &'static [(&'static str, &'static str)] {
             "/system/update_ring",
             "update rings are Fleet-tier and not built",
         ),
-        (
-            "/storage/retention",
-            "the retention policy is advisory; nothing evicts on it yet",
-        ),
         ("/heal/max_auto_rung", "there is no heal engine yet"),
         (
             "/heal/ask_after_failed_rungs",
             "there is no heal engine yet",
         ),
         // Found on 2026-10-14 by reading what each component reads: nothing on a machine
-        // reads the Manifest at all yet (doc 20, S11), and these had no line here.
-        (
-            "/machine/name",
-            "nothing names the machine from it yet (doc 20, S11)",
-        ),
+        // reads the Manifest at all yet (doc 20, S11), and these had no line here. The two
+        // that are now obeyed — /machine/name (morphd's hostname applier) and /storage/retention
+        // (morphd's retention applier + strata prune) — have been removed from this list.
         ("/machine/profile", "no component reads a scaling profile"),
         (
             "/machine/arch",

@@ -120,8 +120,10 @@ branch that has a pull request open.
 evidence; rename a required CI job without saying so in the PR (H10); edit an accepted ADR
 (write a new one that supersedes it).
 
-**A new idea** goes into doc 20 as a `proposed` task in a `plan/` pull request. Don't build it
-until Rob opens it.
+**A new idea** goes into doc 20 as a `proposed` task in a `plan/` pull request. The session may
+open a task itself (a `DSH on <ID>: ...` line in the branch's log), so `proposed` no longer
+means "waiting on Rob" — it means the reason to start it is written down. `parallel` and
+freeing a **Waiting on Rob:** line stay Rob's.
 
 **A test that fails once and then passes is a bug, not luck** (H13, H14: timing). Rerun it
 once, to see whether it repeats. Either way, paste the failing output into your log file and

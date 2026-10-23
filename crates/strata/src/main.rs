@@ -22,7 +22,9 @@ commands:
                                      put a whole folder back the way it was at TIME;
                                      nothing is deleted (newer files go to quarantine)
   prune [--keep-hours N] [--hourly-days N] [--daily-days N]
-                                     thin out old versions (defaults 24 / 30 / 365)
+                                     thin out old versions (no flags: the policy `morphd`
+                                     wrote, else 24 / 30 / 365)
+  policy                            the retention policy in force
   alerts [--json]                    ransomware-like bursts seen by `watch`, oldest first,
                                      each with the rewind command that undoes it
   stats                              versions, files and store size
@@ -76,6 +78,32 @@ fn flag<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
         .position(|a| a == name)
         .and_then(|i| args.get(i + 1))
         .map(String::as_str)
+}
+
+/// Where `morphd` writes the Manifest's `storage.retention` (doc 20, S11). The file is the
+/// interface between the two: `morphd` decides the policy, Strata obeys it, and neither reads
+/// the other's crate.
+const POLICY_FILE: &str = "/persist/morph/strata-retention.json";
+
+/// The raw policy the Manifest named, as `morphd` wrote it.
+#[derive(serde::Deserialize)]
+struct WrittenPolicy {
+    all_versions_hours: u32,
+    hourly_days: u32,
+    daily_days: u32,
+}
+
+/// The policy `morphd` wrote, or `None` when it has never been written (the machine has not
+/// yet obeyed a generation's `storage.retention`).
+fn written_policy() -> Result<Option<WrittenPolicy>, String> {
+    let text = match std::fs::read_to_string(POLICY_FILE) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(format!("reading {POLICY_FILE}: {e}")),
+    };
+    serde_json::from_str(&text)
+        .map(Some)
+        .map_err(|e| format!("{POLICY_FILE} is not a retention policy: {e}"))
 }
 
 fn when(args: &[String]) -> Result<Option<i64>, String> {
@@ -223,11 +251,23 @@ fn run(a: Args) -> Result<(), String> {
                     v.parse().map_err(|_| format!("bad {name} '{v}'"))
                 })
             };
-            let policy = Retention::from_manifest(
-                num("--keep-hours", 24)?,
-                num("--hourly-days", 30)?,
-                num("--daily-days", 365)?,
-            );
+            // Flags override the policy file; with none, the Manifest's `storage.retention`
+            // (written by `morphd`) is the policy in force — pruning obeys the generation,
+            // not a hard-coded default.
+            let policy = if opts.iter().any(|o| o.starts_with("--")) {
+                Retention::from_manifest(
+                    num("--keep-hours", 24)?,
+                    num("--hourly-days", 30)?,
+                    num("--daily-days", 365)?,
+                )
+            } else {
+                match written_policy()? {
+                    Some(p) => {
+                        Retention::from_manifest(p.all_versions_hours, p.hourly_days, p.daily_days)
+                    }
+                    None => Retention::from_manifest(24, 30, 365),
+                }
+            };
             let (versions, gc) = s.prune(&policy, time::now_ns()).map_err(err)?;
             println!(
                 "{versions} old versions removed; {} objects ({} bytes) freed",
@@ -235,6 +275,19 @@ fn run(a: Args) -> Result<(), String> {
             );
             Ok(())
         }
+        ["policy"] => match written_policy()? {
+            Some(p) => {
+                println!(
+                    "keep every version under {} hours; then one per hour for {} days; then one per day for {} days",
+                    p.all_versions_hours, p.hourly_days, p.daily_days
+                );
+                Ok(())
+            }
+            None => {
+                println!("no retention policy written (default: 24 hours / 30 days / 365 days)");
+                Ok(())
+            }
+        },
         ["alerts", opts @ ..] if opts.iter().all(|o| *o == "--json") => {
             let s = Strata::open(&a.store).map_err(err)?;
             let alerts = s.alerts().map_err(err)?;
