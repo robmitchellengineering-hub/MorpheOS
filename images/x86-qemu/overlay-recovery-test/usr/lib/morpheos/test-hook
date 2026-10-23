@@ -33,17 +33,19 @@ seed_home() {
     mkdir -p /home/morph/Documents
     n=1
     while [ "$n" -le 24 ]; do
-        # Pipe through `dd conv=fsync`: a bare `>` leaves the data in ext4's delalloc cache
-        # and the emergency reboot below (sysrq, no sync) loses the inode's size update, so
-        # half the files came back 0 bytes after the journal replay. fsync after each write
-        # commits both the data and the inode size before the reboot.
         awk -v n="$n" 'BEGIN { for (l=1; l<=40; l++) printf "recovery seed %04d line %02d\n", n, l }' \
-            | dd of="/home/morph/Documents/seed-$n.txt" conv=fsync status=none
+            > "/home/morph/Documents/seed-$n.txt"
         n=$((n+1))
     done
     (cd /home/morph/Documents && find . -type f -name 'seed-*' | sort | xargs sha256sum) \
         > "$dir/before.sha256"
     sync
+    # Flush the data partition's block device itself. A filesystem-level sync/fsync leaves
+    # the inode table and journal dirty, and the emergency reboot below discards them — the
+    # seed files came back 0 bytes (epoch-0 inodes) after ext4's journal replay. This is the
+    # same move as the wipe's `dd conv=fsync` on root-a: a FLUSH on the raw device is the one
+    # thing the sysrq reset cannot swallow.
+    dd if=/dev/null of=/dev/disk/by-partlabel/data bs=512 count=0 conv=fsync status=none
     say "$(wc -l < "$dir/before.sha256") files seeded"
 }
 
