@@ -1024,7 +1024,7 @@ that lives in CI. The custody, a backup key and the release numbering are drafte
 [ADR 0019](adr/0019-release-signing-key.md) (Proposed). `morph-heal`, which rebuilds a slot from the running system, signs that copy
 with a key made for the one repair, so there is still no unsigned way to open a payload.
 
-### S3 · Updates arrive by themselves · open · needs S2
+### S3 · Updates arrive by themselves · open · parallel · needs S2
 
 **What:** a timer checks an HTTPS update server for a newer signed payload than the running
 system. It downloads the payload to `/persist`, checks the signature before downloading the
@@ -1404,7 +1404,7 @@ drafted for his answer as [ADR 0020](adr/0020-account-model.md).
    1. The account, locked root and `test-accounts.sh`.
    2. The first-boot window and the shell's login screen.
 
-### S6 · Rewind from the shell · open · needs E3
+### S6 · Rewind from the shell · open · parallel · needs E3
 
 **What:** a timeline window on the Flow shell, `flow-timeline`, built the way `flow-wifi` is. It
 lists the moments a person can go back to: Strata's ransomware alerts first, each with its
@@ -1478,7 +1478,7 @@ keypress that confirmed, so the shell did the rewind and not a script. The boot 
    1. The crate, its model and the compositor test.
    2. The image, the path unit and `test-rewind.sh`.
 
-### S7 · A full disk does not break the machine · open · needs S11
+### S7 · A full disk does not break the machine · open · parallel · needs S11
 
 **What:** when `/persist` fills, the machine keeps working and recovers space by itself. Every
 boot is still healthy. Strata keeps going and does not crash-loop. A space guard prunes
@@ -1555,7 +1555,7 @@ and validated, and nothing obeys it yet (AGENTS.md H5).
    1. Strata survives ENOSPC, and the guard, with unit tests.
    2. `flow-notice` and `test-full-disk.sh`.
 
-### S8 · A corrupted setting rolls back (rung H2) · open · needs S11
+### S8 · A corrupted setting rolls back (rung H2) · open · parallel · needs S11
 
 **What:** H2 is rolling back the one offending configuration change. When the Manifest
 generation in force is corrupted, so that it no longer parses, no longer validates, or no
