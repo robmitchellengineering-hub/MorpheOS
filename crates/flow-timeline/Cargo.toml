@@ -1,0 +1,22 @@
+[package]
+name = "flow-timeline"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "MorpheOS: the rewind timeline on the Flow shell, over Strata's ransomware alerts"
+
+[dependencies]
+flow-shell = { path = "../flow-shell" }
+strata = { path = "../strata" }
+# Reading a rewind's counts: `RewindReport.steps` is `Vec<Step>`, and `Step` is not
+# re-exported from `strata` (its module is private). The report's JSON `action` tag is the
+# serialized contract the `strata` CLI already prints, so it is read rather than the type.
+serde_json = "1.0.151"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# The window: a plain Wayland client, as solid-window is, with the compositor's own keymap.
+wayland-client = "0.31.11"
+wayland-protocols = { version = "0.32.9", features = ["client"] }
+xkbcommon = "0.8.0"
+rustix = { version = "1.1.5", features = ["event"] }

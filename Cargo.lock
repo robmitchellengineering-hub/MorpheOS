@@ -601,10 +601,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "flow-timeline"
+version = "0.1.0"
+dependencies = [
+ "flow-shell",
+ "rustix 1.1.5",
+ "serde_json",
+ "strata",
+ "wayland-client",
+ "wayland-protocols",
+ "xkbcommon",
+]
+
+[[package]]
 name = "flow-wifi"
 version = "0.1.0"
 dependencies = [
  "flow-shell",
+ "flow-timeline",
  "rustix 1.1.5",
  "wayland-client",
  "wayland-protocols",

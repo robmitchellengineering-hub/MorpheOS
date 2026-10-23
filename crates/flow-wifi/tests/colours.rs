@@ -10,6 +10,7 @@
 //! ones the image scripts key on (`images/x86-qemu/test-*.sh`).
 
 use flow_shell::{Colour, palette};
+use flow_timeline::timeline::colours as timeline;
 use flow_wifi::picker::colours;
 
 fn rgb(c: Colour) -> (u8, u8, u8) {
@@ -45,6 +46,18 @@ fn no_two_colours_a_test_reads_by_are_the_same() {
         ("colours::OK", rgb(colours::OK)),
         ("colours::FAIL", rgb(colours::FAIL)),
         ("colours::IDLE", rgb(colours::IDLE)),
+        // The rewind timeline (crates/flow-timeline/src/timeline.rs).
+        ("timeline::BACKGROUND", rgb(timeline::BACKGROUND)),
+        ("timeline::TITLE", rgb(timeline::TITLE)),
+        ("timeline::TEXT", rgb(timeline::TEXT)),
+        ("timeline::DIM", rgb(timeline::DIM)),
+        ("timeline::SEPARATOR", rgb(timeline::SEPARATOR)),
+        ("timeline::SELECTED", rgb(timeline::SELECTED)),
+        ("timeline::BUSY", rgb(timeline::BUSY)),
+        ("timeline::OK", rgb(timeline::OK)),
+        ("timeline::FAIL", rgb(timeline::FAIL)),
+        ("timeline::CONFIRM", rgb(timeline::CONFIRM)),
+        ("timeline::IDLE", rgb(timeline::IDLE)),
         // What the image tests draw and look for.
         (
             "start page (overlay-browser start.html)",
