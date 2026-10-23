@@ -50,10 +50,16 @@ seed_home() {
 # `wipefs` is NOT used: it opens the device exclusively and fails EBUSY on a mounted one (the
 # 90-minute CI timeout that prompted this fix). The zeroing alone removes the filesystem
 # signature, exactly what the harness-side wipe does with dd between runs.
+#
+# `conv=fsync` is load-bearing: the reboot below is `echo b > /proc/sysrq-trigger`, an
+# emergency restart that does NOT sync. A buffered dd to the *mounted* root sits in the page
+# cache and is lost on that reset, so the machine boots its still-valid slot A and never arms
+# recovery (the first red run of this scenario proved exactly that). fsync pushes the zeroes
+# to the device before the reboot, for the mounted root and the spare alike.
 wipe_slots() {
     say "wiping both slot partitions from inside the running machine"
     for part in root-a root-b; do
-        if ! dd if=/dev/zero of="/dev/disk/by-partlabel/$part" bs=1M count=64 conv=notrunc status=none; then
+        if ! dd if=/dev/zero of="/dev/disk/by-partlabel/$part" bs=1M count=64 conv=notrunc,fsync status=none; then
             say "FAILED to wipe $part: writing the mounted device was refused"
         fi
     done
