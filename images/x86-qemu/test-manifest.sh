@@ -17,6 +17,10 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 esp() { mtype -i "$disk@@1M" "::/$1" 2>/dev/null || true; }
 esp_write() { # esp_write <src-file> <dst-path>
     mmd -i "$disk@@1M" "::/morph-manifest-test" 2>/dev/null || true
+    # Delete any existing destination first: the manifest scenario writes `mode` twice
+    # (apply, then fail), and mcopy refuses to overwrite an existing FAT entry, so the
+    # fail run died here with exit 1 and never booted.
+    mdel -i "$disk@@1M" "::/morph-manifest-test/$2" 2>/dev/null || true
     mcopy -i "$disk@@1M" "$1" "::/morph-manifest-test/$2"
 }
 
