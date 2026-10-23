@@ -1200,8 +1200,9 @@ the disk after the VM stops:
 
 Also: a recovery image whose own digest does not match is refused, and nothing is written.
 
-**Evidence:** PR #124, the "Try to Break It: A/B updates (x86 VM)" job green — the
-`wipe-in-machine` scenario rebuilds both slots and every `/home` file matches its checksum.
+**Evidence:** PR #124 — `images/x86-qemu/test-recovery.sh` is green in the "Try to Break It:
+A/B updates (x86 VM)" job: the `wipe-in-machine` scenario rebuilds both slots and every `/home`
+file matches its checksum.
 
 **Rob decides before the recovery image ships:** its size, and whether an update may refresh
 it (note 5). Neither blocks the VM proof.
