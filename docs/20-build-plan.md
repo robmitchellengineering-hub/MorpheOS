@@ -1179,7 +1179,7 @@ the release numbering, drafted for his answer as [ADR 0019](adr/0019-release-sig
    3. The image and `test-autoupdate.sh good`.
    4. `bad` and `tampered`.
 
-### S4 · The recovery image (rung H4) · open · parallel
+### S4 · The recovery image (rung H4) · done · parallel
 
 **What:** a third, immutable system, the recovery image. It is a known-good, signed copy of
 the system on its own partition, with its own boot entry, written only when the disk is made.
@@ -1199,6 +1199,10 @@ the disk after the VM stops:
 - every file under `/home` matches its checksum from before the wipe.
 
 Also: a recovery image whose own digest does not match is refused, and nothing is written.
+
+**Evidence:** PR #124 — `images/x86-qemu/test-recovery.sh` is green in the "Try to Break It:
+A/B updates (x86 VM)" job: the `wipe-in-machine` scenario rebuilds both slots and every `/home`
+file matches its checksum.
 
 **Rob decides before the recovery image ships:** its size, and whether an update may refresh
 it (note 5). Neither blocks the VM proof.

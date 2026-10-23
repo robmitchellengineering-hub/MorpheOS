@@ -56,6 +56,11 @@ pub struct Heal {
     /// The recovery image's payload directory on the ESP: its kernel and initrd, which
     /// `recover` stages with the recovery partition as the root image.
     pub recovery_dir: PathBuf,
+    /// The factory public keys the recovery image is signed with at build time. `recover`
+    /// checks the recovery payload against its factory-signed manifest with these before
+    /// it writes anything (S4, the corrupt-recovery refusal). This is the same key dir the
+    /// slots already trust for updates, baked into the recovery root itself.
+    pub recovery_keys: PathBuf,
 }
 
 impl Heal {
@@ -70,6 +75,7 @@ impl Heal {
             stage: PathBuf::from("/run/morph-heal"),
             release_file: PathBuf::from(morph_update::RELEASE_FILE),
             recovery_dir: esp.join("morpheos/recovery"),
+            recovery_keys: PathBuf::from(morph_update::TRUSTED_KEYS_DIR),
             esp,
         }
     }
@@ -403,6 +409,40 @@ impl Heal {
             std::fs::copy(&from, stage.join(name))
                 .map_err(io(format!("reading {}", from.display())))?;
         }
+
+        // Self-check (S4, the corrupt-recovery refusal): before anything is written, the
+        // staged recovery payload must match the factory-signed manifest written at image
+        // build time and carried beside the recovery kernel on the ESP. A corrupted boot file
+        // must be refused while both slots still hold whatever they held, rather than let
+        // corruption overwrite the last two systems. The signature is checked against the
+        // factory public key the slots already trust for updates (baked into the recovery root
+        // itself). The root image is NOT hashed: it is the mounted recovery partition, and a
+        // mounted filesystem's raw bytes are not stable (the kernel updates the superblock and
+        // journal on mount), so a full-partition hash falsely refuses a healthy system.
+        // `check_boot` verifies the kernel and initrd, which live on the ESP and are stable.
+        let manifest = stage.join(morph_update::MANIFEST);
+        let signature = stage.join(morph_update::SIGNATURE);
+        std::fs::copy(self.recovery_dir.join(morph_update::MANIFEST), &manifest).map_err(io(
+            format!(
+                "reading {}",
+                self.recovery_dir.join(morph_update::MANIFEST).display()
+            ),
+        ))?;
+        std::fs::copy(self.recovery_dir.join(morph_update::SIGNATURE), &signature).map_err(io(
+            format!(
+                "reading {}",
+                self.recovery_dir.join(morph_update::SIGNATURE).display()
+            ),
+        ))?;
+        let factory = TrustedKeys::load(&self.recovery_keys)?;
+        let mut factory_payload = Payload::open(&stage, &factory)?;
+        if let Err(e) = factory_payload.check_boot() {
+            return Err(Error::Refused(format!(
+                "the recovery image does not match its factory-signed manifest; refusing to \
+                 rebuild both slots from a corrupted recovery image: {e}"
+            )));
+        }
+
         // The release the recovery image says it is, read from the recovery system itself;
         // both slots are rebuilt at that release.
         let release = morph_update::read_release(&self.release_file)?;

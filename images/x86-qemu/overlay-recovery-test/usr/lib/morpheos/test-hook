@@ -6,19 +6,70 @@
 #   step 0 + mode "seed": seed a known set of files under /home and record their checksums
 #                         on the ESP, step=1, power off (the harness then zeroes both slot
 #                         partitions before the next run).
+#   step 0 + mode "wipe": seed /home, then destroy BOTH slot partitions from inside the
+#                         running machine (zero the first 64 MiB) and force a reboot — the
+#                         initramfs "way in" must arm recovery and heal, with every /home
+#                         file surviving on the data partition.
 #   step 1:               the machine has recovered into slot A; power off so the harness
 #                         can read the disk.
 set -eu
 # The recovery driver has its OWN directory. Do not read MORPH_TEST_DIR here: the generic
 # x86 overlay's morph-boot-check drop-in (10-esp.conf) sets MORPH_TEST_DIR=/efi/morph-test
 # for the self-test drivers, and that would point this driver at an empty directory while
-# the harness writes "arm"/"seed" to /efi/morph-recovery-test. The two must name the same
-# place, so pin it.
+# the harness writes "arm"/"seed"/"wipe" to /efi/morph-recovery-test. The two must name the
+# same place, so pin it.
 dir=/efi/morph-recovery-test
 mkdir -p "$dir"
 step=$(cat "$dir/step" 2>/dev/null || echo 0)
 say() { echo "morph-recovery-test: $*"; }
 say "step $step"
+
+# Seed a known set of files under /home and record their checksums on the ESP. Shared by
+# "seed" (which then powers off) and "wipe" (which then destroys the system out from under
+# them): the point of the wipe scenario is that the files are made, the system is lost, and
+# they still come back.
+seed_home() {
+    say "seeding /home and recording checksums"
+    mkdir -p /home/morph/Documents
+    n=1
+    while [ "$n" -le 24 ]; do
+        awk -v n="$n" 'BEGIN { for (l=1; l<=40; l++) printf "recovery seed %04d line %02d\n", n, l }' \
+            > "/home/morph/Documents/seed-$n.txt"
+        n=$((n+1))
+    done
+    (cd /home/morph/Documents && find . -type f -name 'seed-*' | sort | xargs sha256sum) \
+        > "$dir/before.sha256"
+    sync
+    say "$(wc -l < "$dir/before.sha256") files seeded"
+}
+
+# Destroy both slot partitions from inside the running machine, then force a reboot. The
+# running root is one of the two partitions being wiped. The kernel refuses writing a mounted
+# block device unless `bdev_allow_write_mounted` is on the command line (build.sh adds it for
+# the recovery test image) — that is the very thing this scenario proves, not an assumption.
+# `wipefs` is NOT used: it opens the device exclusively and fails EBUSY on a mounted one (the
+# 90-minute CI timeout that prompted this fix). The zeroing alone removes the filesystem
+# signature, exactly what the harness-side wipe does with dd between runs.
+#
+# `conv=fsync` is load-bearing: the reboot below is `echo b > /proc/sysrq-trigger`, an
+# emergency restart that does NOT sync. A buffered dd to the *mounted* root sits in the page
+# cache and is lost on that reset, so the machine boots its still-valid slot A and never arms
+# recovery (the first red run of this scenario proved exactly that). fsync pushes the zeroes
+# to the device before the reboot, for the mounted root and the spare alike.
+wipe_slots() {
+    say "wiping both slot partitions from inside the running machine"
+    for part in root-a root-b; do
+        if ! dd if=/dev/zero of="/dev/disk/by-partlabel/$part" bs=1M count=64 conv=notrunc,fsync status=none; then
+            say "FAILED to wipe $part: writing the mounted device was refused"
+        fi
+    done
+    say "forcing a reboot"
+    echo b > /proc/sysrq-trigger
+    # Reached only if the magic sysrq did not fire (kernel.sysrq=0): force a reboot without
+    # sync — the running root is already wiped, so a sync would be writing to a gone system.
+    sleep 3
+    reboot -f
+}
 
 case "$step" in
     0)
@@ -32,19 +83,12 @@ case "$step" in
                 systemctl reboot
                 ;;
             seed)
-                say "seeding /home and recording checksums"
-                mkdir -p /home/morph/Documents
-                n=1
-                while [ "$n" -le 24 ]; do
-                    awk -v n="$n" 'BEGIN { for (l=1; l<=40; l++) printf "recovery seed %04d line %02d\n", n, l }' \
-                        > "/home/morph/Documents/seed-$n.txt"
-                    n=$((n+1))
-                done
-                (cd /home/morph/Documents && find . -type f -name 'seed-*' | sort | xargs sha256sum) \
-                    > "$dir/before.sha256"
-                sync
-                say "$(wc -l < "$dir/before.sha256") files seeded"
+                seed_home
                 systemctl poweroff
+                ;;
+            wipe)
+                seed_home
+                wipe_slots
                 ;;
             *)
                 say "unknown mode '$mode'"

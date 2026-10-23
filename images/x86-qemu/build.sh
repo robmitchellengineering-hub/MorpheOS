@@ -534,6 +534,13 @@ for slot in a b; do
         # An "update" whose init dies immediately: the kernel panics.
         extra=" init=/bin/false"
     fi
+    if [ "$SCENARIO" = recovery ]; then
+        # The in-machine wipe (S4, note 4) writes the mounted slot root from inside the
+        # running machine. The kernel refuses that unless it is allowed to write mounted
+        # block devices (CONFIG_BLK_DEV_WRITE_MOUNTED); `bdev_allow_write_mounted` is the
+        # boot override. Test image only — this is the very thing the scenario proves.
+        extra="$extra bdev_allow_write_mounted"
+    fi
     cat > "$ESPDIR/loader/entries/morpheos-$slot.conf" <<EOF
 title   MorpheOS (slot $slot)
 linux   /morpheos/$slot/vmlinuz
@@ -602,6 +609,23 @@ if [ "$HARDWARE" = 1 ]; then
     rm -f "$WORK/recovery.img"
     mkfs.ext4 -q -L recovery -d "$WORK/root-recovery" "$WORK/recovery.img" "${ROOT_MB}M"
     RECOVERY_MB=$ROOT_MB
+
+    # The recovery image's factory manifest (S4 self-check): morph-heal recover refuses to
+    # rebuild from a recovery partition that no longer matches this, so a corrupted recovery
+    # image cannot overwrite both slots with corruption. root.img is the recovery partition
+    # image itself; vmlinuz/initrd.img are the recovery boot files already on the ESP. The
+    # manifest is sealed and signed with UPDATE_KEY — the same build key the slots already
+    # trust for updates — and carried beside the recovery kernel on the ESP. e2fsck first, so
+    # the journal is clean and the on-disk bytes are exactly what got hashed.
+    e2fsck -fy "$WORK/recovery.img" >/dev/null 2>&1 || true
+    RPAY="$WORK/recovery-payload"
+    rm -rf "$RPAY"; mkdir -p "$RPAY"
+    cp "$WORK/recovery.img" "$RPAY/root.img"
+    cp "$ESPDIR/morpheos/recovery/vmlinuz" "$RPAY/vmlinuz"
+    cp "$ESPDIR/morpheos/recovery/initrd.img" "$RPAY/initrd.img"
+    "$MORPH_UPDATE" --payload "$RPAY" --release "$RELEASE" seal >/dev/null
+    "$MORPH_UPDATE" --payload "$RPAY" --key "$UPDATE_KEY" sign
+    mcopy -i "$WORK/esp.img" "$RPAY/BLAKE3SUMS" "$RPAY/BLAKE3SUMS.sig" "::/morpheos/recovery/"
 fi
 
 DISK="$WORK/disk-$SCENARIO.img"
