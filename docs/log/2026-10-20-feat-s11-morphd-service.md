@@ -36,3 +36,22 @@ Still to land in this PR (next commit): the seeded generation 1 in `build.sh`
 
 This closes S11's code: PR 1 (hostname applier), PR 2 (retention + Strata policy +
 `unenforced_settings`), PR 3 (the binary, the service, the seed and the VM proof).
+
+## CI red, four fixes, green (2026-10-23)
+
+The `manifest` scenario went red in CI. Four fixes, each found from the serial log:
+
+1. `test-manifest.sh` was `100644` (not executable) → `sudo: …/test-manifest.sh: command not
+   found`. `chmod +x`.
+2. `overlay-manifest-test/usr/lib/morpheos/test-hook` was `100644` too — `boot-check` guards it
+   with `[ -x … ]`, so it silently skipped and the manifest VM hung at login for the full
+   timeout. `chmod +x`.
+3. `test-manifest.sh`'s `esp_write` overwrote `mode` on the second boot and `mcopy` refused to
+   overwrite the existing FAT entry (the apply/fail run died right after the apply checks).
+   `mdel` the destination before `mcopy`.
+4. The rollback assertion was wrong, not `morphd`. The refused 65-byte hostname correctly rolls
+   back to the *previous* committed generation (`studio` / 7 hours), but the test asserted the
+   *seeded* generation (`morpheos-a` / 24 hours). Fixed the assertion to expect `studio` / 7h.
+
+All three checks are green on PR #128: `rust`, the Pi image, and "Try to Break It: A/B updates
+(x86 VM)".
