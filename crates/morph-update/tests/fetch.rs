@@ -62,11 +62,11 @@ fn respond(mut stream: std::net::TcpStream, root: &Path) {
 #[test]
 fn fetch_downloads_and_verifies_a_payload() {
     let (secret, public) = morph_update::keygen().unwrap();
-    let keys = scratch("keys");
+    let keys = scratch("good-keys");
     std::fs::write(keys.join("release.pub"), format!("{public}\n")).unwrap();
     let trusted = TrustedKeys::load(&keys).unwrap();
 
-    let payload = scratch("payload");
+    let payload = scratch("good-payload");
     for (name, bytes) in [
         ("root.img", b"root image bytes".as_slice()),
         ("vmlinuz", b"k"),
@@ -79,7 +79,7 @@ fn fetch_downloads_and_verifies_a_payload() {
     morph_update::sign(&payload, &secret).unwrap();
 
     let base_url = serve(payload);
-    let dest = scratch("dest");
+    let dest = scratch("good-dest");
     let got = fetch(&base_url, release, &dest, &trusted).unwrap();
 
     assert_eq!(got.release(), release);
@@ -99,11 +99,11 @@ fn fetch_downloads_and_verifies_a_payload() {
 #[test]
 fn server_misadvertising_a_release_is_refused() {
     let (secret, public) = morph_update::keygen().unwrap();
-    let keys = scratch("keys");
+    let keys = scratch("mis-keys");
     std::fs::write(keys.join("release.pub"), format!("{public}\n")).unwrap();
     let trusted = TrustedKeys::load(&keys).unwrap();
 
-    let payload = scratch("payload");
+    let payload = scratch("mis-payload");
     for (name, bytes) in [
         ("root.img", b"root image bytes".as_slice()),
         ("vmlinuz", b"k"),
@@ -115,7 +115,7 @@ fn server_misadvertising_a_release_is_refused() {
     morph_update::sign(&payload, &secret).unwrap();
 
     let base_url = serve(payload);
-    let dest = scratch("dest");
+    let dest = scratch("mis-dest");
     let err = fetch(&base_url, 2, &dest, &trusted).unwrap_err();
     assert!(
         err.to_string().contains("advertised release 2"),
