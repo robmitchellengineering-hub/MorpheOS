@@ -947,7 +947,7 @@ it waits on.
    number and changes the disk layout that S3's scenario boots. Rob decides how big the recovery
    partition may be, whether updates ever refresh it, and how the demo is worded (S4's notes).
    None of those block the VM proof.
-4. **S11 · `morphd` v0 obeys the Manifest.** `proposed`: **waits on Rob opening it.** S7 and S8
+4. **S11 · `morphd` v0 obeys the Manifest.** `done`. S7 and S8
    both depend on it.
 5. **S7 · a full disk** and **S8 · a corrupted setting rolls back (H2)**, after S11, in either
    order. S7 also needs a small notice window on the shell. S7 builds it and S8 reuses it.
@@ -955,7 +955,7 @@ it waits on.
    laid out under S5, with a recommendation). The first half of E11 (the shell as an ordinary
    user) waits on S5 too. Once Rob decides, S5 is M-sized and can go anywhere in this order.
 
-**Blocked on Rob, in one list:** opening S11 and S5. The S5 account model. The release key and
+**Blocked on Rob, in one list:** opening S5. The S5 account model. The release key and
 where it is kept (S2/S3). The update host and when an update reboots (S3). The recovery
 partition's size and whether it is refreshed (S4). The wording of demo step 1 (S4). Whether S7
 may delete versions the retention policy keeps (recommended: no).
@@ -1625,7 +1625,7 @@ attempted before the transactional apply exists.
    1. The digest and `morphd`'s check, with unit tests.
    2. The scenario and the notice.
 
-### S11 · The Manifest is obeyed: `morphd` v0 applies its first settings · open · parallel
+### S11 · The Manifest is obeyed: `morphd` v0 applies its first settings · done · parallel
 
 **What:** the smallest `morphd` (a service under systemd, ADR 0017) that makes the current
 Manifest generation real on the machine, through `morph-transaction`: plan, apply, health
@@ -1640,6 +1640,10 @@ longer lists `/storage/retention`. Made exact: in `images/x86-qemu/test-manifest
 writes the kernel's hostname (`/proc/sys/kernel/hostname`) and the policy Strata itself reports
 to a file on the ESP after each step. The test reads that file with `mtype`, and reads the
 store's `current` off the data partition.
+
+**Evidence:** PR #128 — `images/x86-qemu/test-manifest.sh` is green in the "Try to Break It:
+A/B updates (x86 VM)" job: the `manifest` scenario applies hostname+retention and rolls back
+the refused generation.
 
 **Notes:** proposed 2026-10-14 by Claude Code, while picking up S8. It unblocks S8 (a
 Manifest-managed setting to corrupt) and S7 (Strata pruning by `storage.retention`). Rob opens

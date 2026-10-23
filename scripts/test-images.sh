@@ -28,7 +28,7 @@ mkdir -p "$WORK"
 
 # The harness scripts run under sudo, whose PATH has no cargo: build first, as yourself.
 step "build the binaries the images carry"
-cargo build --release -p morph-boot -p strata -p morph-update -p morph-heal -p flow-compositor -p flow-wifi -p flow-files
+cargo build --release -p morph-boot -p strata -p morph-update -p morph-heal -p morph-manifest -p morphd -p flow-compositor -p flow-wifi -p flow-files
 
 if [ "$WHAT" = plain ] || [ "$WHAT" = all ]; then
     step "the image a person uses: build, boot, and read back its report"
@@ -43,6 +43,8 @@ if [ "$WHAT" = scenarios ] || [ "$WHAT" = all ]; then
     sudo images/x86-qemu/test-ransomware.sh "$WORK"
     step "the recovery image (S4)"
     sudo images/x86-qemu/test-recovery.sh "$WORK"
+    step "the Manifest is obeyed (S11)"
+    sudo images/x86-qemu/test-manifest.sh "$WORK"
 fi
 if [ "$WHAT" = shell ] || [ "$WHAT" = all ]; then
     step "the shell on a real display, with a keyboard and a mouse"

@@ -47,6 +47,7 @@ jobs:
       # has no cargo, so a binary built inside them cannot find its own toolchain.
       - run: cargo build --release -p morph-update
       - run: cargo build --release -p morph-heal
+      - run: cargo build --release -p morph-manifest -p morphd
       # The SAME script the builder runs in WSL2 (doc 20, S10), with the image and VM tools,
       # and KVM opened up if the runner has it.
       - name: Install image and VM tools (scripts/setup-linux.sh --images)
@@ -109,6 +110,10 @@ jobs:
       # recovery record, /etc/hostname on both slots, and /home checksums on the data partition.
       - name: The recovery image (S4)
         run: sudo images/x86-qemu/test-recovery.sh "$RUNNER_TEMP/img"
+      # Doc 20, S11: morphd obeys the Manifest — a new generation changes the hostname and
+      # Strata's retention (read off the machine), and a refused change is rolled back.
+      - name: The Manifest is obeyed (S11)
+        run: sudo images/x86-qemu/test-manifest.sh "$RUNNER_TEMP/img"
       # Doc 20, E3 and E10: the compositor drives a real (virtio-gpu) display and the VM's
       # own keyboard and mouse, and every verdict is a screenshot's pixels. Its system
       # libraries came from setup-linux.sh above.
