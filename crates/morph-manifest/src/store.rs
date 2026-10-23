@@ -288,9 +288,9 @@ impl Store {
         })?;
         // The digest check is the reason `load` refuses a file that parses: a generation whose
         // bytes changed is not the manifest that was approved, however cleanly it still parses.
-        match self.digest_of_bytes(number, &bytes)? {
-            DigestCheck::Match | DigestCheck::Unknown => Ok(value),
-        }
+        // A missing digest ("unknown") is still returned; only a mismatch is an error.
+        self.digest_of_bytes(number, &bytes)?;
+        Ok(value)
     }
 
     /// Classify a stored generation's file against the digest recorded in its meta record.
