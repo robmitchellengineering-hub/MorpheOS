@@ -134,8 +134,20 @@ first, _ = wait_for("before", SELECTED, "the timeline window shows the list")
 w, h, _ = first
 
 # A window that opens is raised but not focused (wm.rs, ADR 0013): click its title bar first,
-# the way the compositor test does, so the keys can reach it. The first window is at (16,16).
-tablet(40, 30, w, h); time.sleep(0.3)
+# the way the compositor test does, so the keys can reach it. The window is NOT at (16,16)
+# here — the demo window is the first window, so the timeline opens below it — so find it
+# from the selected row's amber band instead: the band is the first row, its left edge is the
+# window's left edge, and the title bar is TITLE_H (40px) above it.
+def band_top(screen):
+    sw, sh, px = screen
+    for y in range(sh):
+        for x in range(sw):
+            if px[y * sw + x] == SELECTED:
+                return x, y
+    return None
+
+bx, by = band_top(first) or (40, 30)
+tablet(bx + 40, by - 20, w, h); time.sleep(0.3)
 button(True); time.sleep(0.1); button(False); time.sleep(0.3)
 
 # Enter runs the dry run; its counts appear in the confirm band before anything changes.
