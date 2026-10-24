@@ -1,0 +1,21 @@
+# Generation 2 the config-rollback test applies: a different hostname, and nothing else. The
+# storage settings match the seed generation exactly, so the only planned change is
+# `machine.name` (tier 1). `morphd apply` commits it, then the test corrupts its stored file by
+# hand and reboots — morphd must roll it back (doc 20, S8).
+[machine]
+name = "morpheos-rollback"
+profile = "desk"
+arch = "x86_64"
+
+[storage]
+accept_single_copy = true
+
+[storage.retention]
+all_versions_hours = 24
+hourly_days = 30
+daily_days = 365
+
+[[users]]
+name = "morph"
+admin = true
+recovery_key = true

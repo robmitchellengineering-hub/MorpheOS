@@ -30,7 +30,7 @@ set -euo pipefail
 
 WORK=${1:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
 SCENARIO=${2:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
-case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell|browser|wifi|broken-shell|hung-shell|recovery|manifest|autoupdate|rewind|full-disk) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
+case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell|browser|wifi|broken-shell|hung-shell|recovery|manifest|autoupdate|rewind|full-disk|config-rollback) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
 # `plain` is the one that leaves the CI harness behind and is meant to be booted by a person:
 # the Flow shell drawing the screen and taking the keyboard and mouse, Firefox on a local
 # start page, NetworkManager, and the Wi-Fi picker when there is no network (doc 20, E4 and
@@ -52,6 +52,9 @@ case "$SCENARIO" in
     # The full-disk test (S7): the shell, so the space guard's notice has a display to show
     # on; no recovery partition (it is a self-test image, not a person-facing one).
     full-disk) SHELL_UI=1 ;;
+    # The config-rollback test (S8): the shell, so morphd's rollback notice has a display to
+    # show on; no recovery partition (it is a self-test image, not a person-facing one).
+    config-rollback) SHELL_UI=1 ;;
     # The recovery test (S4): a person-facing image — so it carries the recovery partition —
     # but no shell, and the recovery-test driver instead (see make_root).
     recovery) HARDWARE=1 ;;
@@ -327,6 +330,12 @@ make_root() {
         # records the machine's hostname and Strata's policy. A test hook, run from boot-check.
         cp -a "$HERE/overlay-manifest-test/." "$dir/"
     fi
+    if [ "$SCENARIO" = config-rollback ]; then
+        # The config-rollback test's driver (S8): applies a generation through `morphd`, corrupts
+        # its stored file by hand, and records the kernel hostname for the harness to read. A
+        # test hook, run from boot-check.
+        cp -a "$HERE/overlay-config-rollback/." "$dir/"
+    fi
     install -m 0755 "$MORPH_BOOT" "$dir/usr/bin/morph-boot"
     # The updater and the keys it accepts, in the image's own read-only root: an update
     # medium's own binary could check nothing, so the machine verifies with these (S2).
@@ -411,14 +420,16 @@ EOF
         # the wifi scenario, Firefox plus the Wi-Fi picker (E14: once the picker joins,
         # Firefox must come online). Where there is NetworkManager, the picker opens by
         # itself when the machine has no network. The full-disk scenario shows nothing but
-        # the space guard's notice, so that notice is the first (and only) client window and
-        # a screendump reads it unambiguously.
+        # the space guard's notice, and config-rollback nothing but morphd's rollback notice,
+        # so each notice is the first (and only) client window and a screendump reads it
+        # unambiguously.
         apps=flow-demo-window
         case "$SCENARIO" in
             plain) apps="flow-browser NetworkManager flow-wifi morpheos-tailscale-up" ;;
             browser) apps="flow-browser NetworkManager flow-wifi" ;;
             wifi) apps="flow-browser NetworkManager flow-wifi morph-wifi-test-ap" ;;
             full-disk) apps="" ;;
+            config-rollback) apps="" ;;
         esac
         case "$SCENARIO" in plain|browser|wifi) cp -a "$HERE/overlay-network/." "$dir/" ;; esac
         case "$SCENARIO" in plain|browser|wifi) cp -a "$HERE/overlay-browser/." "$dir/" ;; esac
@@ -429,7 +440,7 @@ EOF
             # The package's own hostapd service is not the test's access point: keep it off.
             ln -sf /dev/null "$dir/etc/systemd/system/hostapd.service"
         fi
-        for unit in seatd flow-shell flow-notice $apps; do
+        for unit in seatd flow-shell flow-notice flow-rollback-notice $apps; do
             ln -sf "/usr/lib/systemd/system/$unit.service" \
                 "$dir/etc/systemd/system/multi-user.target.wants/$unit.service"
         done

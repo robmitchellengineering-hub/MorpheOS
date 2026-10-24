@@ -1,0 +1,17 @@
+[Unit]
+Description=Show the config rollback notice on the Flow shell
+Requires=flow-shell.service
+After=flow-shell.service
+# Only runs when morphd staged a notice (a corrupt generation was rolled back at boot).
+ConditionPathExists=/run/morpheos/rollback-notice
+
+[Service]
+Environment=XDG_RUNTIME_DIR=/run/flow WAYLAND_DISPLAY=wayland-0
+# The socket appears when the compositor has bound it; wait for it rather than guessing.
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 300); do [ -S /run/flow/wayland-0 ] && exit 0; sleep 0.1; done; exit 1'
+ExecStart=/usr/lib/morpheos/show-rollback-notice
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

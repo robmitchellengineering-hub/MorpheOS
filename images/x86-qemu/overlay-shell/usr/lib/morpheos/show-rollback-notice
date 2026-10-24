@@ -1,0 +1,13 @@
+#!/bin/sh
+# Show the notice morphd staged in /run/morpheos/rollback-notice (doc 20, S8). The file is two
+# lines — the message, then the colour name — exactly as the space guard stages its notice.
+# `flow-notice` keeps the window up until a key or a click dismisses it, so the warning stays
+# on the screen for a person to see.
+set -eu
+
+f=/run/morpheos/rollback-notice
+[ -f "$f" ] || exit 0
+message=$(sed -n '1p' "$f")
+colour=$(sed -n '2p' "$f")
+[ -n "$colour" ] || colour=warn
+exec /usr/bin/flow-notice "$message" --colour "$colour"
