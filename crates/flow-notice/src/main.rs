@@ -334,7 +334,7 @@ mod client {
                 draw(&shm, &surface, &qh, &frame)?;
                 state.dirty = false;
                 if !shown {
-                    say(&format!("shown {message}"));
+                    say(&format!("shown {}", notice.message()));
                     shown = true;
                 }
             }
