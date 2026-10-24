@@ -48,14 +48,15 @@
 
   <h2>The launch screen</h2>
   <div class="shots">
-    <div class="shot">
+    <div class="shot" style="position:relative">
       <video id="splash-frame" src="splash.mp4" autoplay muted loop playsinline
         title="MorpheOS splash animation"
         style="width:100%;aspect-ratio:16/9;border:0;background:#000;display:block"></video>
-      <div class="cap">
-        <button type="button" style="margin-right:10px"
+      <div style="position:absolute;top:10px;right:10px;display:flex;gap:8px;z-index:2">
+        <button type="button" id="sound-btn"
+          onclick="var v=document.getElementById('splash-frame');v.muted=!v.muted;this.textContent=v.muted?'Sound: Off':'Sound: On'">Sound: Off</button>
+        <button type="button"
           onclick="var f=document.getElementById('splash-frame');(document.fullscreenElement||document.webkitFullscreenElement)?(document.exitFullscreen?document.exitFullscreen():document.webkitExitFullscreen()):(f.requestFullscreen?f.requestFullscreen():f.webkitRequestFullscreen())">&#x26F6; Fullscreen</button>
-        plays on a loop; click the card to unmute
       </div>
     </div>
   </div>
