@@ -1,0 +1,37 @@
+# Merge policy for this repo.
+#
+# WHY: Rob, 2026-10-24 - "why dont things merge and we keep getting conflicts ... i need these
+# things to merge and stay synced". Two things turned ordinary merges into huge ones:
+#
+#   1. GENERATED artifacts merged as text. A .argb raster or a lockfile changes wholly on every
+#      regeneration, so git reports a conflict in a file no human edits. `-merge` makes git keep
+#      our version and say nothing; the file is regenerated afterwards by its own script.
+#   2. BINARIES merged line by line. git cannot merge them, but without an attribute it still
+#      tries, and the reported conflict size is meaningless. `binary` makes it a clean whole-file
+#      choice.
+#
+# Neither rule changes what is committed - only what happens when two branches touch the same file.
+
+# Generated rasters: scripts/rasterize-*.py produce these from the SVG sources. Regenerate, never merge.
+*.argb -merge
+crates/flow-compositor/src/logo-*.argb -merge
+
+# Lockfiles: regenerate (`cargo update -p ...` / `cargo build`), never hand-merge.
+Cargo.lock -merge
+
+# Binary formats git must treat as whole files.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.pdf binary
+*.iso binary
+*.img binary
+*.bin binary
+*.zip binary
