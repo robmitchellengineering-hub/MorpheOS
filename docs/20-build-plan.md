@@ -493,8 +493,13 @@ firmware surprises on Linux.
 report (display, keyboard, touchpad, Wi-Fi, sound, firmware missing), and the reference
 laptop is recorded here. Every failure becomes a task.
 
+**Progress:** the builder's half is done (merged 2026-10-15): `docs/hardware/{win,win-2,mac-2015}.md`
+templates, the `verify-docs.mjs` headings/MAC checks and its `--self-test`, wired into
+`check.sh` and CI. Rob's half — the boot-report folders — is what remains.
+
 **Waiting on Rob:** the report folders from one boot of the newest `plain` stick on each of
-`win`, `win-2` and `mac-2015` (HARDWARE.md). The builder's half starts on the first folder
+`win`, `win-2` and `mac-2015` (HARDWARE.md). Asked: 2026-10-24, stick = images run 40087369504
+(green, commit 46eed87). The builder's half starts on the first folder
 he sends; record it in that branch's log as "Rob on E6: <which reports, and when>".
 
 **Rob decides before E6 is done:** the reference laptop (note 6).
@@ -531,13 +536,11 @@ The builder's half (Rob does the booting):
    that.
 3. ⚠️ **The repository is public.** The report records MAC addresses (`net.txt`, `dmesg.txt`)
    and `dmesg` can hold serial numbers. Never commit a raw report folder. Copy only what the
-   doc needs, with MAC addresses replaced by `xx:xx:…`. Add a check in the same PR (AGENTS.md:
-   a claim about the repository is a test): extend `scripts/verify-docs.mjs` so that every
-   `docs/hardware/*.md` has the headings above and contains no MAC address
-   (`([0-9a-f]{2}:){5}[0-9a-f]{2}`, case-insensitive). ⚠️ `verify-docs.mjs` has no self-test
-   mode yet (`--self-test` is refused with exit 2, like any argument it does not know): add
-   one, with a case that fails, and run it in `check.sh` and CI. That much is `plan/` work
-   that needs no report, so it can be done while waiting for the first one.
+   doc needs, with MAC addresses replaced by `xx:xx:…`. Done (merged 2026-10-15): the check was
+   added in the same PR (AGENTS.md: a claim about the repository is a test) — `scripts/verify-docs.mjs`
+   fails any `docs/hardware/*.md` missing a heading above or containing a MAC address
+   (`([0-9a-f]{2}:){5}[0-9a-f]{2}`, case-insensitive), and gained a `--self-test` flag that
+   proves the check can fail, run in `check.sh` and CI.
 4. **Every failure becomes a task, in a `plan/` PR.** A firmware file or a driver that is
    missing for one of the machines this task names (`win`, `win-2`, `mac-2015`) is a bug in E12. Fix it on a `fix/` branch: add the
    package to `BASE_PKGS` and the module name to `build.sh`'s laptop driver list (H18).
