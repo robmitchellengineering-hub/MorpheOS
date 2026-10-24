@@ -1,0 +1,61 @@
+#!/bin/sh
+# Autoupdate self-test driver (doc 20, S3). Run by boot-check after each boot's health
+# decision. It does NOT install or arm anything: the timer does that (note 2). Its only job is
+# to walk the boots so the scenario reaches its verdict:
+#   step 0: boot 1, slot A committed — wait for the timer, which fetches, installs, arms and
+#           reboots
+#   step 1: boot 2, slot B trialled and committed — plain reboot, to prove the commit stuck
+#   step 2: boot 3, slot B committed — report and power off
+set -eu
+dir=${MORPH_TEST_DIR:-/efi/morph-test}
+mkdir -p "$dir"
+step=$(cat "$dir/step" 2>/dev/null || echo 0)
+
+report=${MORPH_TEST_REPORT:-}
+say() {
+    echo "morph-test: $*"
+    [ -n "$report" ] || return 0
+    printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo '?')" "$*" \
+        >> "$report" 2>/dev/null || true
+}
+say "step $step: starting"
+
+case "$step" in
+    0)
+        # Nothing to install or arm here: the timer, ordered past the health window, fetches
+        # the payload and arms the trial (doc 20, S3 note 2). Advancing the step is all this
+        # boot does; the timer's reboot is what leaves it.
+        echo 1 > "$dir/step"; sync
+        say "waiting for the update timer"
+        ;;
+    1)
+        echo 2 > "$dir/step"; sync
+        say "plain reboot"
+        systemctl reboot
+        ;;
+    *)
+        status=$(morph-boot status)
+        say "done $status"
+        verdict=UNKNOWN
+        if [ -n "${MORPH_TEST_EXPECT:-}" ]; then
+            case "$status" in
+                *"\"default\":\"$MORPH_TEST_EXPECT\""*) verdict=PASS; say "MORPHEOS SELF-TEST PASS (default slot is $MORPH_TEST_EXPECT)" ;;
+                *) verdict=FAIL; say "MORPHEOS SELF-TEST FAIL (expected default slot $MORPH_TEST_EXPECT)" ;;
+            esac
+        fi
+        if [ -n "$report" ]; then
+            {
+                printf '\n=== MorpheOS self-test result ===\n'
+                printf 'RESULT:   %s\n' "$verdict"
+                printf 'when:     %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo '?')"
+                printf 'expected: default slot %s\n' "${MORPH_TEST_EXPECT:-<not checked>}"
+                printf 'status:   %s\n' "$status"
+                printf '\nkernel:   %s\n' "$(uname -r 2>/dev/null || echo '?')"
+                printf 'cmdline:  %s\n' "$(cat /proc/cmdline 2>/dev/null || echo '?')"
+                printf '\nboot history (%s):\n' "${MORPH_BOOT_HISTORY:-not set}"
+                cat "${MORPH_BOOT_HISTORY:-/nonexistent}" 2>/dev/null || printf '  (no history file)\n'
+            } >> "$report" 2>/dev/null || true
+        fi
+        [ "${MORPH_TEST_FINISH:-poweroff}" = poweroff ] && systemctl poweroff
+        ;;
+esac

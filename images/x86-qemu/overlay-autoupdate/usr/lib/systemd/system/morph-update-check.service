@@ -1,0 +1,19 @@
+[Unit]
+Description=MorpheOS unattended update check (doc 20, S3)
+Documentation=https://github.com/robmitchellengineering-hub/MorpheOS/blob/main/docs/20-build-plan.md
+# The check reads the boot state on the ESP and the armed-trial record + download on the
+# data partition, so both must be mounted; and it must not run before the network is up, nor
+# during startup's own health window (doc 20, S3 note 5) — the timer's OnBootSec keeps it past
+# the decision line, and this keeps it past the network.
+RequiresMountsFor=/efi /persist
+After=NetworkManager-wait-online.service
+Wants=NetworkManager-wait-online.service
+
+[Service]
+Type=oneshot
+# The server URL is a setting here, never the Manifest's `system.channel` (that field is
+# unenforced — H5). Where releases are hosted is Rob's (doc 20, S3 note 6); this placeholder
+# is what a real release replaces. The test image's drop-in overrides it for the CI host.
+Environment=MORPH_UPDATE_BASE=https://updates.morpheos.example
+ExecStart=/usr/bin/morph-autoupdate
+StandardOutput=journal+console

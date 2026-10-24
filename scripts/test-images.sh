@@ -28,7 +28,7 @@ mkdir -p "$WORK"
 
 # The harness scripts run under sudo, whose PATH has no cargo: build first, as yourself.
 step "build the binaries the images carry"
-cargo build --release -p morph-boot -p strata -p morph-update -p morph-heal -p morph-manifest -p morphd -p flow-compositor -p flow-wifi -p flow-files
+cargo build --release -p morph-boot -p strata -p morph-update -p morph-autoupdate -p morph-heal -p morph-manifest -p morphd -p flow-compositor -p flow-wifi -p flow-files
 
 if [ "$WHAT" = plain ] || [ "$WHAT" = all ]; then
     step "the image a person uses: build, boot, and read back its report"
@@ -39,6 +39,8 @@ fi
 if [ "$WHAT" = scenarios ] || [ "$WHAT" = all ]; then
     step "good, unhealthy, crashing, updating and healing"
     sudo images/x86-qemu/test-fallback.sh "$WORK" good unhealthy crash update heal
+    step "an update arrives by itself over HTTPS (S3)"
+    sudo images/x86-qemu/test-autoupdate.sh "$WORK" good
     step "ransomware against Strata"
     sudo images/x86-qemu/test-ransomware.sh "$WORK"
     step "the recovery image (S4)"

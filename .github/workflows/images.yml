@@ -45,7 +45,7 @@ jobs:
       # The update scenario needs the updater. Built here, as a sibling of the line
       # above and for the same reason: the harness scripts run under `sudo`, whose PATH
       # has no cargo, so a binary built inside them cannot find its own toolchain.
-      - run: cargo build --release -p morph-update
+      - run: cargo build --release -p morph-update -p morph-autoupdate
       - run: cargo build --release -p morph-heal
       - run: cargo build --release -p morph-manifest -p morphd
       # The SAME script the builder runs in WSL2 (doc 20, S10), with the image and VM tools,
@@ -102,6 +102,11 @@ jobs:
       # drops one of them is the quiet way to lose a test.
       - name: Good, unhealthy, crashing, updating and healing
         run: sudo images/x86-qemu/test-fallback.sh "$RUNNER_TEMP/img" good unhealthy crash update heal
+      # Doc 20, S3: the autoupdate image's timer checks the CI host's update server over HTTPS
+      # and installs a signed payload with no input from the harness after boot. Verdicts read
+      # off the disk (boot history, slot B's root) and the server's request log.
+      - name: An update arrives by itself over HTTPS (S3)
+        run: sudo images/x86-qemu/test-autoupdate.sh "$RUNNER_TEMP/img" good
       - name: Ransomware against Strata
         run: sudo images/x86-qemu/test-ransomware.sh "$RUNNER_TEMP/img"
       # Doc 20, S4: the recovery image. Arm the recovery entry by hand (recovery-boot), then

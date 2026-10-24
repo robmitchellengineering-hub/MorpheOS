@@ -35,10 +35,13 @@ MORPH_UPDATE=${MORPH_UPDATE:-$REPO/target/release/morph-update}
 MORPH_HEAL=${MORPH_HEAL:-$REPO/target/release/morph-heal}
 
 # Which medium: `update` carries a signed payload; `heal` carries only the
-# healer. The in-image driver tells them apart by what it finds on the medium rather than by
-# being told, so a scenario cannot be handed the wrong one and quietly do nothing.
+# healer; `dir` carries the same signed payload as `update` but leaves it as a directory of
+# files (root.img/vmlinuz/initrd.img/BLAKE3SUMS/BLAKE3SUMS.sig) for a server to serve over
+# HTTPS, instead of an ext4 medium (doc 20, S3 note 4). The in-image driver tells `update`
+# and `heal` apart by what it finds on the medium rather than by being told, so a scenario
+# cannot be handed the wrong one and quietly do nothing.
 KIND=${3:-update}
-case "$KIND" in update|heal) ;; *) echo "unknown medium kind: $KIND" >&2; exit 2 ;; esac
+case "$KIND" in update|heal|dir) ;; *) echo "unknown medium kind: $KIND" >&2; exit 2 ;; esac
 
 # Built by the workflow, like morph-boot, and for the same reason: this script runs
 # under sudo, whose PATH does not contain the invoking user's cargo. A clear error beats
@@ -161,6 +164,14 @@ UPDATE_KEY=${UPDATE_KEY:-$WORK/update-test.key}
 # No updater on the medium: the machine installs with its own, which checks the signature
 # against its own keys. A medium's binary could check nothing.
 
-rm -f "$OUT"
-mkfs.ext4 -q -L payload -d "$STAGE" "$OUT" 1500M
+rm -rf "$OUT"
+if [ "$KIND" = dir ]; then
+    # Leave the payload as a directory, for the CI host to serve over HTTPS (doc 20, S3):
+    # the tree is `stable/LATEST` and `stable/<release>/{root.img,vmlinuz,initrd.img,
+    # BLAKE3SUMS,BLAKE3SUMS.sig}`, and this directory IS `<release>/`.
+    mkdir -p "$OUT"
+    cp -a "$P/." "$OUT/"
+else
+    mkfs.ext4 -q -L payload -d "$STAGE" "$OUT" 1500M
+fi
 echo "$OUT"
