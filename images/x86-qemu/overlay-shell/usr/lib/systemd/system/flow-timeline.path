@@ -1,0 +1,17 @@
+[Unit]
+Description=Open the rewind timeline when Strata records a ransomware alert
+Documentation=https://github.com/robmitchellengineering-hub/MorpheOS/blob/main/docs/20-build-plan.md
+# ⚠️ THE WATCH MUST BE ON THE MOUNTED STORE. /var/lib/strata is a bind mount of
+# /persist/strata (fstab), and an inotify watch taken before the mount lands would sit on the
+# empty read-only-root directory and never fire. RequiresMountsFor orders this unit after the
+# mount, so the watch on /var/lib/strata/alerts.jsonl resolves through the bind mount (doc 20,
+# S6: "verify a path unit fires through the /persist/strata bind mount").
+RequiresMountsFor=/var/lib/strata
+
+[Path]
+# Strata appends one JSON line per alert, so the content changes in place; PathModified (not
+# PathChanged) is the trigger.
+PathModified=/var/lib/strata/alerts.jsonl
+
+[Install]
+WantedBy=multi-user.target

@@ -19,6 +19,9 @@
 set -eu
 dir=${MORPH_TEST_DIR:-/efi/morph-test}
 docs=${MORPH_TEST_DOCS:-/home/morph/Documents}
+# `no` in the `rewind` scenario: this script attacks but does NOT rewind — the timeline
+# window, opened by the path unit, does the rewind after the harness confirms it (doc 20 S6).
+rewind=${MORPH_TEST_REWIND:-yes}
 mkdir -p "$dir"
 step=$(cat "$dir/step" 2>/dev/null || echo 0)
 say() { echo "morph-test: $*"; }
@@ -87,6 +90,21 @@ case "$step" in
             sleep 0.5
         done
         strata alerts || true
+        if [ "$rewind" = no ]; then
+            # The timeline window (flow-timeline.path on the alert) does the rewind, driven
+            # by the harness. Wait until it has happened — the .locked files are gone from
+            # the documents — then leave a moment for the harness to read the screen, and
+            # power off. The verdict is the disk, not what this script says (AGENTS.md H8).
+            i=0
+            until [ -z "$(cd "$docs" 2>/dev/null && find . -name '*.locked' -print -quit)" ]; do
+                i=$((i + 1))
+                [ "$i" -le 240 ] || { say "the timeline never rewound the documents"; break; }
+                sleep 0.5
+            done
+            say "the timeline rewound the documents; powering off for the harness"
+            sleep 10
+            finish
+        fi
         echo 1 > "$dir/step"
         sync
         say "rebooting before the rewind, so the history has to survive it"
