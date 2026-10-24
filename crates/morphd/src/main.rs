@@ -1,9 +1,10 @@
 //! `morphd`: make the Manifest generation in force real on the machine.
 //!
 //! This is the half the Manifest has been missing: `morph-manifest` validates and stores
-//! generations, and `morphd` obeys the one in force. `boot` converges the machine to `current`
-//! at every start (first resolving an interrupted transaction); `apply` runs one transaction —
-//! arm a trial, apply the settings, health-check, commit or roll back.
+//! generations, and `morphd` obeys the one in force. `boot` converges the machine to the newest
+//! generation that parses, validates and matches its digest at every start (first resolving an
+//! interrupted transaction, then rolling back a corrupt `current` — rung H2); `apply` runs one
+//! transaction — arm a trial, apply the settings, health-check, commit or roll back.
 
 use std::process::ExitCode;
 
@@ -118,12 +119,22 @@ fn healthy(manifest: &Manifest) -> bool {
     hostname_ok && retention_ok && min_free_ok && strata
 }
 
-/// Converge the machine to the current generation, first undoing any interrupted change.
+/// Converge the machine to the newest good generation, first undoing any interrupted change.
+///
+/// If the generation in force no longer parses, validates, or matches its digest, `converge`
+/// rolls `current` back to the newest generation that does and records the heal; then that
+/// generation's settings are applied. A store with one corrupt generation refuses and reports.
 fn boot() -> Result<(), String> {
     let transaction = Transaction::open(STORE);
     resolve_interrupted(&transaction)?;
-    let (_number, manifest) = current_manifest(&transaction)?;
-    apply_settings(&manifest)?;
+    let converged = morphd::converge(transaction.store())?;
+    if let Some((from, reason)) = converged.rolled_back_from.zip(converged.reason.as_ref()) {
+        eprintln!(
+            "morphd: generation {from} was rolled back ({reason}); generation {} is now in force",
+            converged.number
+        );
+    }
+    apply_settings(&converged.manifest)?;
     Ok(())
 }
 
