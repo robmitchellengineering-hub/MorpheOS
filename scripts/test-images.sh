@@ -47,6 +47,8 @@ if [ "$WHAT" = scenarios ] || [ "$WHAT" = all ]; then
     sudo images/x86-qemu/test-manifest.sh "$WORK"
     step "a full disk does not break the machine (S7)"
     sudo images/x86-qemu/test-full-disk.sh "$WORK"
+    step "a corrupted setting rolls back (S8)"
+    sudo images/x86-qemu/test-config-rollback.sh "$WORK"
 fi
 if [ "$WHAT" = shell ] || [ "$WHAT" = all ]; then
     step "the shell on a real display, with a keyboard and a mouse"

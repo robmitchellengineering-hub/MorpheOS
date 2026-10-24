@@ -119,6 +119,11 @@ jobs:
       # the copied store (the host's own `strata`), dumpe2fs free space, and a screendump.
       - name: A full disk does not break the machine (S7)
         run: sudo images/x86-qemu/test-full-disk.sh "$RUNNER_TEMP/img"
+      # Doc 20, S8: a corrupt Manifest generation rolls back — morphd finds the corrupted file
+      # at boot, rolls back to the newest good generation, and the shell names it. Verdicts read
+      # off the disk: the store's `current` and heal.jsonl, and a screendump of the notice.
+      - name: A corrupted setting rolls back (S8)
+        run: sudo images/x86-qemu/test-config-rollback.sh "$RUNNER_TEMP/img"
       # Doc 20, E3 and E10: the compositor drives a real (virtio-gpu) display and the VM's
       # own keyboard and mouse, and every verdict is a screenshot's pixels. Its system
       # libraries came from setup-linux.sh above.
