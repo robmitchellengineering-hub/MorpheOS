@@ -75,6 +75,7 @@ and constraints into execution across devices). See [doc 12](docs/12-radical-con
 | `crates/flow-compositor` | The Flow shell as a real Wayland compositor (Smithay): headless with software rendering for now, proven by real clients' windows appearing in its frame (HANDOFF.md E1) |
 | `crates/flow-wifi` | The Wi-Fi picker: a window on the shell that lists networks, takes a password and joins over NetworkManager's D-Bus API; its model unit-tested, its window driven on the compositor, its join proven in a VM against a simulated WPA2 network (doc 20, E5) |
 | `crates/flow-files` | The file view: list a folder and open a file, the base the timeline and USB-mounting sit on; its listing and open command are pure and unit-tested, the window driven on the compositor (doc 20, E17) |
+| `crates/flow-notice` | A one-message, one-colour notice on the Flow shell (e.g. the space guard's full-disk warning); model unit-tested, window driven on the compositor (doc 20, S7) |
 | `crates/flow-timeline` | The rewind timeline: a window on the shell listing Strata's ransomware alerts and the moment to rewind each folder to, with a dry run whose counts the person confirms before the real rewind; its model unit-tested, its window driven on the compositor (doc 20, S6) |
 | `manifest/` | Example machines and how to validate them ([README](manifest/README.md)) |
 | `images/x86-qemu` | A/B test disk for a UEFI VM, with Strata watching `/home`, and the "Try to Break It" update and ransomware tests ([README](images/README.md)) |
