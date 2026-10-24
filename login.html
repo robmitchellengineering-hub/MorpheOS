@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MorpheOS — the Geomesh</title>
-<!-- Boot splash (E19): hand over to the browser start page once the draw has settled. A
-     browser-native refresh, so it fires even if WebGL is unavailable and the mesh never renders. -->
-<meta http-equiv="refresh" content="8; url=start.html">
+<!-- Boot splash (E19): hand over to the browser start page once the draw has settled.
+     A JS timer (see the end of the script) so it can be disabled with ?nohandoff — used for
+     the looping card and the video render, and it still fires even if WebGL never renders. -->
 <style>
   :root { --green:#00ff41; }
   * { margin:0; box-sizing:border-box; }
@@ -449,6 +449,12 @@
       composer.setSize(window.innerWidth, window.innerHeight);
       bloomPass.resolution.set(window.innerWidth, window.innerHeight);
     });
+
+    // Hand over to the browser start page once the draw has settled. ?nohandoff keeps the
+    // splash on screen (the card and the video render use it).
+    if (!/[?&]nohandoff/.test(location.search)) {
+      setTimeout(() => { location.href = 'start.html'; }, 8000);
+    }
   })();
   </script>
 </body>
