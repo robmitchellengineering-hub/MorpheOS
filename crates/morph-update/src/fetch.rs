@@ -7,7 +7,6 @@
 //! downloaded and hashed by [`Payload::check`]. An old or untrusted release costs two small
 //! files, never a multi-hundred-megabyte download.
 
-use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -20,14 +19,12 @@ fn download(agent: &ureq::Agent, base: &str, release: u64, name: &str, dir: &Pat
         .get(&url)
         .call()
         .map_err(|e| Error::Fetch(format!("GET {url}: {e}")))?;
-    let mut body = Vec::new();
-    resp.into_reader()
-        .read_to_end(&mut body)
-        .map_err(|e| Error::Fetch(format!("GET {url}: {e}")))?;
-    std::fs::write(dir.join(name), body).map_err(|e| Error::Io {
-        what: format!("writing {}", dir.join(name).display()),
+    let mut file = std::fs::File::create(dir.join(name)).map_err(|e| Error::Io {
+        what: format!("creating {}", dir.join(name).display()),
         source: e,
     })?;
+    std::io::copy(&mut resp.into_reader(), &mut file)
+        .map_err(|e| Error::Fetch(format!("GET {url}: {e}")))?;
     Ok(())
 }
 
