@@ -16,3 +16,11 @@ serde_json = "1.0.151"
 # The fetch client (S3). ureq's rustls backend links no system library, matching the
 # blake3/ed25519-dalek/zbus choice; the test server speaks plain HTTP, production HTTPS.
 ureq = "2"
+# The rustls backend made explicit, so `fetch_with_ca` can add one throwaway CA certificate
+# for the autoupdate test image (doc 20, S3 note 4). The features mirror ureq's exactly
+# (`default-features = false` + `ring`, not `aws_lc_rs`), so both crates share one provider
+# and no C++ backend is compiled. `rustls-pemfile` parses the CA's PEM; `webpki-roots` is
+# the bundled root set, which is what ureq's own default agent uses (no `ca-certificates`).
+rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"] }
+rustls-pemfile = "2"
+webpki-roots = "0.26"

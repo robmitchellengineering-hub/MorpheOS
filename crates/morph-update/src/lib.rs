@@ -57,7 +57,7 @@ mod decision;
 pub use decision::{AutoDecision, decide};
 
 mod fetch;
-pub use fetch::fetch;
+pub use fetch::{fetch, fetch_with_ca, latest};
 
 /// The three files an update payload consists of, and the manifest that names them.
 pub const ROOT_IMAGE: &str = "root.img";

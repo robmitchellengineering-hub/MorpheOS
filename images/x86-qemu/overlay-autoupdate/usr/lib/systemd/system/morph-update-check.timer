@@ -1,0 +1,13 @@
+[Unit]
+Description=Check for a MorpheOS update (doc 20, S3)
+
+[Timer]
+# Past startup's health window (production minutes; the test drop-in shortens it), and with a
+# random delay so a fleet does not all check at once.
+OnBootSec=15min
+OnUnitActiveSec=1h
+RandomizedDelaySec=5min
+Unit=morph-update-check.service
+
+[Install]
+WantedBy=timers.target

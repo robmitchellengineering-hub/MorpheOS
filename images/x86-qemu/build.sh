@@ -27,7 +27,7 @@ set -euo pipefail
 
 WORK=${1:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
 SCENARIO=${2:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
-case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell|browser|wifi|broken-shell|hung-shell|recovery|manifest) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
+case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell|browser|wifi|broken-shell|hung-shell|recovery|manifest|autoupdate) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
 # `plain` is the one that leaves the CI harness behind and is meant to be booted by a person:
 # the Flow shell drawing the screen and taking the keyboard and mouse, Firefox on a local
 # start page, NetworkManager, and the Wi-Fi picker when there is no network (doc 20, E4 and
@@ -59,6 +59,7 @@ MORPH_UPDATE=${MORPH_UPDATE:-$REPO/target/release/morph-update}
 MORPH_HEAL=${MORPH_HEAL:-$REPO/target/release/morph-heal}
 MORPH_MANIFEST=${MORPH_MANIFEST:-$REPO/target/release/morph-manifest}
 MORPH_D=${MORPH_D:-$REPO/target/release/morphd}
+MORPH_AUTOUPDATE=${MORPH_AUTOUPDATE:-$REPO/target/release/morph-autoupdate}
 SDBOOT_EFI=${SDBOOT_EFI:-/usr/lib/systemd/boot/efi/systemd-bootx64.efi}
 FLOW_COMPOSITOR=${FLOW_COMPOSITOR:-$REPO/target/release/flow-compositor}
 SOLID_WINDOW=${SOLID_WINDOW:-$REPO/target/release/solid-window}
@@ -215,6 +216,31 @@ if [ "$SCENARIO" = wifi ]; then
     BASE="$WIFI_BASE"
 fi
 
+# 1e. The autoupdate base (doc 20, S3): the base has NO network — NetworkManager is only in
+# the `browser` and `wifi` bases — so the timer's machine needs its own base. curl and
+# ca-certificates are already in BASE_PKGS (the fetch client is rustls, which needs neither,
+# but they were in the base before S3). NetworkManager brings the DHCP client the VM's
+# user-mode network hands an address to; wpasupplicant is NetworkManager's wifi backend and
+# systemd-resolved its DNS. `network-manager` is the package, `network-manager` the service
+# this scenario enables below.
+AUTOUPDATE_PKGS="$BASE_PKGS,network-manager,wpasupplicant,systemd-resolved"
+AUTOUPDATE_KEY="$AUTOUPDATE_PKGS,(linux-modules-extra)"
+if [ "$SCENARIO" = autoupdate ]; then
+    AUTOUPDATE_BASE="$WORK/rootfs-autoupdate"
+    if [ "$(cat "$AUTOUPDATE_BASE/.complete" 2>/dev/null)" != "$AUTOUPDATE_KEY" ]; then
+        rm -rf "$AUTOUPDATE_BASE"
+        mmdebstrap --variant=apt \
+            --include="$AUTOUPDATE_PKGS" \
+            --aptopt='APT::Install-Recommends "false"' \
+            --customize-hook="$MODULES_EXTRA_HOOK" \
+            "$SUITE" "$AUTOUPDATE_BASE" \
+            "deb $MIRROR $SUITE main universe multiverse" \
+            "deb $MIRROR $SUITE-updates main universe multiverse"
+        echo "$AUTOUPDATE_KEY" > "$AUTOUPDATE_BASE/.complete"
+    fi
+    BASE="$AUTOUPDATE_BASE"
+fi
+
 # 1d. Update signing (doc 20, S2). An image accepts an update only if its BLAKE3SUMS is signed
 # by a key the image carries. UPDATE_KEY names the secret key whose public half (UPDATE_KEY.pub)
 # goes in; without one, a TEST key is made for this build, in the work directory, and
@@ -225,6 +251,7 @@ UPDATE_KEY=${UPDATE_KEY:-$WORK/update-test.key}
 RELEASE=${RELEASE:-1}
 case "$RELEASE" in ''|*[!0-9]*) echo "RELEASE must be a number, not '$RELEASE'" >&2; exit 2 ;; esac
 [ -x "$MORPH_UPDATE" ] || { echo "missing $MORPH_UPDATE: run cargo build --release -p morph-update" >&2; exit 1; }
+[ "$SCENARIO" != autoupdate ] || [ -x "$MORPH_AUTOUPDATE" ] || { echo "missing $MORPH_AUTOUPDATE: build the morph-autoupdate binary first" >&2; exit 1; }
 if [ ! -f "$UPDATE_KEY.pub" ]; then
     rm -f "$UPDATE_KEY"
     "$MORPH_UPDATE" keygen --key "$UPDATE_KEY" > /dev/null
@@ -295,6 +322,17 @@ make_root() {
     # medium's own binary could check nothing, so the machine verifies with these (S2).
     install -m 0755 "$MORPH_UPDATE" "$dir/usr/bin/morph-update"
     install -D -m 0644 "$UPDATE_KEY.pub" "$dir/usr/share/morpheos/update-keys/build.pub"
+    # The unattended-update entry point (doc 20, S3): the timer runs this, in the image's own
+    # read-only root, with its own trusted keys.
+    if [ "$SCENARIO" = autoupdate ]; then
+        install -m 0755 "$MORPH_AUTOUPDATE" "$dir/usr/bin/morph-autoupdate"
+        # Only the autoupdate TEST image trusts this throwaway CA (doc 20, S3 note 4). It is
+        # generated per run by test-autoupdate.sh and baked in here so the timer's rustls
+        # client accepts the test server's certificate; the production unit names no CA.
+        if [ -n "${UPDATE_TEST_CA:-}" ]; then
+            install -D -m 0644 "$UPDATE_TEST_CA" "$dir/usr/share/morpheos/update-test-ca.pem"
+        fi
+    fi
     # Which release this image is: morph-update refuses a payload older than it, however
     # well signed, and morph-heal reinstalls exactly it (doc 20, S3).
     install -D -m 0644 /dev/null "$dir/usr/lib/morpheos/release"
@@ -339,6 +377,18 @@ EOF
         ln -sf "/usr/lib/systemd/system/$unit.service" \
             "$dir/etc/systemd/system/multi-user.target.wants/$unit.service"
     done
+    if [ "$SCENARIO" = autoupdate ]; then
+        # The timer's machine: NetworkManager (to get the VM's DHCP address), the timer that
+        # runs morph-autoupdate, and the test driver that walks the boots without installing
+        # or arming anything (doc 20, S3 note 2). The overlay's own drop-ins set the short
+        # test intervals and the test CA path; the CA file was installed above.
+        cp -a "$HERE/overlay-network/." "$dir/"
+        cp -a "$HERE/overlay-autoupdate/." "$dir/"
+        ln -sf /usr/lib/systemd/system/NetworkManager.service \
+            "$dir/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
+        ln -sf /usr/lib/systemd/system/morph-update-check.timer \
+            "$dir/etc/systemd/system/timers.target.wants/morph-update-check.timer"
+    fi
     if [ "$SHELL_UI" = 1 ]; then
         cp -a "$HERE/overlay-shell/." "$dir/"
         install -m 0755 "$FLOW_COMPOSITOR" "$dir/usr/bin/flow-compositor"
@@ -599,6 +649,12 @@ chmod 0700 "$DATADIR/strata"
 # tools) pushed slot A to 1428 MiB (89%); 1800 puts it back to 79%. Each raise is deliberate and
 # said in the pull request: a machine installed with one slot size keeps it (doc 20, E7).
 ESP_MB=300 ROOT_MB=1800 DATA_MB=256
+# The autoupdate scenario downloads the payload's shrunk root image (~450 MiB — see the size
+# build-payload.sh prints) to /persist before installing it, which 256 MiB cannot hold
+# (doc 20, S3 note 5). Raised only for that scenario, so the other disks keep their size.
+if [ "$SCENARIO" = autoupdate ]; then
+    DATA_MB=2048
+fi
 rm -f "$WORK/esp.img"
 mkfs.vfat -F 32 -n ESP -C "$WORK/esp.img" $((ESP_MB * 1024)) >/dev/null
 mcopy -s -i "$WORK/esp.img" "$ESPDIR"/* ::/

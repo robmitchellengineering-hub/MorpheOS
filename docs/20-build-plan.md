@@ -1050,7 +1050,10 @@ required `release <n>` line, every image says its release in `/usr/lib/morpheos/
 (`RELEASE` in `build.sh`, default 1; payloads default to 2), and `install` refuses an older
 release before anything is written and allows an equal one (`morph-heal` seals at the running
 release). `tests/install.rs` covers older, equal, newer, a missing, doubled or malformed release
-line, and a missing release file; removing the check fails the older-release test.
+line, and a missing release file; removing the check fails the older-release test. Steps 3.2 and
+3.3 are done (`feat/s3-autoupdate`, PR #131): the decision as a pure function with a test table,
+and the fetcher. Step 3.4 good is done (`feat/s3-autoupdate-image`): the autoupdate image (a
+`network-manager` base, the timer + test drop-ins, the test CA) and `test-autoupdate.sh good`.
 
 **Rob decides before step 3.3 (the fetch):** where releases are hosted, and when an
 installed update reboots (note 6).
