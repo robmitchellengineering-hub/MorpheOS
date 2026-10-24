@@ -41,7 +41,7 @@ vm=$!
 # for it means the window has every folder the attack hit, not just the first (doc 20, S6).
 ready=""
 for _ in $(seq 1 600); do
-    if grep -aq 'flow-timeline: points .* /home/morph/Documents(' "$log" 2>/dev/null &&
+    if grep -aq 'flow-timeline: points /home/morph/Documents(' "$log" 2>/dev/null &&
         grep -aq 'flow-timeline: ready' "$log" 2>/dev/null; then
         ready=1
         break
