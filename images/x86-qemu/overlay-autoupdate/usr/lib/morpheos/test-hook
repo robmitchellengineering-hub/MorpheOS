@@ -4,8 +4,14 @@
 # to walk the boots so the scenario reaches its verdict:
 #   step 0: boot 1, slot A committed — wait for the timer, which fetches, installs, arms and
 #           reboots
-#   step 1: boot 2, slot B trialled and committed — plain reboot, to prove the commit stuck
+#   step 1: after a trial — if slot B committed, a plain reboot proves the commit stuck (good);
+#           if the trial fell back, stay up so the harness stops the VM while the timer keeps
+#           skipping the already-tried release (bad)
 #   step 2: boot 3, slot B committed — report and power off
+#
+# The machine powers itself off ONLY once slot B is committed (note 2). In `bad` and
+# `tampered` it stays up and the harness stops the VM, because the verdict there is read from
+# the boot history plus the server's request log after a period of skipped timer runs.
 set -eu
 dir=${MORPH_TEST_DIR:-/efi/morph-test}
 mkdir -p "$dir"
@@ -29,9 +35,21 @@ case "$step" in
         say "waiting for the update timer"
         ;;
     1)
-        echo 2 > "$dir/step"; sync
-        say "plain reboot"
-        systemctl reboot
+        # After a trial: if slot B committed, a plain reboot proves the commit stuck (good).
+        # If the trial fell back the default is still A — leave the machine running so the
+        # harness stops it while the timer keeps skipping the already-tried release (bad).
+        # Do NOT reboot here: the walk would add a boot the scenario's verdict does not expect.
+        status=$(morph-boot status)
+        case "$status" in
+            *"\"default\":\"b\""*)
+                echo 2 > "$dir/step"; sync
+                say "plain reboot"
+                systemctl reboot
+                ;;
+            *)
+                say "the trial did not commit; staying up for the harness"
+                ;;
+        esac
         ;;
     *)
         status=$(morph-boot status)
@@ -56,6 +74,15 @@ case "$step" in
                 cat "${MORPH_BOOT_HISTORY:-/nonexistent}" 2>/dev/null || printf '  (no history file)\n'
             } >> "$report" 2>/dev/null || true
         fi
-        [ "${MORPH_TEST_FINISH:-poweroff}" = poweroff ] && systemctl poweroff
+        # Only a committed slot B powers the machine off (doc 20, S3 note 2); anything else
+        # leaves it running for the harness to stop.
+        case "$status" in
+            *"\"default\":\"b\""*)
+                [ "${MORPH_TEST_FINISH:-poweroff}" = poweroff ] && systemctl poweroff
+                ;;
+            *)
+                say "default is not b; staying up for the harness"
+                ;;
+        esac
         ;;
 esac

@@ -39,8 +39,10 @@ fi
 if [ "$WHAT" = scenarios ] || [ "$WHAT" = all ]; then
     step "good, unhealthy, crashing, updating and healing"
     sudo images/x86-qemu/test-fallback.sh "$WORK" good unhealthy crash update heal
-    step "an update arrives by itself over HTTPS (S3)"
+    step "an update arrives by itself over HTTPS (S3): good, bad and tampered"
     sudo images/x86-qemu/test-autoupdate.sh "$WORK" good
+    sudo images/x86-qemu/test-autoupdate.sh "$WORK" bad
+    sudo images/x86-qemu/test-autoupdate.sh "$WORK" tampered
     step "ransomware against Strata"
     sudo images/x86-qemu/test-ransomware.sh "$WORK"
     step "the recovery image (S4)"

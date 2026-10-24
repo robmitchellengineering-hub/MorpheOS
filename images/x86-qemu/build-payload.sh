@@ -37,11 +37,14 @@ MORPH_HEAL=${MORPH_HEAL:-$REPO/target/release/morph-heal}
 # Which medium: `update` carries a signed payload; `heal` carries only the
 # healer; `dir` carries the same signed payload as `update` but leaves it as a directory of
 # files (root.img/vmlinuz/initrd.img/BLAKE3SUMS/BLAKE3SUMS.sig) for a server to serve over
-# HTTPS, instead of an ext4 medium (doc 20, S3 note 4). The in-image driver tells `update`
-# and `heal` apart by what it finds on the medium rather than by being told, so a scenario
-# cannot be handed the wrong one and quietly do nothing.
+# HTTPS, instead of an ext4 medium (doc 20, S3 note 4). `bad` and `tampered` are `dir`-shaped
+# variants for S3's other two scenarios (doc 20, S3 "Done when"): `bad` adds a unit that
+# fails, so its trial's health check falls back; `tampered` flips one byte of root.img AFTER
+# signing, so the machine refuses it at the digest check, having downloaded it. The in-image
+# driver tells `update` and `heal` apart by what it finds on the medium rather than by being
+# told, so a scenario cannot be handed the wrong one and quietly do nothing.
 KIND=${3:-update}
-case "$KIND" in update|heal|dir) ;; *) echo "unknown medium kind: $KIND" >&2; exit 2 ;; esac
+case "$KIND" in update|heal|dir|bad|tampered) ;; *) echo "unknown medium kind: $KIND" >&2; exit 2 ;; esac
 
 # Built by the workflow, like morph-boot, and for the same reason: this script runs
 # under sudo, whose PATH does not contain the invoking user's cargo. A clear error beats
@@ -90,6 +93,27 @@ printf 'this file was installed by morph-update\n' > "$MARKER"
 # `write` fails if the target exists, which is the check that the source image is the
 # one build.sh produced and not a payload that has already been through this.
 debugfs -w -R "write $MARKER /etc/morph-update-marker" "$P/root.img" >/dev/null
+
+if [ "$KIND" = bad ]; then
+    # A signed payload whose system fails the health check (doc 20, S3): a unit that fails
+    # makes `systemctl is-system-running` report "degraded", so the trial's health check
+    # falls back. Same shape as build.sh's `unhealthy` scenario, but written into the payload's
+    # root image with debugfs because it is an image file, not a live tree.
+    cat > "$STAGE/morph-broken.service" <<'EOF'
+[Unit]
+Description=Deliberately broken service (test scenario: bad update)
+[Service]
+Type=oneshot
+ExecStart=/bin/false
+[Install]
+WantedBy=multi-user.target
+EOF
+    debugfs -w -R "write $STAGE/morph-broken.service /usr/lib/systemd/system/morph-broken.service" "$P/root.img" >/dev/null
+    # debugfs `symlink <filename> <target>` creates a link NAMED <filename> pointing AT
+    # <target> — the opposite order of `ln -sf <target> <filename>`. The wants entry is what
+    # makes the failing unit start, so the trial's health check sees a failed unit.
+    debugfs -w -R "symlink /etc/systemd/system/multi-user.target.wants/morph-broken.service /usr/lib/systemd/system/morph-broken.service" "$P/root.img" >/dev/null
+fi
 
 # ⚠️ MAKE THE FILESYSTEM CLEAN, AND PROVE IT. `debugfs -w` edits an image without
 # clearing the superblock's state, so the image comes out marked **dirty** — and a dirty
@@ -164,14 +188,31 @@ UPDATE_KEY=${UPDATE_KEY:-$WORK/update-test.key}
 # No updater on the medium: the machine installs with its own, which checks the signature
 # against its own keys. A medium's binary could check nothing.
 
-rm -rf "$OUT"
-if [ "$KIND" = dir ]; then
-    # Leave the payload as a directory, for the CI host to serve over HTTPS (doc 20, S3):
-    # the tree is `stable/LATEST` and `stable/<release>/{root.img,vmlinuz,initrd.img,
-    # BLAKE3SUMS,BLAKE3SUMS.sig}`, and this directory IS `<release>/`.
-    mkdir -p "$OUT"
-    cp -a "$P/." "$OUT/"
-else
-    mkfs.ext4 -q -L payload -d "$STAGE" "$OUT" 1500M
+if [ "$KIND" = tampered ]; then
+    # Flip one byte of root.img AFTER signing (doc 20, S3): the manifest and its signature
+    # still describe the ORIGINAL image, so the machine's signature check passes and its
+    # digest check (`Payload::check`, over root.img) refuses it — having downloaded it. The
+    # flip MUST actually change the byte: XOR with 0xff never leaves it the same, so this
+    # cannot silently produce a good payload (AGENTS.md H3).
+    off=1048576   # 1 MiB in, away from the superblock; the refused image is never mounted.
+    hex=$(od -An -N1 -tx1 -j "$off" "$P/root.img" | tr -d ' \n')
+    [ -n "$hex" ] || { echo "could not read a byte of the payload root image to tamper" >&2; exit 1; }
+    new=$(printf '%02x' $(( 0xff ^ 0x$hex )))
+    printf '%b' "\\x$new" | dd of="$P/root.img" bs=1 seek="$off" conv=notrunc status=none
 fi
+
+rm -rf "$OUT"
+case "$KIND" in
+    dir|bad|tampered)
+        # Leave the payload as a directory, for the CI host to serve over HTTPS (doc 20, S3):
+        # the tree is `stable/LATEST` and `stable/<release>/{root.img,vmlinuz,initrd.img,
+        # BLAKE3SUMS,BLAKE3SUMS.sig}`, and this directory IS `<release>/`. `bad` and `tampered`
+        # are the same shape as `dir`, differing only in root.img's content (above).
+        mkdir -p "$OUT"
+        cp -a "$P/." "$OUT/"
+        ;;
+    *)
+        mkfs.ext4 -q -L payload -d "$STAGE" "$OUT" 1500M
+        ;;
+esac
 echo "$OUT"

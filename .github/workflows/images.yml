@@ -105,8 +105,11 @@ jobs:
       # Doc 20, S3: the autoupdate image's timer checks the CI host's update server over HTTPS
       # and installs a signed payload with no input from the harness after boot. Verdicts read
       # off the disk (boot history, slot B's root) and the server's request log.
-      - name: An update arrives by itself over HTTPS (S3)
-        run: sudo images/x86-qemu/test-autoupdate.sh "$RUNNER_TEMP/img" good
+      - name: An update arrives by itself over HTTPS (S3 — good, bad, tampered)
+        run: |
+          sudo images/x86-qemu/test-autoupdate.sh "$RUNNER_TEMP/img" good
+          sudo images/x86-qemu/test-autoupdate.sh "$RUNNER_TEMP/img" bad
+          sudo images/x86-qemu/test-autoupdate.sh "$RUNNER_TEMP/img" tampered
       - name: Ransomware against Strata
         run: sudo images/x86-qemu/test-ransomware.sh "$RUNNER_TEMP/img"
       # Doc 20, S4: the recovery image. Arm the recovery entry by hand (recovery-boot), then

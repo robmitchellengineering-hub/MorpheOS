@@ -1054,6 +1054,12 @@ line, and a missing release file; removing the check fails the older-release tes
 3.3 are done (`feat/s3-autoupdate`, PR #131): the decision as a pure function with a test table,
 and the fetcher. Step 3.4 good is done (`feat/s3-autoupdate-image`): the autoupdate image (a
 `network-manager` base, the timer + test drop-ins, the test CA) and `test-autoupdate.sh good`.
+Step 3.4 `bad` and `tampered` are built (`feat/s3-autoupdate-bad-tampered`, not yet merged):
+`build-payload.sh` gains the `bad` (a signed payload with a unit that fails) and `tampered`
+(a byte of root.img flipped after signing) variants, and `test-autoupdate.sh` runs all three —
+the `bad` verdict is the fallback history plus no second download, and the `tampered` verdict is
+no trial, an untouched slot B, and the files downloaded. Awaiting the `images` workflow to prove
+them before the task is marked done.
 
 **Rob decides before step 3.3 (the fetch):** where releases are hosted, and when an
 installed update reboots (note 6).
