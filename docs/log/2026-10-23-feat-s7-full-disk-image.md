@@ -45,3 +45,12 @@ the unclean vars.fd). Fixed by giving the helper its own underscore-prefixed loc
 `_want`, `_n`) and guarding every seed write/wait with a `fail_step` that reports and powers
 off instead of silently exiting (H11/H13). Verified `bash -n` + `sh -n` and the embedded
 Python compile; the VM scenario itself is still unverified until the images workflow re-runs.
+
+Second red run, after the seed fix: run 1 powers off cleanly but run 2 still drops to the UEFI
+Interactive Shell (serial-full-disk-2.log ends at "Shell>"), so the fill never runs. Root cause:
+`run-vm.sh` reuses a vars.fd it finds, and `test-full-disk.sh` only deletes it before run 1, so
+run 2 inherited run 1's OVMF NVRAM — whose boot entry (systemd-boot self-installed during run 1's
+boot) is not usable next boot. Fix: delete `${disk%.img}.vars.fd` before run 2, so it boots through
+the same removable-media fallback (/EFI/BOOT/BOOTX64.EFI) that worked for run 1; nothing this
+scenario needs lives in NVRAM, so a fresh store is correct. Verified `bash -n` and the embedded
+Python compile; the VM run itself is still unverified until the images workflow re-runs.
