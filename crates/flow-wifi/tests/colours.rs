@@ -9,6 +9,7 @@
 //! **A new colour goes in this list**, with where it is drawn. The test pages' colours are the
 //! ones the image scripts key on (`images/x86-qemu/test-*.sh`).
 
+use flow_notice::notice::colours as notice;
 use flow_shell::{Colour, palette};
 use flow_timeline::timeline::colours as timeline;
 use flow_wifi::picker::colours;
@@ -58,6 +59,10 @@ fn no_two_colours_a_test_reads_by_are_the_same() {
         ("timeline::FAIL", rgb(timeline::FAIL)),
         ("timeline::CONFIRM", rgb(timeline::CONFIRM)),
         ("timeline::IDLE", rgb(timeline::IDLE)),
+        // The notice window (crates/flow-notice/src/notice.rs).
+        ("notice::WARN", rgb(notice::WARN)),
+        ("notice::OK", rgb(notice::OK)),
+        ("notice::FAIL", rgb(notice::FAIL)),
         // What the image tests draw and look for.
         (
             "start page (overlay-browser start.html)",

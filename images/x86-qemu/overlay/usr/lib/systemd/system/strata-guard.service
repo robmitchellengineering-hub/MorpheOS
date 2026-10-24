@@ -1,0 +1,17 @@
+[Unit]
+Description=Free space below the floor by pruning old Strata versions
+Documentation=https://github.com/robmitchellengineering-hub/MorpheOS/blob/main/docs/20-build-plan.md
+RequiresMountsFor=/persist
+# Before morphd, so on a full data partition the guard frees space first — morphd then writes
+# the retention / min-free files the guard reads on the NEXT boot (or the same one, once
+# written). Before strata, so the store is thinned before the watcher opens it.
+Before=morphd.service strata.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/morpheos/space-guard
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

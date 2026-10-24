@@ -50,6 +50,8 @@ pub fn free_percent(path: &Path) -> Result<u8> {
 pub struct GuardReport {
     /// Free space the guard measured, as a whole percent.
     pub free_percent: u8,
+    /// Free space after pruning, as a whole percent — the "now" a warning reports.
+    pub free_percent_after: u8,
     /// The floor from the Manifest (`storage.min_free_percent`).
     pub floor_percent: u8,
     pub versions_removed: usize,
@@ -75,8 +77,10 @@ pub fn guard(
         return Ok(None);
     }
     let (versions_removed, gc) = strata.prune(policy, now)?;
+    let after = free_percent(strata.root())?;
     Ok(Some(GuardReport {
         free_percent: free,
+        free_percent_after: after,
         floor_percent,
         versions_removed,
         objects_removed: gc.objects_removed,
