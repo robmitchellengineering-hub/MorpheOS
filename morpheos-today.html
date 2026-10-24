@@ -49,13 +49,13 @@
   <h2>The launch screen</h2>
   <div class="shots">
     <div class="shot">
-      <iframe id="splash-frame" src="login.html" title="MorpheOS splash animation"
-        allow="fullscreen; autoplay" loading="lazy"
-        style="width:100%;aspect-ratio:16/9;border:0;background:#000;display:block"></iframe>
+      <video id="splash-frame" src="splash.mp4" autoplay muted loop playsinline
+        title="MorpheOS splash animation"
+        style="width:100%;aspect-ratio:16/9;border:0;background:#000;display:block"></video>
       <div class="cap">
         <button type="button" style="margin-right:10px"
           onclick="var f=document.getElementById('splash-frame');(document.fullscreenElement||document.webkitFullscreenElement)?(document.exitFullscreen?document.exitFullscreen():document.webkitExitFullscreen()):(f.requestFullscreen?f.requestFullscreen():f.webkitRequestFullscreen())">&#x26F6; Fullscreen</button>
-        tap inside to play the animation, sound on
+        plays on a loop; click the card to unmute
       </div>
     </div>
   </div>
