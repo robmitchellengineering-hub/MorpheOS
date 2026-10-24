@@ -653,7 +653,7 @@ ESP_MB=300 ROOT_MB=1800 DATA_MB=256
 # build-payload.sh prints) to /persist before installing it, which 256 MiB cannot hold
 # (doc 20, S3 note 5). Raised only for that scenario, so the other disks keep their size.
 if [ "$SCENARIO" = autoupdate ]; then
-    DATA_MB=1024
+    DATA_MB=2048
 fi
 rm -f "$WORK/esp.img"
 mkfs.vfat -F 32 -n ESP -C "$WORK/esp.img" $((ESP_MB * 1024)) >/dev/null
