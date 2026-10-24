@@ -27,17 +27,33 @@ docs=/home/morph/Documents
 mkdir -p "$dir"
 step=$(cat "$dir/step" 2>/dev/null || echo 0)
 say() { echo "morph-test: $*"; }
+# A step that cannot complete must still finish the run with a clear verdict, never hang until
+# the harness times out: say why, write it where the harness reads the disk, and power off
+# (AGENTS.md H11 — a timeout is not a diagnosis; the console and the ESP record say why).
+fail_step() {
+    say "FATAL: $*"
+    printf 'FATAL: %s\n' "$*" > "$dir/fatal" 2>/dev/null || true
+    sync
+    [ "${MORPH_TEST_FINISH:-poweroff}" = poweroff ] && systemctl poweroff
+    exit 1
+}
 say "full-disk step $step"
 
-# Wait until Strata has recorded `i` versions of a file. The watcher handles events in order,
-# so once the newest version is in the history every earlier write is recorded too.
+# Wait until Strata has recorded `_want` versions of a file. The watcher handles events in
+# order, so once the newest version is in the history every earlier write is recorded too.
+#
+# ⚠️ The parameters live in their OWN variables (`_f`, `_want`, `_n`). The first version reused
+# `f` and `i`, which are also the caller's `for` loop variables, and a POSIX `sh` function
+# parameter is global: the first wait set `f` to the full file path, so the next write went to
+# `.../a.txt.txt` (a directory that does not exist), the redirect failed, and `set -e` ended
+# the run in silence (AGENTS.md H11 — one unguarded command on a failure path).
 until_version() {
-    f=$1
-    want=$2
-    i=0
-    until [ "$(strata history "$f" 2>/dev/null | wc -l)" -ge "$want" ]; do
-        i=$((i + 1))
-        [ "$i" -le 240 ] || { say "strata never recorded $want versions of $f"; return 1; }
+    _f=$1
+    _want=$2
+    _n=0
+    until [ "$(strata history "$_f" 2>/dev/null | wc -l)" -ge "$_want" ]; do
+        _n=$((_n + 1))
+        [ "$_n" -le 240 ] || { say "strata never recorded $_want versions of $_f"; return 1; }
         sleep 0.5
     done
 }
@@ -45,12 +61,16 @@ until_version() {
 case "$step" in
     0)
         # Run 1: several versions of a few files, each distinct so Strata records it (a
-        # re-write with the same bytes is not a new version).
-        mkdir -p "$docs"
+        # re-write with the same bytes is not a new version). Every step is guarded: a seed
+        # write or a wait that fails must report and power off, not end the script under
+        # `set -e` and leave the VM to hang until the harness gives up (AGENTS.md H11, H13).
+        mkdir -p "$docs" || fail_step "cannot create $docs"
         for f in a b c; do
             for i in 1 2 3 4 5; do
-                printf 'file %s version %d\n' "$f" "$i" > "$docs/$f.txt"
-                until_version "$docs/$f.txt" "$i"
+                printf 'file %s version %d\n' "$f" "$i" > "$docs/$f.txt" \
+                    || fail_step "cannot write $docs/$f.txt"
+                until_version "$docs/$f.txt" "$i" \
+                    || fail_step "strata never recorded version $i of $f"
             done
         done
         echo 1 > "$dir/step"
