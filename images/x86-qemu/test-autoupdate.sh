@@ -122,7 +122,10 @@ echo "    vm time: $(( $(date +%s) - start ))s"
 
 fail=0
 got=$(recorded "$disk")
-want='a/committed/none b/trial/committed b/committed/none'
+# Newline-joined, exactly as `recorded` emits and as test-fallback.sh's `expected` does:
+# the display/FAIL lines echo `$want` unquoted, which collapses whitespace, so a
+# space-joined literal *looks* right while `[ "$got" = "$want" ]` can never match it.
+want=$(printf '%s\n' a/committed/none b/trial/committed b/committed/none)
 default=$(mtype -i "$disk@@1M" ::/loader/loader.conf | awk '$1=="default"{print $2}')
 echo "    boots:   $(echo $got)"
 echo "    default: $default"

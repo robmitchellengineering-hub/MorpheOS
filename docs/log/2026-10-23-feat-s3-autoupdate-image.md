@@ -43,3 +43,15 @@ itself — it needs the `images` workflow (QEMU on Linux), which I did not run.
 copied slot-A root inside it still says `/usr/lib/morpheos/release` = 1. `good` does not read
 slot B's release file, so it does not affect this scenario's assertions, but a real payload must
 carry the release its manifest claims (doc 20, S3 note 3.1). PR 4 or a follow-up should write it.
+
+**Debug (2026-10-24):** once the CA/streaming/`DATA_MB=2048` fixes were in, the CI `autoupdate
+good` run reached the verdict and failed with `FAIL: expected boots: a/committed/none
+b/trial/committed b/committed/none` — even though `serial-autoupdate.log` showed all three boots
+correct (`a` committed/none → `b` trial/committed → `b` committed/none, then poweroff). The flow
+was right; the *assertion* was not. `test-autoupdate.sh` set `want` as a space-joined literal
+while `recorded()` (like `test-fallback.sh`'s `expected`) emits newline-joined items, and the
+`echo` in the display/FAIL lines collapses whitespace — so the two looked identical while
+`[ "$got" = "$want" ]` could never match a multi-boot history. Fixed to
+`want=$(printf '%s\n' a/committed/none b/trial/committed b/committed/none)`. Verified `bash -n`
+and `ROBMESH_ALLOW_MAC=1 cargo test -p morph-autoupdate -p morph-update` (4 + 26 pass); the VM
+scenario itself is left to the `images` workflow.
