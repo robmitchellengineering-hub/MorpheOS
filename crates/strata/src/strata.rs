@@ -1,7 +1,7 @@
 //! Snapshot, restore, rewind and prune: the operations a person and the heal
 //! engine actually use.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
@@ -437,23 +437,54 @@ impl Strata {
         Ok(())
     }
 
-    /// Thin out old versions by `policy`, then free objects nothing refers to.
-    pub fn prune(&mut self, policy: &Retention, now: i64) -> Result<(usize, GcReport)> {
+    /// The version ids the retention policy will prune — a read, so the space
+    /// guard can plan on a full disk without writing anything to the index.
+    pub fn prune_plan(&self, policy: &Retention, now: i64) -> Result<Vec<i64>> {
         let mut by_path: HashMap<Vec<u8>, Vec<(i64, i64)>> = HashMap::new();
         for (id, path, ts) in self.index.all_versions()? {
             by_path.entry(path).or_default().push((id, ts));
         }
-        let doomed: Vec<i64> = by_path
+        Ok(by_path
             .values()
             .flat_map(|v| prunable(v, now, policy))
+            .collect())
+    }
+
+    /// Delete the objects only the doomed versions refer to. This is the step
+    /// that frees space, and it writes nothing to the index, so it works on a
+    /// full disk: the guard frees the space before it ever needs to record.
+    pub fn collect(&self, doomed: &[i64], now: i64) -> Result<GcReport> {
+        let doomed: HashSet<i64> = doomed.iter().copied().collect();
+        // The surviving content hashes, computed from a read. No index row is
+        // deleted yet, so this cannot depend on the delete having happened first.
+        let keep: HashSet<String> = self
+            .index
+            .file_contents()?
+            .into_iter()
+            .filter(|(id, _)| !doomed.contains(id))
+            .map(|(_, content)| content)
             .collect();
-        let removed = self.index.delete(&doomed)?;
-        let keep = self.index.referenced_contents()?;
         // Objects written in the last hour are spared: a snapshot in progress
         // may have stored chunks it has not recorded yet.
-        let gc = self
-            .store
-            .collect_garbage(&keep, now - 3600 * time::SECOND)?;
+        self.store.collect_garbage(&keep, now - 3600 * time::SECOND)
+    }
+
+    /// Remove the doomed versions from the index — the "record" half of a prune,
+    /// and the only step that writes the index.
+    pub fn record_prune(&mut self, doomed: &[i64]) -> Result<usize> {
+        self.index.delete(doomed)
+    }
+
+    /// Thin out old versions by `policy`: free the objects, then record the prune.
+    ///
+    /// The objects are deleted first because that is the step that frees space: a
+    /// full disk leaves no room for the index write, so the write can only succeed
+    /// once the deletes have made room. `guard` uses the two steps separately so it
+    /// can still report the recovered space when the record write is refused.
+    pub fn prune(&mut self, policy: &Retention, now: i64) -> Result<(usize, GcReport)> {
+        let doomed = self.prune_plan(policy, now)?;
+        let gc = self.collect(&doomed, now)?;
+        let removed = self.record_prune(&doomed)?;
         Ok((removed, gc))
     }
 }

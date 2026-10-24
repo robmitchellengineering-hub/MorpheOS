@@ -245,12 +245,15 @@ impl Index {
         Ok(n)
     }
 
-    /// Every content hash some version still refers to.
-    pub fn referenced_contents(&self) -> Result<std::collections::HashSet<String>> {
+    /// (id, content) of every file version, so pruning can work out which content
+    /// hashes survive without first deleting rows from the index. A read, not a
+    /// write — the space guard needs exactly that on a full disk, where the write
+    /// that records the prune cannot run until the object deletes have made room.
+    pub fn file_contents(&self) -> Result<Vec<(i64, String)>> {
         let mut st = self
             .db
-            .prepare("SELECT DISTINCT content FROM versions WHERE kind = 'file'")?;
-        let rows = st.query_map([], |r| r.get::<_, String>(0))?;
+            .prepare("SELECT id, content FROM versions WHERE kind = 'file'")?;
+        let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 

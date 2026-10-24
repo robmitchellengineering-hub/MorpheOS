@@ -60,10 +60,16 @@ pub struct GuardReport {
 /// Thin out old versions when the store's filesystem is below `floor_percent` free.
 ///
 /// Returns `None` when free space is at or above the floor — nothing to do. Below the
-/// floor it runs the same [`Strata::prune`] a person runs by hand, so it never deletes
-/// more than the retention policy allows: the newest version of every file is always
-/// kept. If pruning cannot get back above the floor, the caller reports that instead of
-/// deleting beyond the policy (doc 20, S7 note 5 — Rob's decision: only warn).
+/// floor it runs the same prune a person runs by hand, so it never deletes more than
+/// the retention policy allows: the newest version of every file is always kept. If
+/// pruning cannot get back above the floor, the caller reports that instead of deleting
+/// beyond the policy (doc 20, S7 note 5 — Rob's decision: only warn).
+///
+/// The guard exists to recover a **full** disk, so it frees space before it writes the
+/// index: the object deletes that make room run first (they need no free space), and the
+/// index write that records the prune runs second, once there is room. If that record
+/// write is still refused, the deletes have already recovered the space, so the guard
+/// reports the recovery instead of failing the whole boot.
 pub fn guard(
     strata: &mut Strata,
     floor_percent: u8,
@@ -74,7 +80,21 @@ pub fn guard(
     if free >= floor_percent {
         return Ok(None);
     }
-    let (versions_removed, gc) = strata.prune(policy, now)?;
+    let doomed = strata.prune_plan(policy, now)?;
+    let gc = strata.collect(&doomed, now)?;
+    // Recording the prune is the only index write; if it fails the space is already
+    // back, so the guard must not turn that into a failed boot. The doomed rows stay
+    // until a later pass, but their objects are gone and the disk is usable again.
+    let versions_removed = match strata.record_prune(&doomed) {
+        Ok(n) => n,
+        Err(e) => {
+            eprintln!(
+                "space-guard: freed {} objects ({} bytes) but could not record the prune in the version index: {e}",
+                gc.objects_removed, gc.bytes_freed
+            );
+            0
+        }
+    };
     Ok(Some(GuardReport {
         free_percent: free,
         floor_percent,
@@ -163,5 +183,81 @@ mod tests {
         let s = Strata::open(base.join("store")).unwrap();
         let free = free_percent(s.root()).unwrap();
         assert!(free <= 100, "a percentage is 0–100, got {free}");
+    }
+
+    /// A full disk fails the index WRITE that records a prune, but the object
+    /// deletes that free space need no room. A `BEFORE DELETE` trigger stands in
+    /// for that full medium, portably and fast, so the test can prove the guard
+    /// still recovers the space and does not fail the whole boot.
+    #[test]
+    fn frees_space_even_when_the_index_refuses_the_record() {
+        let base = scratch("record-refused");
+        let docs = base.join("docs");
+        fs::create_dir_all(&docs).unwrap();
+        let mut s = Strata::open(base.join("store")).unwrap();
+        several_versions(&mut s, &docs);
+        let history = s.index().history(&docs.join("doc.txt")).unwrap();
+        let newest = history.last().unwrap().content.clone();
+        let oldest = history.first().unwrap().content.clone();
+        assert_ne!(oldest, newest);
+
+        // Refuse the index write the way a full disk would, after the objects exist.
+        let db = rusqlite::Connection::open(s.root().join("index.sqlite")).unwrap();
+        db.execute_batch(
+            "CREATE TRIGGER block_prune_record BEFORE DELETE ON versions \
+             BEGIN SELECT RAISE(ABORT, 'disk is full'); END;",
+        )
+        .unwrap();
+
+        // A floor of 100 is below any filesystem, so the guard runs; a far-future
+        // `now` makes every version older than the policy, so there is work to do.
+        let now = time::now_ns() + 1000 * 86_400 * time::SECOND;
+        let report = guard(&mut s, 100, &policy(), now)
+            .unwrap()
+            .expect("the guard must run below the floor");
+        // The space was recovered even though the index write was refused.
+        assert!(report.objects_removed > 0, "{report:#?}");
+        assert!(report.bytes_freed > 0, "{report:#?}");
+        assert_eq!(
+            report.versions_removed, 0,
+            "the record was refused, so no index row was removed: {report:#?}"
+        );
+
+        // The newest version still restores; the pruned versions' objects are gone.
+        assert!(s.store().read_file(&newest, &mut Vec::new()).is_ok());
+        assert!(matches!(
+            s.store().read_file(&oldest, &mut Vec::new()),
+            Err(Error::NotFound(_))
+        ));
+    }
+
+    /// The CLI's `prune` shares the guard's order: the object deletes happen before
+    /// the index write, so a full disk cannot stop the space from being recovered.
+    #[test]
+    fn prune_frees_the_objects_before_it_records() {
+        let base = scratch("prune-order");
+        let docs = base.join("docs");
+        fs::create_dir_all(&docs).unwrap();
+        let mut s = Strata::open(base.join("store")).unwrap();
+        several_versions(&mut s, &docs);
+        let history = s.index().history(&docs.join("doc.txt")).unwrap();
+        let newest = history.last().unwrap().content.clone();
+        let oldest = history.first().unwrap().content.clone();
+
+        let db = rusqlite::Connection::open(s.root().join("index.sqlite")).unwrap();
+        db.execute_batch(
+            "CREATE TRIGGER block_prune_record BEFORE DELETE ON versions \
+             BEGIN SELECT RAISE(ABORT, 'disk is full'); END;",
+        )
+        .unwrap();
+
+        let now = time::now_ns() + 1000 * 86_400 * time::SECOND;
+        // The record write fails, but the objects were already deleted.
+        assert!(matches!(s.prune(&policy(), now), Err(Error::Db(_))));
+        assert!(s.store().read_file(&newest, &mut Vec::new()).is_ok());
+        assert!(matches!(
+            s.store().read_file(&oldest, &mut Vec::new()),
+            Err(Error::NotFound(_))
+        ));
     }
 }
