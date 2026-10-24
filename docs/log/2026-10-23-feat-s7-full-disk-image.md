@@ -33,3 +33,15 @@ scenario itself is only proven by the images workflow (or mesh QEMU) — that is
 unverified half. Two things the VM run will confirm or expose: that `strata guard`'s prune can
 write its SQLite WAL on a truly full partition, and that morphd's writes land once the guard
 has freed room (the reason `strata-guard.service` is `Before=morphd.service`).
+
+Debug of the first red `full-disk` VM run (serial log `x86-serial-logs`): the fill never
+reached ENOSPC because run 1 died in step 0, before any fill. `until_version` took its first
+argument as the global `f`, which is also the caller's `for f in a b c` loop variable, so the
+first wait set `f` to the full path and the second seed write went to
+`/home/morph/Documents//home/morph/Documents/a.txt.txt` (a directory that does not exist); the
+redirect failed and `set -e` ended the script in silence, leaving the store at "1 version of 1
+file" and the VM to hang until the harness timed out (run 2 then dropped to the UEFI shell on
+the unclean vars.fd). Fixed by giving the helper its own underscore-prefixed locals (`_f`,
+`_want`, `_n`) and guarding every seed write/wait with a `fail_step` that reports and powers
+off instead of silently exiting (H11/H13). Verified `bash -n` + `sh -n` and the embedded
+Python compile; the VM scenario itself is still unverified until the images workflow re-runs.
