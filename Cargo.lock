@@ -1568,6 +1568,7 @@ dependencies = [
  "blake3",
  "fastcdc",
  "inotify",
+ "libc",
  "rusqlite",
  "serde",
  "serde_json",

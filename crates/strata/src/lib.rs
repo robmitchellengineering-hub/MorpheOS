@@ -15,12 +15,16 @@
 //!   a quarantine folder, not deleted. A rewind can itself be undone.
 //! - [`watch`]: an inotify watcher that snapshots files as they are saved, moved
 //!   and deleted, and feeds [`detect`], which spots ransomware-like bursts.
+//! - [`guard`]: the space guard — when the store's filesystem falls below the
+//!   Manifest's `storage.min_free_percent`, thin out old versions by the retention
+//!   policy so a full disk cannot break the machine (doc 20, S7).
 //!
 //! v0 runs on top of any Linux filesystem. Its store must live outside the
 //! folders it watches and be writable only by the service (doc 09): software
 //! that can reach your files must not be able to reach their history.
 
 pub mod detect;
+pub mod guard;
 pub mod index;
 pub mod retention;
 pub mod store;

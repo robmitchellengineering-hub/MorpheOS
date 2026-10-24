@@ -21,9 +21,11 @@
 //! change is safe to take back is that taking it back is the same operation in reverse.
 
 pub mod hostname;
+pub mod min_free;
 pub mod retention;
 
 pub use hostname::{Hostname, Kernel};
+pub use min_free::{MinFreePercent, MinFreePercentPolicy};
 pub use retention::{Retention, RetentionPolicy};
 
 /// A single reversible setting change.
