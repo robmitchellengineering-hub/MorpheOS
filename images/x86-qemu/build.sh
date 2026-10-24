@@ -6,6 +6,9 @@
 # scenario: good | unhealthy | crash   (what slot B's "update" does)
 #           ransomware                 (no update: slot A attacks its own files,
 #                                       and Strata has to get them back)
+#           rewind                     (the shell: the self-test attacks its files but does
+#                                       NOT rewind; the timeline window opens by itself and
+#                                       the harness confirms the rewind, doc 20 S6)
 #           plain                      (no self-test at all: a machine to USE, for real
 #                                       hardware: the shell, Firefox and the Wi-Fi picker,
 #                                       see images/x86-qemu/HARDWARE.md)
@@ -27,7 +30,7 @@ set -euo pipefail
 
 WORK=${1:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
 SCENARIO=${2:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
-case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell|browser|wifi|broken-shell|hung-shell|recovery|manifest) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
+case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell|browser|wifi|broken-shell|hung-shell|recovery|manifest|rewind) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
 # `plain` is the one that leaves the CI harness behind and is meant to be booted by a person:
 # the Flow shell drawing the screen and taking the keyboard and mouse, Firefox on a local
 # start page, NetworkManager, and the Wi-Fi picker when there is no network (doc 20, E4 and
@@ -43,7 +46,9 @@ SHELL_UI=0
 # slot B's update ships a shell that cannot start, or one that never draws (E11).
 case "$SCENARIO" in
     plain|shell|browser|wifi) HARDWARE=1; SHELL_UI=1 ;;
-    broken-shell|hung-shell) SHELL_UI=1 ;;
+    # `rewind` is a self-test image WITH the shell: the ransomware hook attacks, the timeline
+    # window opens by itself, and the harness drives the rewind (doc 20, S6).
+    broken-shell|hung-shell|rewind) SHELL_UI=1 ;;
     # The recovery test (S4): a person-facing image — so it carries the recovery partition —
     # but no shell, and the recovery-test driver instead (see make_root).
     recovery) HARDWARE=1 ;;
@@ -64,9 +69,10 @@ FLOW_COMPOSITOR=${FLOW_COMPOSITOR:-$REPO/target/release/flow-compositor}
 SOLID_WINDOW=${SOLID_WINDOW:-$REPO/target/release/solid-window}
 FLOW_WIFI=${FLOW_WIFI:-$REPO/target/release/flow-wifi}
 FLOW_MOUNT=${FLOW_MOUNT:-$REPO/target/release/flow-mount}
+FLOW_TIMELINE=${FLOW_TIMELINE:-$REPO/target/release/flow-timeline}
 if [ "$SHELL_UI" = 1 ]; then
-    for b in "$FLOW_COMPOSITOR" "$SOLID_WINDOW" "$FLOW_WIFI" "$FLOW_MOUNT"; do
-        [ -x "$b" ] || { echo "missing $b: run cargo build --release -p flow-compositor -p flow-wifi -p flow-files" >&2; exit 1; }
+    for b in "$FLOW_COMPOSITOR" "$SOLID_WINDOW" "$FLOW_WIFI" "$FLOW_MOUNT" "$FLOW_TIMELINE"; do
+        [ -x "$b" ] || { echo "missing $b: run cargo build --release -p flow-compositor -p flow-wifi -p flow-files -p flow-timeline" >&2; exit 1; }
     done
 fi
 
@@ -345,6 +351,7 @@ EOF
         install -m 0755 "$SOLID_WINDOW" "$dir/usr/bin/solid-window"
         install -m 0755 "$FLOW_WIFI" "$dir/usr/bin/flow-wifi"
         install -m 0755 "$FLOW_MOUNT" "$dir/usr/bin/flow-mount"
+        install -m 0755 "$FLOW_TIMELINE" "$dir/usr/bin/flow-timeline"
         # The shell scenario shows the demonstration window; the browser scenario, Firefox;
         # the wifi scenario, Firefox plus the Wi-Fi picker (E14: once the picker joins,
         # Firefox must come online). Where there is NetworkManager, the picker opens by
@@ -368,6 +375,11 @@ EOF
             ln -sf "/usr/lib/systemd/system/$unit.service" \
                 "$dir/etc/systemd/system/multi-user.target.wants/$unit.service"
         done
+        # The rewind timeline opens by itself when Strata records an alert (doc 20, S6): the
+        # .path unit is enabled at boot, and the .service is NOT — it starts only when the
+        # path unit fires, so a machine with nothing to rewind never shows the window.
+        ln -sf "/usr/lib/systemd/system/flow-timeline.path" \
+            "$dir/etc/systemd/system/multi-user.target.wants/flow-timeline.path"
         # tailscaled ships at /lib/systemd/system (the Debian convention), which is
         # /usr/lib/systemd/system on a usrmerged image. Link to whichever the package
         # actually created, and fail loudly if neither does — a silently broken link is
@@ -445,9 +457,18 @@ EOF
             echo "kernel: simpledrm is built in, so a laptop's graphics driver is not card0" >&2
         fi
     fi
-    if [ "$SCENARIO" = ransomware ]; then
-        # No update in this scenario: the self-test attacks the files instead.
+    if [ "$SCENARIO" = ransomware ] || [ "$SCENARIO" = rewind ]; then
+        # No update in these scenarios: the self-test attacks the files instead. `rewind`
+        # attacks but does NOT rewind — the timeline window, opened by the path unit, does
+        # the rewind once the harness confirms it (doc 20, S6).
         ln -sf ransomware-test "$dir/usr/lib/morpheos/test-hook"
+    fi
+    if [ "$SCENARIO" = rewind ]; then
+        # The flag reaches the test hook through boot-check's environment (boot-check execs
+        # the hook). It is the only difference from the `ransomware` scenario's hook.
+        mkdir -p "$dir/etc/systemd/system/morph-boot-check.service.d"
+        printf '[Service]\nEnvironment=MORPH_TEST_REWIND=no\n' \
+            > "$dir/etc/systemd/system/morph-boot-check.service.d/rewind.conf"
     fi
     # Hardware watchdog: a hung kernel or PID 1 gets reset, and a reset ends a trial.
     mkdir -p "$dir/etc/systemd/system.conf.d"

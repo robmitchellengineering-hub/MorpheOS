@@ -1,0 +1,19 @@
+[Unit]
+Description=The rewind timeline: a window listing Strata's ransomware alerts
+Documentation=https://github.com/robmitchellengineering-hub/MorpheOS/blob/main/docs/20-build-plan.md
+# Started by flow-timeline.path when Strata records an alert; it is NOT wanted at boot, so a
+# machine with nothing to rewind never shows the window.
+Requires=flow-shell.service
+After=flow-shell.service
+
+[Service]
+Environment=XDG_RUNTIME_DIR=/run/flow WAYLAND_DISPLAY=wayland-0
+# The socket appears when the compositor has bound it; wait for it rather than guessing.
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 300); do [ -S /run/flow/wayland-0 ] && exit 0; sleep 0.1; done; exit 1'
+# The store is root-only (0700, doc 09), and the window runs as root like the shell until
+# E11, so it reads Strata directly; the backend trait is the seam a non-root shell swaps a
+# broker into (doc 20, S6). Its `ready` and `points`/`rewound` lines reach the serial console
+# so the VM test can wait for them instead of sleeping (H14, H13).
+ExecStart=/usr/bin/flow-timeline
+StandardOutput=journal+console
+StandardError=journal+console

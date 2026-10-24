@@ -37,7 +37,7 @@ mod client {
     use std::io::Write;
     use std::os::fd::AsFd;
     use std::sync::mpsc::{self, Receiver, Sender};
-    use std::time::Instant;
+    use std::time::{Duration, Instant};
 
     use flow_shell::Frame;
     use flow_timeline::backend::{Backend, Fake, StrataBackend};
@@ -84,31 +84,44 @@ mod client {
         commands: Receiver<Command>,
         updates: Sender<Update>,
     ) {
-        match backend.alerts() {
-            Ok(list) => {
-                if updates.send(Update::Alerts(list)).is_err() {
+        // A burst re-issues its alert as it reaches folders the earlier alert had not seen
+        // yet (doc 20, S6 "several folders"), and the window can open on the first issue —
+        // before those folders are in the store. So the list is re-read while the window
+        // waits, and the window is told only when it changed: `set_alerts` swaps the list
+        // and keeps the selection, and it never disturbs a rewind already in flight.
+        let mut known: Vec<RewindPoint> = Vec::new();
+        loop {
+            match backend.alerts() {
+                Ok(list) => {
+                    if list != known {
+                        known = list.clone();
+                        if updates.send(Update::Alerts(list)).is_err() {
+                            return;
+                        }
+                    }
+                }
+                Err(e) => {
+                    let _ = updates.send(Update::Unavailable(e));
                     return;
                 }
             }
-            Err(e) => {
-                let _ = updates.send(Update::Unavailable(e));
-                return;
-            }
-        }
-        for command in commands {
-            match command {
-                Command::Preview { point } => {
-                    let result = backend.rewind(&point, true);
-                    if updates.send(Update::Previewed { point, result }).is_err() {
-                        return;
+            match commands.recv_timeout(Duration::from_millis(500)) {
+                Ok(command) => match command {
+                    Command::Preview { point } => {
+                        let result = backend.rewind(&point, true);
+                        if updates.send(Update::Previewed { point, result }).is_err() {
+                            return;
+                        }
                     }
-                }
-                Command::Rewind { point } => {
-                    let result = backend.rewind(&point, false);
-                    if updates.send(Update::Rewound { point, result }).is_err() {
-                        return;
+                    Command::Rewind { point } => {
+                        let result = backend.rewind(&point, false);
+                        if updates.send(Update::Rewound { point, result }).is_err() {
+                            return;
+                        }
                     }
-                }
+                },
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => return,
             }
         }
     }
