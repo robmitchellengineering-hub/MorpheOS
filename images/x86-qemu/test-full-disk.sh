@@ -45,6 +45,13 @@ VM_RTC="$old" VM_GPU=1 "$HERE/run-vm.sh" "$disk" "$WORK/serial-full-disk-1.log" 
 log="$WORK/serial-full-disk-2.log"
 qmp="$WORK/qmp-full-disk.sock"
 rm -f "$log" "$qmp" "$WORK"/screen-full-disk-*.ppm
+# Run 2 must start from a fresh UEFI variable store. Run 1 booted through OVMF's
+# removable-media fallback (/EFI/BOOT/BOOTX64.EFI, build.sh), and the NVRAM entry systemd-boot
+# left behind on that boot is not usable next boot — reusing run 1's vars.fd drops run 2 into
+# the UEFI Interactive Shell before the kernel runs. Nothing this scenario needs lives in NVRAM
+# (its inter-run state is the Strata store and the step file on the disk), so a fresh vars.fd is
+# correct, and it makes run 2 boot the same fallback that worked for run 1.
+rm -f "${disk%.img}.vars.fd"
 VM_GPU=1 VM_QMP="$qmp" "$HERE/run-vm.sh" "$disk" "$log" "${VM_TIMEOUT:-1800}" &
 vm=$!
 
