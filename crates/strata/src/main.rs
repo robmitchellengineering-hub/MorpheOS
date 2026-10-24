@@ -311,14 +311,26 @@ fn run(a: Args) -> Result<(), String> {
                 None => Retention::from_manifest(24, 30, 365),
             };
             match strata::guard::guard(&mut s, floor, &policy, time::now_ns()).map_err(err)? {
-                Some(r) => println!(
-                    "free space {}% is below the {}% floor; pruned {} old versions ({} objects, {} bytes freed)",
-                    r.free_percent,
-                    r.floor_percent,
-                    r.versions_removed,
-                    r.objects_removed,
-                    r.bytes_freed
-                ),
+                Some(r) => {
+                    // Say "now", not only "was": the shell's warning reports how full the disk
+                    // is after the guard ran, and whether pruning could get back above the
+                    // floor — when it could not, that is the "why not" the notice shows rather
+                    // than deleting beyond the policy (doc 20, S7 note 5).
+                    let after = if r.free_percent_after >= r.floor_percent {
+                        format!("back above the {}% floor", r.floor_percent)
+                    } else {
+                        format!("still below the {}% floor", r.floor_percent)
+                    };
+                    println!(
+                        "free space {}% was below the {}% floor; pruned {} old versions ({} objects, {} bytes freed); now {}% free, {after}",
+                        r.free_percent,
+                        r.floor_percent,
+                        r.versions_removed,
+                        r.objects_removed,
+                        r.bytes_freed,
+                        r.free_percent_after
+                    );
+                }
                 None => {
                     let free = strata::guard::free_percent(s.root()).map_err(err)?;
                     println!("free space {free}% is at or above the {floor}% floor; nothing to do");

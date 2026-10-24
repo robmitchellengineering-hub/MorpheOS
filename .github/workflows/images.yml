@@ -56,7 +56,7 @@ jobs:
       # and after the step above, which installs the system libraries it links (libudev,
       # libinput, libseat, xkbcommon, pixman). Built before it, it failed on libudev.
       - name: Build the shell and the Wi-Fi picker
-        run: cargo build --release -p flow-compositor -p flow-wifi -p flow-files -p flow-timeline
+        run: cargo build --release -p flow-compositor -p flow-wifi -p flow-files -p flow-timeline -p flow-notice
       # ⚠️ FIRST, AND BEFORE THE SCENARIOS. This is the image a PERSON boots — the one that
       # goes on real hardware — and it is built and published before any test that might fail,
       # so a red scenario cannot cost us the artefact somebody is waiting for. `if: always()`
@@ -122,12 +122,17 @@ jobs:
       # Strata's retention (read off the machine), and a refused change is rolled back.
       - name: The Manifest is obeyed (S11)
         run: sudo images/x86-qemu/test-manifest.sh "$RUNNER_TEMP/img"
+      # Doc 20, S7: a full data partition does not break the machine — the space guard prunes
+      # by the retention policy and the shell warns. Verdicts read off the disk: boot history,
+      # the copied store (the host's own `strata`), dumpe2fs free space, and a screendump.
+      - name: A full disk does not break the machine (S7)
+        run: sudo images/x86-qemu/test-full-disk.sh "$RUNNER_TEMP/img"
       # Doc 20, E3 and E10: the compositor drives a real (virtio-gpu) display and the VM's
       # own keyboard and mouse, and every verdict is a screenshot's pixels. Its system
       # libraries came from setup-linux.sh above.
       - name: The Flow shell on a real display, with a keyboard and a mouse
         run: |
-          cargo build --release -p flow-compositor -p flow-wifi -p flow-files -p flow-timeline
+          cargo build --release -p flow-compositor -p flow-wifi -p flow-files -p flow-timeline -p flow-notice
           sudo images/x86-qemu/test-shell.sh "$RUNNER_TEMP/img"
       # Doc 20, E11: an update whose shell cannot start, or starts and never draws, is
       # trialled once and falls back, like `unhealthy`. The second is why the shell is

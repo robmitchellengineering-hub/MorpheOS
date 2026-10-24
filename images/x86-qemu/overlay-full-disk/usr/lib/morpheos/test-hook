@@ -1,0 +1,91 @@
+#!/bin/sh
+# Self-test driver for the full-disk scenario (doc 20, S7, test images only). Installed as the
+# test hook in place of the update driver, and run by boot-check after each boot's health
+# decision. Two VM runs (see images/x86-qemu/test-full-disk.sh):
+#
+#   Run 1 (the guest clock set 30 days ago): write five versions of three files, waiting for
+#           Strata to record each, so the versions are old enough for the retention policy to
+#           prune. Then power off.
+#   Run 2 (today's clock): fill /persist as root until a write fails with ENOSPC (so the ext4
+#           5% root reservation is included — a non-root fill stops short, doc 20 S7 note 4),
+#           record that ENOSPC happened, and reboot.
+#   Run 2, second boot: the space guard (strata-guard.service) prunes the old versions at boot
+#           and the shell shows the notice. This driver powers the machine off once boot-check
+#           has decided; the host reads the verdict from the disk (AGENTS.md H8).
+#
+# This script only drives. The verdict is taken from the disk after the VM stops:
+#   * boot history: the fill boot was committed and healthy, strata.service not failed;
+#   * Strata's store, copied out and read with the host's own `strata`: versions older than
+#     the policy are gone, the newest version of every file is kept;
+#   * dumpe2fs on the copied partition: free space is back above storage.min_free_percent, or
+#     the notice says why not (never more than the policy prunes — doc 20 S7 note 5);
+#   * a screendump shows the notice.
+set -eu
+
+dir=${MORPH_TEST_DIR:-/efi/morph-test}
+docs=/home/morph/Documents
+mkdir -p "$dir"
+step=$(cat "$dir/step" 2>/dev/null || echo 0)
+say() { echo "morph-test: $*"; }
+say "full-disk step $step"
+
+# Wait until Strata has recorded `i` versions of a file. The watcher handles events in order,
+# so once the newest version is in the history every earlier write is recorded too.
+until_version() {
+    f=$1
+    want=$2
+    i=0
+    until [ "$(strata history "$f" 2>/dev/null | wc -l)" -ge "$want" ]; do
+        i=$((i + 1))
+        [ "$i" -le 240 ] || { say "strata never recorded $want versions of $f"; return 1; }
+        sleep 0.5
+    done
+}
+
+case "$step" in
+    0)
+        # Run 1: several versions of a few files, each distinct so Strata records it (a
+        # re-write with the same bytes is not a new version).
+        mkdir -p "$docs"
+        for f in a b c; do
+            for i in 1 2 3 4 5; do
+                printf 'file %s version %d\n' "$f" "$i" > "$docs/$f.txt"
+                until_version "$docs/$f.txt" "$i"
+            done
+        done
+        echo 1 > "$dir/step"
+        sync
+        say "five versions of three files recorded; powering off for the fill run"
+        [ "${MORPH_TEST_FINISH:-poweroff}" = poweroff ] && systemctl poweroff
+        exit 0
+        ;;
+    1)
+        # Run 2: fill the data partition as root until a write fails with ENOSPC. `dd` writes
+        # 1 MiB blocks until the disk cannot take another, then reports "No space left" and
+        # exits non-zero — that is the moment the test must reach, not a best-effort fill.
+        set +e
+        dd if=/dev/zero of=/persist/fill.bin bs=1M 2>"$dir/fill.err"
+        rc=$?
+        set -e
+        if [ "$rc" -ne 0 ] && grep -q 'No space left' "$dir/fill.err"; then
+            echo enospc > "$dir/enospc"
+            say "filled /persist until a write failed with ENOSPC"
+        else
+            echo no-enospc > "$dir/enospc"
+            say "fill did not reach ENOSPC (dd exit $rc): $(cat "$dir/fill.err" 2>/dev/null)"
+        fi
+        echo 2 > "$dir/step"
+        sync
+        say "rebooting into the full disk, so the guard must recover space at boot"
+        systemctl reboot
+        ;;
+    *)
+        # Run 2, second boot: the guard has already pruned and the notice is on the shell.
+        # Nothing to drive; power off so the harness can read the disk.
+        echo 3 > "$dir/step"
+        sync
+        say "full-disk boot complete; powering off"
+        [ "${MORPH_TEST_FINISH:-poweroff}" = poweroff ] && systemctl poweroff
+        exit 0
+        ;;
+esac
