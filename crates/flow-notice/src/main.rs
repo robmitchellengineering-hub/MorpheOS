@@ -189,7 +189,13 @@ mod client {
             _: &QueueHandle<Self>,
         ) {
             // Any key dismisses the notice; there is nothing to choose.
-            if matches!(event, wl_keyboard::Event::Key { state: WEnum::Value(wl_keyboard::KeyState::Pressed), .. }) {
+            if matches!(
+                event,
+                wl_keyboard::Event::Key {
+                    state: WEnum::Value(wl_keyboard::KeyState::Pressed),
+                    ..
+                }
+            ) {
                 state.closed = true;
             }
         }
@@ -204,7 +210,13 @@ mod client {
             _: &Connection,
             _: &QueueHandle<Self>,
         ) {
-            if matches!(event, wl_pointer::Event::Button { state: WEnum::Value(wl_pointer::ButtonState::Pressed), .. }) {
+            if matches!(
+                event,
+                wl_pointer::Event::Button {
+                    state: WEnum::Value(wl_pointer::ButtonState::Pressed),
+                    ..
+                }
+            ) {
                 state.closed = true;
             }
         }
@@ -365,7 +377,8 @@ mod client {
         let dir = std::env::var_os("XDG_RUNTIME_DIR").ok_or("XDG_RUNTIME_DIR is not set")?;
         static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let path = std::path::Path::new(&dir).join(format!("flow-notice-{}-{n}", std::process::id()));
+        let path =
+            std::path::Path::new(&dir).join(format!("flow-notice-{}-{n}", std::process::id()));
         let file = std::fs::OpenOptions::new()
             .read(true)
             .write(true)

@@ -88,13 +88,7 @@ impl Notice {
             text(frame, &line, PAD, y, colours::TEXT);
             y += LINE_H;
         }
-        text(
-            frame,
-            "Press a key to dismiss",
-            PAD,
-            y + PAD,
-            colours::DIM,
-        );
+        text(frame, "Press a key to dismiss", PAD, y + PAD, colours::DIM);
     }
 }
 
@@ -185,11 +179,11 @@ mod tests {
 
     #[test]
     fn wrapping_breaks_on_spaces_and_on_long_words() {
+        assert_eq!(wrap("one two three", 8), ["one two", "three"]);
         assert_eq!(
-            wrap("one two three", 8),
-            ["one two", "three"]
+            wrap("a verylongword indeed", 8),
+            ["a", "verylong", "word", "indeed"]
         );
-        assert_eq!(wrap("a verylongword indeed", 8), ["a", "verylong", "word", "indeed"]);
         assert_eq!(wrap("", 8), [""]);
     }
 }
