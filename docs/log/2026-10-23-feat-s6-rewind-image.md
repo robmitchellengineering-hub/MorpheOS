@@ -25,3 +25,24 @@ folder. The worker now re-reads alerts and updates the list while it waits (doc 
 workflow or the mesh QEMU, neither of which ran here.
 
 Next: mark S6 done once the images workflow proves the scenario.
+
+## 2026-10-24 · fix: the rewind never ran — the harness clicked the wrong window
+
+The images workflow failed the `rewind` scenario: the disk still had the `.locked` files and
+the ransom note, so "every document matches" and "nothing of the attacker's is left" both
+failed. The serial log showed the timeline window open (`points …`, `ready`) but no
+`checking`/`would rewind`/`rewound` line — the confirm never happened. The `strata rewind
+… --at …` lines in that log are `strata alerts`' advice output, not a rewind running, and
+the alert's rewind point (`rewind_to = first_ts − 1s`, before the attack) was already correct
+(and already proven by `break_it.rs::a_folder_survives_ransomware_and_the_rewind_can_be_undone`
+and the passing `ransomware` scenario).
+
+The real cause: `test-rewind.sh` clicked the title bar at `(40, 30)`, assuming the timeline
+was the first window at `(16, 16)` as in the compositor test. In the VM the demo window is
+the first window, so the timeline opens below it, and `(40, 30)` hit the demo window — the
+Enter key reached the demo, not the timeline. The fix locates the window from its selected
+row's amber band and clicks the title bar above it (the band's left edge is the window's,
+the title bar is `TITLE_H` = 40px above). Verified: shell + embedded Python parse, and the
+strata + flow-timeline unit tests (32 + 9 passed; the Linux-only watcher/compositor tests are
+ignored off Linux, as expected). The VM scenario itself is still unverified — it needs the
+images workflow.
