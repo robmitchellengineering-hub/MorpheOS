@@ -146,13 +146,28 @@ def band_top(screen):
                 return x, y
     return None
 
-bx, by = band_top(first) or (40, 30)
-tablet(bx + 40, by - 20, w, h); time.sleep(0.3)
-button(True); time.sleep(0.1); button(False); time.sleep(0.3)
-
-# Enter runs the dry run; its counts appear in the confirm band before anything changes.
-keys("ret")
-wait_for("confirm", CONFIRM, "the dry run's plan is shown to confirm")
+# Focus + dry-run Enter, RETRYING until the confirm band appears. The single-shot click
+# was flaky: the timeline opens below the demo window, so a colour-derived title-bar click
+# can land on the wrong surface and the Enter goes to the demo window. Re-shoot each attempt
+# and retry the whole focus+Enter sequence instead of trusting one coordinate guess.
+confirm_shown = False
+for _attempt in range(6):
+    _scr = shot("focus")
+    _b = band_top(_scr)
+    if _b:
+        bx, by = _b
+        tablet(bx + 40, by - 20, w, h); time.sleep(0.6)
+        button(True); time.sleep(0.1); button(False); time.sleep(0.4)
+        keys("ret")
+    _deadline = time.time() + 6
+    while time.time() < _deadline:
+        if count(shot("confirm"), CONFIRM) > 1000:
+            confirm_shown = True
+            break
+        time.sleep(0.5)
+    if confirm_shown:
+        break
+check("the dry run's plan is shown to confirm", confirm_shown)
 
 # Confirm: the second Enter runs the real rewind. Record the keypress so the disk verdict can
 # prove the quarantine was made after it (the shell did it, not a script).
