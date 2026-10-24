@@ -39,6 +39,14 @@ seed_home() {
     done
     (cd /home/morph/Documents && find . -type f -name 'seed-*' | sort | xargs sha256sum) \
         > "$dir/before.sha256"
+    # The wipe mode force-reboots with `echo b > /proc/sysrq-trigger`, an emergency restart
+    # that does NOT sync. A single `sync` commits the ext4 journal transaction but does NOT
+    # force the journal CHECKPOINT — the step that copies the inode-table/directory metadata
+    # back to its on-disk home. Those inode updates can therefore still be journal-only when
+    # the reboot hits, and the seed files come back with zeroed inodes. Give jbd2's
+    # checkpoint thread a moment to write the inode table back, then flush that write.
+    sync
+    sleep 2
     sync
     say "$(wc -l < "$dir/before.sha256") files seeded"
 }
