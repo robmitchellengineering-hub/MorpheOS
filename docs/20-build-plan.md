@@ -1564,6 +1564,13 @@ and validated, and nothing obeys it yet (AGENTS.md H5).
    1. Strata survives ENOSPC, and the guard, with unit tests.
    2. `flow-notice` and `test-full-disk.sh`.
 
+**Progress:** the space guard is fixed to recover a full disk. `Strata::prune` used to write the
+version index *before* deleting the old objects, so on a full disk the index write hit `disk I/O
+error` (ENOSPC) and nothing was pruned. It now frees the objects first and records the prune second,
+and the guard reports the recovered space rather than failing the boot if the record write is still
+refused. Unit tests prove both (#143). The VM scenario itself is still open: `flow-notice` and
+`test-full-disk.sh` (PR 2) must pass first.
+
 ### S8 · A corrupted setting rolls back (rung H2) · open · parallel · needs S11
 
 **What:** H2 is rolling back the one offending configuration change. When the Manifest
