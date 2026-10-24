@@ -52,7 +52,8 @@ openssl x509 -req -in "$WORK/server.csr" -CA "$ca" -CAkey "$cakey" -CAcreateseri
 # payload is built AFTER the image: build-payload.sh reuses slot A's root and the key build.sh
 # made, both of which exist only once the image is assembled.
 echo "=== autoupdate: $SCENARIO"
-UPDATE_TEST_CA="$ca" disk=$("$HERE/build.sh" "$WORK" autoupdate | tail -1)
+export UPDATE_TEST_CA="$ca"
+disk=$("$HERE/build.sh" "$WORK" autoupdate | tail -1)
 rm -f "${disk%.img}.vars.fd"
 
 # The control, first: slot B starts as a copy of slot A, so it must NOT already carry the
