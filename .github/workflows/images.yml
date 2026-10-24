@@ -114,6 +114,11 @@ jobs:
         run: sudo images/x86-qemu/test-ransomware.sh "$RUNNER_TEMP/img"
       # Doc 20, S4: the recovery image. Arm the recovery entry by hand (recovery-boot), then
       # zero both slot partitions from the harness (wipe) — each time the machine must rebuild
+      # Doc 20, S7: a full data partition does not break the machine — the space guard prunes
+      # by the retention policy and the shell warns. Verdicts read off the disk: boot history,
+      # the copied store (the host's own `strata`), dumpe2fs free space, and a screendump.
+      - name: A full disk does not break the machine (S7)
+        run: sudo images/x86-qemu/test-full-disk.sh "$RUNNER_TEMP/img"
       # both slots and boot slot A committed. Verdicts read off the disk: boot history,
       # recovery record, /etc/hostname on both slots, and /home checksums on the data partition.
       - name: The recovery image (S4)
@@ -122,11 +127,6 @@ jobs:
       # Strata's retention (read off the machine), and a refused change is rolled back.
       - name: The Manifest is obeyed (S11)
         run: sudo images/x86-qemu/test-manifest.sh "$RUNNER_TEMP/img"
-      # Doc 20, S7: a full data partition does not break the machine — the space guard prunes
-      # by the retention policy and the shell warns. Verdicts read off the disk: boot history,
-      # the copied store (the host's own `strata`), dumpe2fs free space, and a screendump.
-      - name: A full disk does not break the machine (S7)
-        run: sudo images/x86-qemu/test-full-disk.sh "$RUNNER_TEMP/img"
       # Doc 20, E3 and E10: the compositor drives a real (virtio-gpu) display and the VM's
       # own keyboard and mouse, and every verdict is a screenshot's pixels. Its system
       # libraries came from setup-linux.sh above.
