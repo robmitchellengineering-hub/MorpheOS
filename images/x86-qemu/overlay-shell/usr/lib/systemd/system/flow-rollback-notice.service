@@ -1,8 +1,12 @@
 [Unit]
 Description=Show the config rollback notice on the Flow shell
 Requires=flow-shell.service
-After=flow-shell.service
+After=flow-shell.service morphd.service
 # Only runs when morphd staged a notice (a corrupt generation was rolled back at boot).
+# `After=morphd.service` so the condition below is checked AFTER morphd has written the
+# file. morphd.service stages the notice with no ordering relative to the shell, so a boot
+# that reaches this unit (once the shell is on screen) before morphd runs skips the notice
+# entirely — S8's "notice never showed" — with no failed unit to point at.
 ConditionPathExists=/run/morpheos/rollback-notice
 
 [Service]
