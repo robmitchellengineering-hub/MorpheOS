@@ -69,11 +69,14 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 SRC="$HERE/build.sh"
 [ -f "$SRC" ] || { echo "build-rootless.sh: missing $SRC" >&2; exit 1; }
 
-# The patched copy lives in a throwaway directory removed on exit.
-TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT
-cp "$SRC" "$TMP/build.sh"
-P="$TMP/build.sh"
+# The patched copy must live NEXT TO build.sh, not in a throwaway directory:
+# the patched build.sh derives its own HERE from `$0` (via dirname) and REPO
+# from `$HERE/../..`, so a copy run from /tmp would resolve every overlay/ and
+# manifest/ path against /tmp. A unique name in the same directory keeps
+# `dirname "$0"` == images/x86-qemu. Removed by the EXIT trap.
+P="$HERE/.build.sh.rootless.$$"
+trap 'rm -f "$P"' EXIT
+cp "$SRC" "$P"
 
 # (a) apt -> fakechroot: the four mmdebstrap calls. apt needs real chroot(2);
 #     fakechroot needs none. Scoped to the `mmdebstrap --variant=apt` calls so the
@@ -100,4 +103,5 @@ sed -i \
 grep -q 'fakechroot chroot "$dir" update-initramfs' "$P" \
     || { echo "build-rootless.sh: patch failed — regenerate_initrd chroot was not faked" >&2; exit 1; }
 
-exec bash "$P" "$@"
+# Not `exec`: the EXIT trap must fire to remove the patched copy beside build.sh.
+bash "$P" "$@"
