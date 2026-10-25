@@ -32,9 +32,9 @@
 #      even though the files on disk belong to the unprivileged user.
 #
 #   b. It runs a patched COPY of build.sh in which
-#        - the four `mmdebstrap --variant=apt` become `--variant=fakechroot`
-#          (mmdebstrap builds the rootfs under fakeroot+fakechroot, no chroot(2)
-#          needed), and
+#        - the four `mmdebstrap --variant=apt` calls gain `--mode=fakechroot`
+#          (mmdebstrap then builds the rootfs under fakeroot+fakechroot instead
+#          of a real chroot — no root needed), and
 #        - the three standalone `chroot` calls become `fakechroot chroot`
 #          (fakechroot fakes chroot(2)).
 #
@@ -78,11 +78,12 @@ P="$HERE/.build.sh.rootless.$$"
 trap 'rm -f "$P"' EXIT
 cp "$SRC" "$P"
 
-# (a) apt -> fakechroot: the four mmdebstrap calls. apt needs real chroot(2);
-#     fakechroot needs none. Scoped to the `mmdebstrap --variant=apt` calls so the
-#     comment in make_root that documents the apt variant's motd behaviour
-#     ("mmdebstrap's `--variant=apt` skips the base-files postinst") is left alone.
-sed -i 's/mmdebstrap --variant=apt/mmdebstrap --variant=fakechroot/g' "$P"
+# (a) force fakechroot MODE on the four mmdebstrap calls. The apt VARIANT stays
+#     (it selects the package set); fakechroot is mmdebstrap's chroot MODE, which
+#     is how it builds a rootfs without root (`--mode=fakechroot`, not a variant).
+#     Scoped to the `mmdebstrap --variant=apt` calls so the make_root comment that
+#     documents the apt variant's motd behaviour is left alone.
+sed -i 's/mmdebstrap --variant=apt/mmdebstrap --mode=fakechroot --variant=apt/g' "$P"
 
 # (b) the standalone chroot calls -> fakechroot chroot. The `chroot "$1"` inside
 #     MODULES_EXTRA_HOOK is a STRING mmdebstrap runs under its own fakechroot,
@@ -95,11 +96,11 @@ sed -i \
     "$P"
 
 # Assert the patch actually applied (a silent no-op here would run the apt
-# variant under fakeroot, which fails with EPERM far into the build).
-[ "$(grep -c -- 'mmdebstrap --variant=apt' "$P" || true)" = 0 ] \
-    || { echo "build-rootless.sh: patch failed — an mmdebstrap apt call remains in the copy" >&2; exit 1; }
-[ "$(grep -c -- 'mmdebstrap --variant=fakechroot' "$P" || true)" = 4 ] \
-    || { echo "build-rootless.sh: patch failed — expected 4 fakechroot variants" >&2; exit 1; }
+# variant under fakeroot with no fakechroot mode, which fails deep in the build).
+[ "$(grep -c -- 'mmdebstrap --mode=fakechroot' "$P" || true)" = 4 ] \
+    || { echo "build-rootless.sh: patch failed — expected 4 fakechroot-mode calls" >&2; exit 1; }
+[ "$(grep -c -- 'mmdebstrap --mode=fakechroot --variant=apt' "$P" || true)" = 4 ] \
+    || { echo "build-rootless.sh: patch failed — the apt variant was lost" >&2; exit 1; }
 grep -q 'fakechroot chroot "$dir" update-initramfs' "$P" \
     || { echo "build-rootless.sh: patch failed — regenerate_initrd chroot was not faked" >&2; exit 1; }
 
