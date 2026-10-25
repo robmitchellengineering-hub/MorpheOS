@@ -163,3 +163,12 @@ jobs:
       # covered only here.
       - name: Prove a transaction takes itself back
         run: bash scripts/verify-transaction-cli.sh
+      # `morphd boot` converges the machine to the newest good generation at every start
+      # (doc 20, S8/S11) — that is what rolls back a corrupt generation and records the heal.
+      # It runs only if morphd.service is enabled, and the enablement is one line in the image
+      # build no VM test reads without a ~30-minute boot, so this checks the build itself, and
+      # proves it can fail (a verifier that stops biting is found here, not in the QEMU job).
+      - name: Prove the x86 image runs morphd boot
+        run: |
+          bash scripts/verify-morphd-boot.sh --self-test
+          bash scripts/verify-morphd-boot.sh

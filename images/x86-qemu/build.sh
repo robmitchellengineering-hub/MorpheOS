@@ -392,7 +392,11 @@ EOF
     # wherever D-Bus is; each failed to create its state directory. Found by test-wifi.sh.
     mkdir -p "$dir/efi" "$dir/persist" "$dir/var/lib/strata" \
         "$dir/var/lib/systemd/linger" "$dir/var/lib/systemd/rfkill" "$dir/var/lib/systemd/backlight"
-    for unit in morph-boot-check strata strata-guard; do
+    # morphd boot converges the machine to the newest good generation at every start (doc 20,
+    # S8/S11) — rolling back a corrupt one and recording the heal. It must be enabled here, or
+    # the config rollback never happens (S8). The order in the list does not matter: systemd
+    # resolves the Before=/Requires= from the unit files, not from this loop.
+    for unit in morphd morph-boot-check strata strata-guard; do
         ln -sf "/usr/lib/systemd/system/$unit.service" \
             "$dir/etc/systemd/system/multi-user.target.wants/$unit.service"
     done

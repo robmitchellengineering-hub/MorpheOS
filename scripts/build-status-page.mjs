@@ -98,6 +98,24 @@ const measured00 = i7 === -1
       .join(" ")
       .replace(/^.*?the measured cost/, "the measured cost");
 
+// ---- project completeness from doc 20 ------------------------------------------
+
+// Each task's status lives in its heading (`### S7 · A full disk ... · open · parallel`).
+// "proposed" ideas are not yet approved, so they are shown but not part of the denominator:
+// completeness is done ÷ (done + open + in-progress + blocked).
+const doc20 = read("docs/20-build-plan.md");
+const tally = { done: 0, open: 0, inprogress: 0, blocked: 0, proposed: 0 };
+for (const l of doc20.split("\n")) {
+  if (!/^### [EMS]\d+\s/.test(l)) continue;
+  for (const p of l.split(" · ").slice(1)) {
+    const s = p.trim();
+    if (s === "in progress") { tally.inprogress++; break; }
+    if (s in tally) { tally[s]++; break; }
+  }
+}
+const approved = tally.done + tally.open + tally.inprogress + tally.blocked;
+const pct = approved === 0 ? 0 : Math.round((tally.done / approved) * 100);
+
 // ---- git + screenshots ---------------------------------------------------------
 
 const commit = git(["rev-parse", "--short", "HEAD"]);
@@ -147,6 +165,12 @@ const page = `<!doctype html>
   .callout b { color:#fff; }
   .measure { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px; font-size:15px; }
   .measure b { color:var(--green); }
+  .meter { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:20px 22px 18px; }
+  .meter .pct { font-size:42px; font-weight:700; color:var(--green); line-height:1; }
+  .meter .bar { height:14px; background:#0d1526; border:1px solid var(--line); border-radius:8px; overflow:hidden; margin:14px 0 10px; }
+  .meter .fill { height:100%; width:${pct}%; background:linear-gradient(90deg,var(--green),var(--cyan)); }
+  .meter .counts { color:var(--mut); font-size:13px; }
+  .meter .counts b { color:var(--text); }
   .foot { margin-top:48px; padding-top:18px; border-top:1px solid var(--line); color:var(--mut); font-size:13px; }
 </style>
 </head>
@@ -158,9 +182,19 @@ const page = `<!doctype html>
   <p class="lede">An operating system built on one promise — <em>never breaks, and heals itself</em>.
   This page is generated from the repository itself, so what you read here is what the code and
   the docs say <b>right now</b>, not a snapshot someone wrote once.</p>
-  <p class="sub">The table below is <code>HANDOFF.md</code>'s "Where things stand" verbatim; the
-  measured figures are quoted from <code>docs/00</code> and <code>docs/15</code>. The screenshots
-  are the real launch screen (<code>design/login.html</code>).</p>
+  <p class="sub">The completeness meter below is <code>docs/20-build-plan.md</code>'s task
+  statuses, counted fresh each build; the table is <code>HANDOFF.md</code>'s "Where things stand"
+  verbatim; the measured figures are quoted from <code>docs/00</code> and <code>docs/15</code>.
+  The screenshots are the real launch screen (<code>design/login.html</code>).</p>
+
+  <h2>Project completeness</h2>
+  <div class="meter">
+    <div class="pct">${pct}%</div>
+    <div class="bar"><div class="fill"></div></div>
+    <div class="counts"><b>${tally.done} done</b> of ${approved} tasks ·
+      ${tally.open} open · ${tally.inprogress} in progress · ${tally.blocked} blocked
+      <span style="opacity:.7">· ${tally.proposed} proposed</span></div>
+  </div>
 
   <h2>The launch screen</h2>
   <div class="shots">

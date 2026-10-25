@@ -1,0 +1,46 @@
+name: status-page
+
+# Regenerate the "MorpheOS — today" page and publish it to gh-pages whenever main moves.
+# build-status-page.mjs reads the repo's own files (HANDOFF, docs 00/15/20, git, the launch
+# stills), so the page — and its project-completeness meter — re-sync to current reality on
+# every merge instead of drifting.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Generate the today page
+        run: node scripts/build-status-page.mjs
+
+      - name: Publish morpheos-today.html to gh-pages
+        run: |
+          set -euo pipefail
+          main_sha="$(git rev-parse --short HEAD)"
+          cp status/morpheos-today.html /tmp/morpheos-today.html
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin gh-pages:gh-pages
+          git checkout gh-pages
+          cp /tmp/morpheos-today.html morpheos-today.html
+          git add morpheos-today.html
+          if git diff --cached --quiet; then
+            echo "morpheos-today.html unchanged; nothing to publish"
+            exit 0
+          fi
+          git commit -m "today page: regenerate from main ${main_sha}"
+          git push origin gh-pages
