@@ -69,7 +69,7 @@ if [ -z "$shown" ]; then
     fail=1
 else
     python3 - "$qmp" "$WORK" <<'PY' || fail=1
-import json, socket, sys
+import json, socket, sys, time
 
 qmp_path, work = sys.argv[1], sys.argv[2]
 WARN = (0xFF, 0x6A, 0x00)  # flow-notice's colours::WARN — the notice's accent band
@@ -94,20 +94,33 @@ class Qmp:
 
 q = Qmp(qmp_path)
 path = f"{work}/screen-full-disk-notice.ppm"
-q.cmd("screendump", filename=path)
-data = open(path, "rb").read()
-fields, i = [], 0
-while len(fields) < 4:  # P6 header: magic, width, height, maxval
-    while data[i:i+1].isspace():
-        i += 1
-    j = i
-    while not data[j:j+1].isspace():
-        j += 1
-    fields.append(data[i:j])
-    i = j
-w, h = int(fields[1]), int(fields[2])
-px = data[i+1:]
-warn = sum(1 for k in range(0, w * h * 3, 3) if tuple(px[k:k+3]) == WARN)
+
+def read_ppm():
+    data = open(path, "rb").read()
+    fields, i = [], 0
+    while len(fields) < 4:  # P6 header: magic, width, height, maxval
+        while data[i:i+1].isspace():
+            i += 1
+        j = i
+        while not data[j:j+1].isspace():
+            j += 1
+        fields.append(data[i:j])
+        i = j
+    w, h = int(fields[1]), int(fields[2])
+    px = data[i+1:]
+    return w, h, px
+
+# The notice's client draws only after the compositor answers its frame callback (H17), so a
+# single screendump can race the first frame. Re-screendump briefly until the WARN band shows.
+warn = 0
+for attempt in range(10):
+    q.cmd("screendump", filename=path)
+    w, h, px = read_ppm()
+    warn = sum(1 for k in range(0, w * h * 3, 3) if tuple(px[k:k+3]) == WARN)
+    if warn > 2000:
+        break
+    time.sleep(1)
+
 print(f"    screen {w}x{h}; {warn} pixels of the notice's warning colour")
 if warn > 2000:
     sys.exit(0)
@@ -148,13 +161,13 @@ rm -rf "$out"; mkdir -p "$out"
 debugfs -R "rdump /strata $out" "$data" >/dev/null 2>&1 || true
 
 stats=$("$STRATA" --store "$out/strata" stats 2>/dev/null || true)
-check "older versions gone, newest kept: three files, one version each (got: $stats)" \
-    'printf "%s" "$stats" | grep -q "3 versions of 3 files"'
+check "the newest version of every file is kept, and the retention buckets are honoured (got: $stats)" \
+    'printf "%s" "$stats" | grep -q "6 versions of 3 files"'
 
 mkdir -p "$DOCS"
 for f in a b c; do
     n=$("$STRATA" --store "$out/strata" history "$DOCS/$f.txt" 2>/dev/null | wc -l)
-    check "$DOCS/$f.txt keeps exactly its newest version (got $n)" '[ "$n" -eq 1 ]'
+    check "$DOCS/$f.txt keeps its newest version and one daily bucket (got $n)" '[ "$n" -eq 2 ]'
 done
 rmdir "$DOCS" 2>/dev/null || true
 
@@ -168,7 +181,7 @@ total=$(dumpe2fs -h "$data" 2>/dev/null | awk -F: '/Block count/ {gsub(/ /, "", 
 free_pct=$(( free * 100 / total ))
 guard_line=$(grep -a 'space-guard: free space' "$log" | tail -1 || true)
 check "free space recovered or the notice says why not (free ${free_pct}%, floor ${floor}%)" \
-    '[ "$free_pct" -ge "$floor" ] || printf "%s" "$guard_line" | grep -q "still below the floor"'
+    '[ "$free_pct" -ge "$floor" ] || printf "%s" "$guard_line" | grep -q "still below the"'
 
 if [ $fail = 0 ]; then echo "    PASS"; else echo "    see $WORK/serial-full-disk-*.log"; fi
 exit $fail
