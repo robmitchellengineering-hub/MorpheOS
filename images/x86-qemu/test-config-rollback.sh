@@ -49,6 +49,11 @@ check "generation 2 applied cleanly (hostname $(esp config-rollback/hostname))" 
 log="$WORK/serial-config-rollback-2.log"
 qmp="$WORK/qmp-config-rollback.sock"
 rm -f "$log" "$qmp" "$WORK"/screen-config-rollback-*.ppm
+# Run 2 must start from a fresh UEFI variable store (see test-full-disk.sh): run 1's NVRAM
+# entry is not usable next boot, and reusing its vars.fd drops run 2 into the UEFI Interactive
+# Shell before the kernel runs. Nothing this scenario needs lives in NVRAM, so a fresh vars.fd
+# is correct and makes run 2 boot the same removable-media fallback run 1 used.
+rm -f "${disk%.img}.vars.fd"
 VM_GPU=1 VM_QMP="$qmp" "$HERE/run-vm.sh" "$disk" "$log" "${VM_TIMEOUT:-1800}" &
 vm=$!
 
