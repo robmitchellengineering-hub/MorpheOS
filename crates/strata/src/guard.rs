@@ -109,6 +109,7 @@ mod tests {
     use super::*;
     use crate::time;
     use std::fs;
+    use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
 
     fn scratch(name: &str) -> PathBuf {
@@ -254,6 +255,53 @@ mod tests {
         let now = time::now_ns() + 1000 * 86_400 * time::SECOND;
         // The record write fails, but the objects were already deleted.
         assert!(matches!(s.prune(&policy(), now), Err(Error::Db(_))));
+        assert!(s.store().read_file(&newest, &mut Vec::new()).is_ok());
+        assert!(matches!(
+            s.store().read_file(&oldest, &mut Vec::new()),
+            Err(Error::NotFound(_))
+        ));
+    }
+
+    /// The guard's planning reads and the object deletes that free space must not
+    /// need to write anything next to the index (doc 20, S7): a full disk leaves no
+    /// room for exactly that write, so the guard has to be able to read the index and
+    /// free objects without it. A read-only store root stands in for that full disk,
+    /// portably: the index can be read but nothing can be created next to it, while
+    /// the object folders stay writable so the deletes still run. The record write is
+    /// then refused, but the guard must still report the space it recovered instead
+    /// of failing the boot.
+    #[test]
+    fn frees_space_when_the_index_directory_cannot_be_written() {
+        let base = scratch("read-only-root");
+        let docs = base.join("docs");
+        fs::create_dir_all(&docs).unwrap();
+        let mut s = Strata::open(base.join("store")).unwrap();
+        several_versions(&mut s, &docs);
+        let history = s.index().history(&docs.join("doc.txt")).unwrap();
+        let newest = history.last().unwrap().content.clone();
+        let oldest = history.first().unwrap().content.clone();
+        assert_ne!(oldest, newest);
+
+        // Read-only root: as on a full disk, nothing can be created next to the
+        // index. The object folders stay writable, so the deletes still run.
+        fs::set_permissions(s.root(), fs::Permissions::from_mode(0o555)).unwrap();
+
+        let now = time::now_ns() + 1000 * 86_400 * time::SECOND;
+        let report = guard(&mut s, 100, &policy(), now)
+            .unwrap()
+            .expect("a floor of 100 is below any filesystem, so the guard must run");
+        // Restore the root before asserting, so a failure leaves the scratch removable.
+        fs::set_permissions(s.root(), fs::Permissions::from_mode(0o755)).unwrap();
+
+        // The space was recovered even though the index write was refused.
+        assert!(report.objects_removed > 0, "{report:#?}");
+        assert!(report.bytes_freed > 0, "{report:#?}");
+        assert_eq!(
+            report.versions_removed, 0,
+            "the record was refused, so no index row was removed: {report:#?}"
+        );
+
+        // The newest version still restores; the pruned versions' objects are gone.
         assert!(s.store().read_file(&newest, &mut Vec::new()).is_ok());
         assert!(matches!(
             s.store().read_file(&oldest, &mut Vec::new()),

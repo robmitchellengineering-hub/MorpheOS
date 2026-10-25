@@ -172,7 +172,8 @@ impl<'a> Watcher<'a> {
     }
 
     /// Process events until `stop` is set. Safe to kill at any time: objects
-    /// are written atomically and the index is a WAL-mode SQLite database.
+    /// are written atomically and the index is a SQLite database with a
+    /// rollback journal, which recovers a half-written transaction on open.
     pub fn run(&mut self, stop: &AtomicBool, emit: &mut dyn FnMut(Event)) -> Result<()> {
         let mut buf = vec![0u8; 64 * 1024];
         loop {
