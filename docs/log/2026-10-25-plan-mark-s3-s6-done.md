@@ -1,4 +1,4 @@
-# plan/mark-s3-s6-done — mark S3 and S6 done
+# 2026-10-25 · DeepSeek · mark S3 and S6 done
 
 S3 and S6 both satisfy their doc-20 "Done when" now that their VM scenarios are merged and green.
 
