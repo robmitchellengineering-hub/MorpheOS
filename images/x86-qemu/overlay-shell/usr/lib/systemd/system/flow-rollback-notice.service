@@ -1,0 +1,25 @@
+[Unit]
+Description=Show the config rollback notice on the Flow shell
+Requires=flow-shell.service
+After=flow-shell.service morphd.service
+# Only runs when morphd staged a notice (a corrupt generation was rolled back at boot).
+# `After=morphd.service` so the condition below is checked AFTER morphd has written the
+# file. morphd.service stages the notice with no ordering relative to the shell, so a boot
+# that reaches this unit (once the shell is on screen) before morphd runs skips the notice
+# entirely — S8's "notice never showed" — with no failed unit to point at.
+ConditionPathExists=/run/morpheos/rollback-notice
+
+[Service]
+# READY means the notice is on the screen, not that the process started (H19). A boot-time
+# driver that powers the machine off once the system is "running" must wait for flow-notice's
+# READY=1, or it beats the notice's first frame to the screen (S8's "notice never showed").
+Type=notify
+Environment=XDG_RUNTIME_DIR=/run/flow WAYLAND_DISPLAY=wayland-0
+# The socket appears when the compositor has bound it; wait for it rather than guessing.
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 300); do [ -S /run/flow/wayland-0 ] && exit 0; sleep 0.1; done; exit 1'
+ExecStart=/usr/lib/morpheos/show-rollback-notice
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

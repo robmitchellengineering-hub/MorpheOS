@@ -1,0 +1,59 @@
+#!/bin/sh
+# Config-rollback test driver (doc 20, S8, test images only). Installed as the test hook in
+# place of the update driver, and run by boot-check after each boot's health decision. Two VM
+# runs, driven by a step file on the ESP (see images/x86-qemu/test-config-rollback.sh):
+#
+#   Run 1: apply generation 2 (a new hostname) through `morphd apply`, which commits it; then
+#          corrupt generation 2's stored FILE by hand — writing the generation file, never the
+#          `current` symlink (it is a symlink renamed into place, so corrupting it would prove
+#          a different failure) — and power off.
+#   Run 2: morphd boot has already found generation 2 corrupt, rolled back to generation 1 and
+#          applied its hostname. Record the kernel hostname and power off.
+#
+# This script only drives. The verdict is taken from the disk after the VM stops:
+#   * the store's `current` names generation 1, and generation 2 is still in the store;
+#   * heal.jsonl names generation 2, the reason, and generation 1 as now in force;
+#   * the kernel hostname (written here, to the ESP) is generation 1's again;
+#   * a screendump shows the notice naming generation 2.
+set -eu
+
+dir=/efi/config-rollback
+store=/persist/morph
+mkdir -p "$dir"
+step=$(cat "$dir/step" 2>/dev/null || echo 0)
+say() { echo "config-rollback: $*"; }
+
+case "$step" in
+    0)
+        say "applying generation 2 through morphd"
+        if /usr/bin/morphd apply /usr/lib/morpheos/config-rollback/apply.toml --approved-by test; then
+            say "apply committed"
+            # Corrupt the generation FILE, not the `current` link. `current` names the file, so
+            # resolve it first, then edit the file it points at. Changing the hostname keeps the
+            # file valid JSON, so the DIGEST recorded at apply is what refuses it, not parsing.
+            # Only reachable once the apply committed generation 2 — a refused apply must not
+            # corrupt generation 1.
+            file=$(readlink "$store/current")
+            say "corrupting $store/$file by hand (the file, not the current link)"
+            sed -i 's/morpheos-rollback/morpheos-tampered/g' "$store/$file"
+        else
+            # Guarded (AGENTS.md H11): a failed apply must still record the machine's state and
+            # power off cleanly, so the harness reads the hostname and reports the failure
+            # instead of the VM hanging until the timeout.
+            say "apply refused or rolled back; generation 2 was not committed"
+        fi
+        cat /proc/sys/kernel/hostname > "$dir/hostname"
+        echo 1 > "$dir/step"
+        sync
+        say "powering off for the rollback boot"
+        systemctl poweroff
+        ;;
+    *)
+        # Run 2: the rollback has already happened in morphd boot. Record what the machine
+        # shows — the kernel hostname — so the harness reads the machine, never morphd's log.
+        cat /proc/sys/kernel/hostname > "$dir/hostname"
+        sync
+        say "hostname is $(cat /proc/sys/kernel/hostname); powering off"
+        systemctl poweroff
+        ;;
+esac

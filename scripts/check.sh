@@ -95,6 +95,9 @@ node scripts/verify-pi-image.mjs --self-test
 node scripts/verify-motd.mjs --self-test
 step "apply CLI";        bash scripts/verify-apply-cli.sh
 step "transaction CLI";  bash scripts/verify-transaction-cli.sh
+step "the x86 image runs morphd boot"
+bash scripts/verify-morphd-boot.sh --self-test
+bash scripts/verify-morphd-boot.sh
 if [ "$PARTIAL" = 1 ] && [ "$(uname -s)" != Linux ]; then
     printf '\nPARTIAL: everything this %s machine can run passed, but that is NOT the bar:\n' "$(uname -s)"
     printf 'the flow-compositor tests did not run. Run scripts/check.sh on Linux (WSL2).\n'
