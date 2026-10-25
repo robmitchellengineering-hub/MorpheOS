@@ -134,9 +134,11 @@ data="$WORK/data-out.img"
 dd if="$disk" of="$data" bs=512 skip="$dstart" count="$dsize" status=none
 
 # The store's `current` is a symlink; `debugfs cat` refuses a non-regular file, so `stat`'s
-# `Fast_link_dest` line is what says which generation it names.
-check "the store's current names generation 1 (got: $(dstat /morph/current | grep -o 'Fast_link_dest:.*' || true))" \
-    'printf "%s" "$(dstat /morph/current)" | grep -q "Fast_link_dest: generations/0001.json"'
+# `Fast link dest` line is what says which generation it names. e2fsprogs 1.47 prints that
+# field with a space — `Fast link dest: "generations/0001.json"` — not an underscore, and it
+# quotes the target; the assertion matches the real output rather than the assumed spelling.
+check "the store's current names generation 1 (got: $(dstat /morph/current | grep -o 'Fast link dest:.*' || true))" \
+    'printf "%s" "$(dstat /morph/current)" | grep -q "Fast link dest: .*generations/0001.json"'
 
 # Rollback moves the pointer only; generation 2 is still in the store (store.rs property 3).
 check "generation 2 is still in the store (not deleted)" \

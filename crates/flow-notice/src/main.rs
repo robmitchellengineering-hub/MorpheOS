@@ -46,6 +46,28 @@ mod client {
         let _ = out.flush();
     }
 
+    /// Tell systemd the notice is on the screen (`sd_notify(READY=1)`), when it started us as
+    /// `Type=notify`. "Shown" is what READY means here — a notice that spawned but never drew
+    /// is not ready (H19). Without `$NOTIFY_SOCKET` (a person running it by hand) there is
+    /// nobody to tell, exactly as the compositor's own `notify_ready` does.
+    fn notify_ready() {
+        use std::os::linux::net::SocketAddrExt;
+        use std::os::unix::net::{SocketAddr, UnixDatagram};
+        let Some(path) = std::env::var_os("NOTIFY_SOCKET") else {
+            return;
+        };
+        let bytes = std::os::unix::ffi::OsStrExt::as_bytes(path.as_os_str());
+        // An address starting with '@' is in the abstract namespace.
+        let addr = match bytes.split_first() {
+            Some((b'@', name)) => SocketAddr::from_abstract_name(name),
+            _ => SocketAddr::from_pathname(&path),
+        };
+        let sent = addr.and_then(|addr| UnixDatagram::unbound()?.send_to_addr(b"READY=1", &addr));
+        if let Err(e) = sent {
+            eprintln!("flow-notice: could not tell systemd it is ready: {e}");
+        }
+    }
+
     #[derive(Default)]
     struct State {
         compositor: Option<wl_compositor::WlCompositor>,
@@ -336,6 +358,12 @@ mod client {
                 if !shown {
                     say(&format!("shown {}", notice.message()));
                     shown = true;
+                    // READY means the notice is on the screen, not that the process started
+                    // (H19). `is-system-running` waits for this, so a boot-time driver that
+                    // powers the machine off once the system is "running" cannot beat the
+                    // notice to the screen (S8: the notice never showed because the harness
+                    // poweroff won the ~100 ms race against flow-notice's first frame).
+                    notify_ready();
                 }
             }
         }

@@ -6,6 +6,11 @@ After=flow-shell.service
 ConditionPathExists=/run/morpheos/space-notice
 
 [Service]
+# READY means the notice is on the screen, not that the process started (H19). A boot-time
+# driver that powers the machine off once the system is "running" must wait for flow-notice's
+# READY=1, or it beats the notice's first frame to the screen (the S7 space notice shares the
+# same race the S8 rollback notice hit).
+Type=notify
 Environment=XDG_RUNTIME_DIR=/run/flow WAYLAND_DISPLAY=wayland-0
 # The socket appears when the compositor has bound it; wait for it rather than guessing.
 ExecStartPre=/bin/sh -c 'for i in $(seq 1 300); do [ -S /run/flow/wayland-0 ] && exit 0; sleep 0.1; done; exit 1'
