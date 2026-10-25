@@ -1577,7 +1577,7 @@ newest kept + retention buckets, free-space "says why not", notice band visible)
 #143 (delete-first) + #144 (rollback journal), test assertions #146, flow-shell first-frame
 timeout #147. (2026-10-25)
 
-### S8 · A corrupted setting rolls back (rung H2) · open · parallel · needs S11
+### S8 · A corrupted setting rolls back (rung H2) · done · parallel
 
 **What:** H2 is rolling back the one offending configuration change. When the Manifest
 generation in force is corrupted, so that it no longer parses, no longer validates, or no
@@ -1646,6 +1646,11 @@ attempted before the transactional apply exists.
 6. **Size: M.** Two PRs:
    1. The digest and `morphd`'s check, with unit tests.
    2. The scenario and the notice.
+
+**Evidence:** #148 config-rollback VM scenario — `images/x86-qemu/test-config-rollback.sh` green
+on the studio-linux QEMU run (all checks: rollback + heal record + `current` + notice). Fixes on
+top: fresh UEFI vars.fd before run 2, morphd.service enabled (#151), `current` read + notice
+Type=notify (#153), notice ordered after morphd (#154). (2026-10-25)
 
 ### S11 · The Manifest is obeyed: `morphd` v0 applies its first settings · done · parallel
 
