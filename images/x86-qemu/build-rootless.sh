@@ -32,13 +32,20 @@
 # keeps going); update-initramfs then runs under fakechroot with /proc /sys /dev
 # in FAKECHROOT_EXCLUDE_PATH, so it sees the host's populated mounts.
 #
-# KNOWN DIFFERENCE vs the root (`--variant=apt`) build, and why it is still
-# worth running: mmdebstrap's fakechroot mode installs the same packages, but
-# its fakeroot records are process-local, so the DIRECTORY it leaves on disk is
-# owned by the build user, not root. The initrd's device nodes ARE correct (it
-# is packed under a fakeroot). So the file ownership in the final image differs
-# from the root build — this must be proven to still BOOT, which the QEMU run in
-# test-fallback.sh does. A build that produces a file is not a boot.
+# KNOWN DIFFERENCE vs the root (`--variant=apt`) build: mmdebstrap's fakechroot
+# mode installs the same packages, but its fakeroot records are process-local,
+# so the DIRECTORY it leaves on disk is owned by the build user, not root.
+#
+# STATUS (measured on pacland-rog, 2026-10-25): this does NOT produce a bootable
+# image. The base rootfs builds (systemd, kernel, firmware, openssh all install),
+# but the kernel postinst's update-initramfs crashes while generating
+# /boot/initrd.img — the initramfs-tools `kmod` hook aborts with
+# "*** buffer overflow detected ***" (exit 134), i.e. depmod/libkmod segfaults
+# under the fakechroot+fakeroot LD_PRELOAD. No initrd means the disk cannot boot,
+# and mmdebstrap exits non-zero, so build.sh stops before any disk image exists.
+# A build that produces a file is not a boot; here not even the file is produced.
+# The rootless approach needs real root (or a working user namespace) for the
+# initrd step, which fakechroot cannot fake.
 #
 # Needs on the build host: fakeroot, fakechroot, mmdebstrap, mtools, dosfstools,
 # e2fsprogs, fdisk/sfdisk, systemd-boot-efi, gnupg, curl, and the built
