@@ -1027,7 +1027,7 @@ that lives in CI. The custody, a backup key and the release numbering are drafte
 [ADR 0019](adr/0019-release-signing-key.md) (Proposed). `morph-heal`, which rebuilds a slot from the running system, signs that copy
 with a key made for the one repair, so there is still no unsigned way to open a payload.
 
-### S3 · Updates arrive by themselves · open · parallel · needs S2
+### S3 · Updates arrive by themselves · done · parallel
 
 **What:** a timer checks an HTTPS update server for a newer signed payload than the running
 system. It downloads the payload to `/persist`, checks the signature before downloading the
@@ -1048,21 +1048,7 @@ read off the disk after the VM stops, and from the server's request log:
   no marker and no `.morph-incomplete`, and the server log shows that the files *were*
   downloaded, so the refusal came from the check and not from a failed fetch.
 
-**Progress:** step 3.1 is done (`fix/payload-rollback`): the signed manifest carries a
-required `release <n>` line, every image says its release in `/usr/lib/morpheos/release`
-(`RELEASE` in `build.sh`, default 1; payloads default to 2), and `install` refuses an older
-release before anything is written and allows an equal one (`morph-heal` seals at the running
-release). `tests/install.rs` covers older, equal, newer, a missing, doubled or malformed release
-line, and a missing release file; removing the check fails the older-release test. Steps 3.2 and
-3.3 are done (`feat/s3-autoupdate`, PR #131): the decision as a pure function with a test table,
-and the fetcher. Step 3.4 good is done (`feat/s3-autoupdate-image`): the autoupdate image (a
-`network-manager` base, the timer + test drop-ins, the test CA) and `test-autoupdate.sh good`.
-Step 3.4 `bad` and `tampered` are built (`feat/s3-autoupdate-bad-tampered`, not yet merged):
-`build-payload.sh` gains the `bad` (a signed payload with a unit that fails) and `tampered`
-(a byte of root.img flipped after signing) variants, and `test-autoupdate.sh` runs all three —
-the `bad` verdict is the fallback history plus no second download, and the `tampered` verdict is
-no trial, an untouched slot B, and the files downloaded. Awaiting the `images` workflow to prove
-them before the task is marked done.
+**Evidence:** #131 decision + fetch, #135 autoupdate image + `good` scenario, #141 `bad` + `tampered` scenarios — all three scenarios (`good`, `bad`, `tampered`) green in the `images` workflow (`images/x86-qemu/test-autoupdate.sh`, 2026-10-24).
 
 **Rob decides before step 3.3 (the fetch):** where releases are hosted, and when an
 installed update reboots (note 6).
@@ -1416,7 +1402,7 @@ drafted for his answer as [ADR 0020](adr/0020-account-model.md).
    1. The account, locked root and `test-accounts.sh`.
    2. The first-boot window and the shell's login screen.
 
-### S6 · Rewind from the shell · open · parallel · needs E3
+### S6 · Rewind from the shell · done · parallel
 
 **What:** a timeline window on the Flow shell, `flow-timeline`, built the way `flow-wifi` is. It
 lists the moments a person can go back to: Strata's ransomware alerts first, each with its
@@ -1433,6 +1419,8 @@ After poweroff, read off the data partition as `test-ransomware.sh` reads it: al
 match their checksums from before the attack, no `.locked` file or ransom note is left, and the
 `.locked` files are in Strata's quarantine. The quarantine folder's timestamp is later than the
 keypress that confirmed, so the shell did the rewind and not a script. The boot is committed.
+
+**Evidence:** #132 flow-timeline crate, #136 rewind VM scenario — `images/x86-qemu/test-rewind.sh` green in the `images` workflow (2026-10-24).
 
 **Notes:**
 
