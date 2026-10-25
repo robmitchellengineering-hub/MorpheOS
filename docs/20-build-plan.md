@@ -1478,7 +1478,7 @@ keypress that confirmed, so the shell did the rewind and not a script. The boot 
    1. The crate, its model and the compositor test.
    2. The image, the path unit and `test-rewind.sh`.
 
-### S7 · A full disk does not break the machine · open · parallel · needs S11
+### S7 · A full disk does not break the machine · done · parallel
 
 **Progress:** PR 1's guard is fixed for the read path. The index was WAL-mode SQLite, whose
 `-wal`/`-shm` sidecars have to be created (and, after an unclean stop, recovered) even for a
@@ -1569,8 +1569,13 @@ and validated, and nothing obeys it yet (AGENTS.md H5).
 version index *before* deleting the old objects, so on a full disk the index write hit `disk I/O
 error` (ENOSPC) and nothing was pruned. It now frees the objects first and records the prune second,
 and the guard reports the recovered space rather than failing the boot if the record write is still
-refused. Unit tests prove both (#143). The VM scenario itself is still open: `flow-notice` and
-`test-full-disk.sh` (PR 2) must pass first.
+refused. Unit tests prove both (#143).
+
+**Evidence:** #137 full-disk VM scenario — `images/x86-qemu/test-full-disk.sh` green on the
+studio-linux QEMU run (all 8 checks: boot committed+healthy, strata not failed, fill ENOSPC,
+newest kept + retention buckets, free-space "says why not", notice band visible). Guard fixes
+#143 (delete-first) + #144 (rollback journal), test assertions #146, flow-shell first-frame
+timeout #147. (2026-10-25)
 
 ### S8 · A corrupted setting rolls back (rung H2) · open · parallel · needs S11
 
