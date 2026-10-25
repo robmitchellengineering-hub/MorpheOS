@@ -1,0 +1,33 @@
+#!/bin/sh
+# The space guard (doc 20, S7): run `strata guard` once at boot.
+#
+# It runs BEFORE morphd so that on a full data partition it frees old Strata versions first:
+# the space it recovers is what lets morphd's own writes (the retention / min-free files) land
+# on a disk that had no room. The guard prunes by the retention policy only — it never deletes
+# beyond it, and the newest version of every file is always kept (doc 20, S7 note 5).
+#
+# The notice is staged under /run, a tmpfs writable however full the data partition is, because
+# this runs before the compositor is up — a Wayland client started here would have no display
+# to connect to. flow-notice.service reads it once the shell is on screen.
+set -eu
+
+notice_file=/run/morpheos/space-notice
+mkdir -p "$(dirname "$notice_file")"
+rm -f "$notice_file"
+
+out=$(/usr/bin/strata guard 2>&1) || { echo "space-guard: strata guard failed: $out"; exit 1; }
+echo "space-guard: $out"
+
+# At or above the floor there is nothing to say.
+case "$out" in
+    *"is at or above"*) exit 0 ;;
+esac
+
+# Below the floor: stage the notice. The guard's own line is the message — it already says how
+# full the disk was and is, and what was freed (or, when pruning could not get back above the
+# floor, "still below the floor", which is the "why not").
+colour=warn
+case "$out" in
+    *"back above"*) colour=ok ;;
+esac
+printf '%s\n%s\n' "$out" "$colour" > "$notice_file"

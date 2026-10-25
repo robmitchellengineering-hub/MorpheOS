@@ -1,0 +1,111 @@
+#!/bin/sh
+# Self-test driver for the full-disk scenario (doc 20, S7, test images only). Installed as the
+# test hook in place of the update driver, and run by boot-check after each boot's health
+# decision. Two VM runs (see images/x86-qemu/test-full-disk.sh):
+#
+#   Run 1 (the guest clock set 30 days ago): write five versions of three files, waiting for
+#           Strata to record each, so the versions are old enough for the retention policy to
+#           prune. Then power off.
+#   Run 2 (today's clock): fill /persist as root until a write fails with ENOSPC (so the ext4
+#           5% root reservation is included — a non-root fill stops short, doc 20 S7 note 4),
+#           record that ENOSPC happened, and reboot.
+#   Run 2, second boot: the space guard (strata-guard.service) prunes the old versions at boot
+#           and the shell shows the notice. This driver powers the machine off once boot-check
+#           has decided; the host reads the verdict from the disk (AGENTS.md H8).
+#
+# This script only drives. The verdict is taken from the disk after the VM stops:
+#   * boot history: the fill boot was committed and healthy, strata.service not failed;
+#   * Strata's store, copied out and read with the host's own `strata`: versions older than
+#     the policy are gone, the newest version of every file is kept;
+#   * dumpe2fs on the copied partition: free space is back above storage.min_free_percent, or
+#     the notice says why not (never more than the policy prunes — doc 20 S7 note 5);
+#   * a screendump shows the notice.
+set -eu
+
+dir=${MORPH_TEST_DIR:-/efi/morph-test}
+docs=/home/morph/Documents
+mkdir -p "$dir"
+step=$(cat "$dir/step" 2>/dev/null || echo 0)
+say() { echo "morph-test: $*"; }
+# A step that cannot complete must still finish the run with a clear verdict, never hang until
+# the harness times out: say why, write it where the harness reads the disk, and power off
+# (AGENTS.md H11 — a timeout is not a diagnosis; the console and the ESP record say why).
+fail_step() {
+    say "FATAL: $*"
+    printf 'FATAL: %s\n' "$*" > "$dir/fatal" 2>/dev/null || true
+    sync
+    [ "${MORPH_TEST_FINISH:-poweroff}" = poweroff ] && systemctl poweroff
+    exit 1
+}
+say "full-disk step $step"
+
+# Wait until Strata has recorded `_want` versions of a file. The watcher handles events in
+# order, so once the newest version is in the history every earlier write is recorded too.
+#
+# ⚠️ The parameters live in their OWN variables (`_f`, `_want`, `_n`). The first version reused
+# `f` and `i`, which are also the caller's `for` loop variables, and a POSIX `sh` function
+# parameter is global: the first wait set `f` to the full file path, so the next write went to
+# `.../a.txt.txt` (a directory that does not exist), the redirect failed, and `set -e` ended
+# the run in silence (AGENTS.md H11 — one unguarded command on a failure path).
+until_version() {
+    _f=$1
+    _want=$2
+    _n=0
+    until [ "$(strata history "$_f" 2>/dev/null | wc -l)" -ge "$_want" ]; do
+        _n=$((_n + 1))
+        [ "$_n" -le 240 ] || { say "strata never recorded $_want versions of $_f"; return 1; }
+        sleep 0.5
+    done
+}
+
+case "$step" in
+    0)
+        # Run 1: several versions of a few files, each distinct so Strata records it (a
+        # re-write with the same bytes is not a new version). Every step is guarded: a seed
+        # write or a wait that fails must report and power off, not end the script under
+        # `set -e` and leave the VM to hang until the harness gives up (AGENTS.md H11, H13).
+        mkdir -p "$docs" || fail_step "cannot create $docs"
+        for f in a b c; do
+            for i in 1 2 3 4 5; do
+                printf 'file %s version %d\n' "$f" "$i" > "$docs/$f.txt" \
+                    || fail_step "cannot write $docs/$f.txt"
+                until_version "$docs/$f.txt" "$i" \
+                    || fail_step "strata never recorded version $i of $f"
+            done
+        done
+        echo 1 > "$dir/step"
+        sync
+        say "five versions of three files recorded; powering off for the fill run"
+        [ "${MORPH_TEST_FINISH:-poweroff}" = poweroff ] && systemctl poweroff
+        exit 0
+        ;;
+    1)
+        # Run 2: fill the data partition as root until a write fails with ENOSPC. `dd` writes
+        # 1 MiB blocks until the disk cannot take another, then reports "No space left" and
+        # exits non-zero — that is the moment the test must reach, not a best-effort fill.
+        set +e
+        dd if=/dev/zero of=/persist/fill.bin bs=1M 2>"$dir/fill.err"
+        rc=$?
+        set -e
+        if [ "$rc" -ne 0 ] && grep -q 'No space left' "$dir/fill.err"; then
+            echo enospc > "$dir/enospc"
+            say "filled /persist until a write failed with ENOSPC"
+        else
+            echo no-enospc > "$dir/enospc"
+            say "fill did not reach ENOSPC (dd exit $rc): $(cat "$dir/fill.err" 2>/dev/null)"
+        fi
+        echo 2 > "$dir/step"
+        sync
+        say "rebooting into the full disk, so the guard must recover space at boot"
+        systemctl reboot
+        ;;
+    *)
+        # Run 2, second boot: the guard has already pruned and the notice is on the shell.
+        # Nothing to drive; power off so the harness can read the disk.
+        echo 3 > "$dir/step"
+        sync
+        say "full-disk boot complete; powering off"
+        [ "${MORPH_TEST_FINISH:-poweroff}" = poweroff ] && systemctl poweroff
+        exit 0
+        ;;
+esac

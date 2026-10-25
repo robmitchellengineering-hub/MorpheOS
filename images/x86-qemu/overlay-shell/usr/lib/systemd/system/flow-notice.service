@@ -1,0 +1,17 @@
+[Unit]
+Description=Show the space guard's notice on the Flow shell
+Requires=flow-shell.service
+After=flow-shell.service
+# Only runs when the guard staged a notice (the disk was below the floor at boot).
+ConditionPathExists=/run/morpheos/space-notice
+
+[Service]
+Environment=XDG_RUNTIME_DIR=/run/flow WAYLAND_DISPLAY=wayland-0
+# The socket appears when the compositor has bound it; wait for it rather than guessing.
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 300); do [ -S /run/flow/wayland-0 ] && exit 0; sleep 0.1; done; exit 1'
+ExecStart=/usr/lib/morpheos/show-space-notice
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

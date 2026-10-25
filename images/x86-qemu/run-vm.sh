@@ -54,6 +54,12 @@ NET_ARGS=(-nic none)
 ACCEL=tcg
 [ -w /dev/kvm ] && ACCEL=kvm
 
+# A date for the guest's real-time clock (doc 20, S7 step 3): VM_RTC=<date> sets QEMU's
+# `-rtc base`, so a run can stamp files 30 days ago — old enough for the retention policy to
+# prune — and the next run (no VM_RTC, so the host's clock) is 30 days later.
+RTC_ARGS=()
+[ -n "${VM_RTC:-}" ] && RTC_ARGS=(-rtc "base=$VM_RTC")
+
 exec timeout --foreground "$TIMEOUT" qemu-system-x86_64 \
     -machine q35,accel="$ACCEL" -cpu max -smp 2 -m "${VM_MEM:-1024}" \
     -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
@@ -62,5 +68,5 @@ exec timeout --foreground "$TIMEOUT" qemu-system-x86_64 \
     "${PAYLOAD_ARGS[@]}" "${USB_ARGS[@]}" \
     -device i6300esb -action watchdog=reset \
     "${DISPLAY_ARGS[@]}" "${MONITOR_ARGS[@]}" \
-    "${NET_ARGS[@]}" -display none \
+    "${RTC_ARGS[@]}" "${NET_ARGS[@]}" -display none \
     -serial file:"$LOG"

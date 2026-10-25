@@ -20,7 +20,9 @@ OnFailure=getty@tty1.service
 
 [Service]
 Type=notify
-TimeoutStartSec=60
+# 180s, not 60s: the first frame on a slow TCG/emulated VM (S7 full-disk test) can take
+# longer than a minute to reach the display; a genuinely broken shell still fails, just later.
+TimeoutStartSec=180
 # ⚠️ ROOT FOR NOW. Running as an ordinary user through a seat session is doc 20's E11, and
 # Rob decides the account model (S5).
 RuntimeDirectory=flow

@@ -30,7 +30,7 @@ set -euo pipefail
 
 WORK=${1:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
 SCENARIO=${2:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
-case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell|browser|wifi|broken-shell|hung-shell|recovery|manifest|autoupdate|rewind) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
+case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell|browser|wifi|broken-shell|hung-shell|recovery|manifest|autoupdate|rewind|full-disk) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
 # `plain` is the one that leaves the CI harness behind and is meant to be booted by a person:
 # the Flow shell drawing the screen and taking the keyboard and mouse, Firefox on a local
 # start page, NetworkManager, and the Wi-Fi picker when there is no network (doc 20, E4 and
@@ -49,6 +49,9 @@ case "$SCENARIO" in
     # `rewind` is a self-test image WITH the shell: the ransomware hook attacks, the timeline
     # window opens by itself, and the harness drives the rewind (doc 20, S6).
     broken-shell|hung-shell|rewind) SHELL_UI=1 ;;
+    # The full-disk test (S7): the shell, so the space guard's notice has a display to show
+    # on; no recovery partition (it is a self-test image, not a person-facing one).
+    full-disk) SHELL_UI=1 ;;
     # The recovery test (S4): a person-facing image — so it carries the recovery partition —
     # but no shell, and the recovery-test driver instead (see make_root).
     recovery) HARDWARE=1 ;;
@@ -71,9 +74,10 @@ SOLID_WINDOW=${SOLID_WINDOW:-$REPO/target/release/solid-window}
 FLOW_WIFI=${FLOW_WIFI:-$REPO/target/release/flow-wifi}
 FLOW_MOUNT=${FLOW_MOUNT:-$REPO/target/release/flow-mount}
 FLOW_TIMELINE=${FLOW_TIMELINE:-$REPO/target/release/flow-timeline}
+FLOW_NOTICE=${FLOW_NOTICE:-$REPO/target/release/flow-notice}
 if [ "$SHELL_UI" = 1 ]; then
-    for b in "$FLOW_COMPOSITOR" "$SOLID_WINDOW" "$FLOW_WIFI" "$FLOW_MOUNT" "$FLOW_TIMELINE"; do
-        [ -x "$b" ] || { echo "missing $b: run cargo build --release -p flow-compositor -p flow-wifi -p flow-files -p flow-timeline" >&2; exit 1; }
+    for b in "$FLOW_COMPOSITOR" "$SOLID_WINDOW" "$FLOW_WIFI" "$FLOW_MOUNT" "$FLOW_TIMELINE" "$FLOW_NOTICE"; do
+        [ -x "$b" ] || { echo "missing $b: run cargo build --release -p flow-compositor -p flow-wifi -p flow-files -p flow-timeline -p flow-notice" >&2; exit 1; }
     done
 fi
 
@@ -379,7 +383,7 @@ EOF
     # wherever D-Bus is; each failed to create its state directory. Found by test-wifi.sh.
     mkdir -p "$dir/efi" "$dir/persist" "$dir/var/lib/strata" \
         "$dir/var/lib/systemd/linger" "$dir/var/lib/systemd/rfkill" "$dir/var/lib/systemd/backlight"
-    for unit in morph-boot-check strata; do
+    for unit in morph-boot-check strata strata-guard; do
         ln -sf "/usr/lib/systemd/system/$unit.service" \
             "$dir/etc/systemd/system/multi-user.target.wants/$unit.service"
     done
@@ -402,15 +406,19 @@ EOF
         install -m 0755 "$FLOW_WIFI" "$dir/usr/bin/flow-wifi"
         install -m 0755 "$FLOW_MOUNT" "$dir/usr/bin/flow-mount"
         install -m 0755 "$FLOW_TIMELINE" "$dir/usr/bin/flow-timeline"
+        install -m 0755 "$FLOW_NOTICE" "$dir/usr/bin/flow-notice"
         # The shell scenario shows the demonstration window; the browser scenario, Firefox;
         # the wifi scenario, Firefox plus the Wi-Fi picker (E14: once the picker joins,
         # Firefox must come online). Where there is NetworkManager, the picker opens by
-        # itself when the machine has no network.
+        # itself when the machine has no network. The full-disk scenario shows nothing but
+        # the space guard's notice, so that notice is the first (and only) client window and
+        # a screendump reads it unambiguously.
         apps=flow-demo-window
         case "$SCENARIO" in
             plain) apps="flow-browser NetworkManager flow-wifi morpheos-tailscale-up" ;;
             browser) apps="flow-browser NetworkManager flow-wifi" ;;
             wifi) apps="flow-browser NetworkManager flow-wifi morph-wifi-test-ap" ;;
+            full-disk) apps="" ;;
         esac
         case "$SCENARIO" in plain|browser|wifi) cp -a "$HERE/overlay-network/." "$dir/" ;; esac
         case "$SCENARIO" in plain|browser|wifi) cp -a "$HERE/overlay-browser/." "$dir/" ;; esac
@@ -421,7 +429,7 @@ EOF
             # The package's own hostapd service is not the test's access point: keep it off.
             ln -sf /dev/null "$dir/etc/systemd/system/hostapd.service"
         fi
-        for unit in seatd flow-shell $apps; do
+        for unit in seatd flow-shell flow-notice $apps; do
             ln -sf "/usr/lib/systemd/system/$unit.service" \
                 "$dir/etc/systemd/system/multi-user.target.wants/$unit.service"
         done
@@ -519,6 +527,10 @@ EOF
         mkdir -p "$dir/etc/systemd/system/morph-boot-check.service.d"
         printf '[Service]\nEnvironment=MORPH_TEST_REWIND=no\n' \
             > "$dir/etc/systemd/system/morph-boot-check.service.d/rewind.conf"
+    fi
+    if [ "$SCENARIO" = full-disk ]; then
+        # The full-disk driver (S7): fill /persist until ENOSPC, then let the guard recover.
+        cp -a "$HERE/overlay-full-disk/." "$dir/"
     fi
     # Hardware watchdog: a hung kernel or PID 1 gets reset, and a reset ends a trial.
     mkdir -p "$dir/etc/systemd/system.conf.d"
