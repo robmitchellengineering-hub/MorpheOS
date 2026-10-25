@@ -1489,6 +1489,16 @@ keypress that confirmed, so the shell did the rewind and not a script. The boot 
 
 ### S7 · A full disk does not break the machine · open · parallel · needs S11
 
+**Progress:** PR 1's guard is fixed for the read path. The index was WAL-mode SQLite, whose
+`-wal`/`-shm` sidecars have to be created (and, after an unclean stop, recovered) even for a
+read — on a full disk that write failed before any SELECT returned, so `strata guard` died with
+`version index: disk I/O error` before it could read the index to plan a prune. The index now
+uses a rollback journal, which a read never touches, so the guard's planning reads work on a
+full disk; two tests pin it (`index::reads_survive_a_read_only_directory`,
+`guard::frees_space_when_the_index_directory_cannot_be_written`). Remaining: `flow-notice` +
+`test-full-disk.sh` (PR 2), and the QEMU scenario itself remains to be proven by the images
+workflow.
+
 **What:** when `/persist` fills, the machine keeps working and recovers space by itself. Every
 boot is still healthy. Strata keeps going and does not crash-loop. A space guard prunes
 Strata's old versions by the retention policy in the Manifest, and the shell shows a warning
@@ -2125,9 +2135,10 @@ file whose colour is the verdict, and the history read from the disk.)
    CLI's `absolute()` canonicalises the parent folder, which does not exist on the host
    (verify); if so, add a flag that takes the path as stored, with a test, in the first PR.
 4. **Traps:**
-   - Strata's index is SQLite in WAL mode with a 10 s busy timeout, so Files can read while
-     `strata watch` writes. A restore is a new save of the file, so the watcher records it as
-     a new version: the history after the restore has four entries, not three. Assert four.
+   - Strata's index is SQLite with a rollback journal and a 10 s busy timeout, so a Files read
+     briefly waits out a `strata watch` write instead of failing. A restore is a new save of the
+     file, so the watcher records it as a new version: the history after the restore has four
+     entries, not three. Assert four.
    - The store is `/var/lib/strata`, mode 0700, owned by root. Files runs as root today. ⚠️
      Once E11 moves the shell to the person, Files cannot open the store: the person needs a
      way in that does not give them every user's history. That is Rob's (below).
@@ -2349,8 +2360,9 @@ the key model and the recovery code's form. Step (a), marking it Accepted, is th
    encrypted to the recipient (format version and the naming key), objects named by **keyed**
    BLAKE3 of their local name (the plain BLAKE3 name of a chunk would let anyone holding the disk
    test whether you have a given file), and numbered snapshots of the index. Take the index
-   snapshot with SQLite's backup API or `VACUUM INTO`: `index.sqlite` is in WAL mode, so copying
-   the file alone loses the newest rows. Write each object to a temporary name, fsync, then
+   snapshot with SQLite's backup API or `VACUUM INTO` (a rollback journal keeps every committed
+   row in `index.sqlite`, so a plain copy is also complete). Write each object to a temporary
+   name, fsync, then
    rename, so a pulled plug leaves no half object under a real name.
 4. **How to approach it.** (a) The ADR. (b) The format as a library, with unit tests: round trip,
    a wrong identity is refused, a flipped byte is refused, a second push writes only the new

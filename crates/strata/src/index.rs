@@ -122,9 +122,15 @@ const COLS: &str = "id, path, ts, kind, size, mode, content, entropy";
 impl Index {
     pub fn open(file: &Path) -> Result<Self> {
         let db = Connection::open(file)?;
-        // WAL lets the watcher write while the CLI reads; the timeout makes a
-        // concurrent writer wait instead of failing.
-        db.pragma_update(None, "journal_mode", "WAL")?;
+        // A rollback journal, not WAL. WAL's `-wal`/`-shm` sidecars have to be
+        // created — and, after an unclean stop, recovered — even for a read, and
+        // on a full disk that write fails before any SELECT returns. That is
+        // exactly when the space guard needs to READ the index to work out what
+        // to prune (doc 20, S7), so the guard's planning reads must not depend
+        // on a sidecar. A rollback journal is only touched by a write, so those
+        // reads work on a full disk; the busy timeout makes a concurrent writer
+        // wait instead of failing.
+        db.pragma_update(None, "journal_mode", "DELETE")?;
         db.pragma_update(None, "synchronous", "NORMAL")?;
         db.busy_timeout(std::time::Duration::from_secs(10))?;
         db.execute_batch(SCHEMA)?;
@@ -269,6 +275,7 @@ impl Index {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::PermissionsExt;
 
     fn idx(name: &str) -> Index {
         let p = std::env::temp_dir().join(format!("strata-index-{name}-{}.db", std::process::id()));
@@ -334,6 +341,50 @@ mod tests {
         assert_eq!(
             i.paths_under(Path::new("/d")).unwrap(),
             [PathBuf::from(raw)]
+        );
+    }
+
+    /// A full disk is, to SQLite, the "read-only medium" case: WAL's `-wal`/`-shm`
+    /// sidecars have to be created even for a read, and on a full disk that write
+    /// fails before any SELECT returns. A rollback journal needs no sidecar, so
+    /// opening and reading the index must not write anything — the space guard's
+    /// planning reads depend on exactly this (doc 20, S7).
+    #[test]
+    fn reads_survive_a_read_only_directory() {
+        let dir = std::env::temp_dir().join(format!("strata-index-ro-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("index.sqlite");
+
+        let got = {
+            let i = Index::open(&p).unwrap();
+            i.record(Path::new("/d/a.txt"), 1, &State::file(3, 0o644, "h1", 4.0))
+                .unwrap();
+            i.record(Path::new("/d/a.txt"), 2, &State::file(3, 0o644, "h2", 4.0))
+                .unwrap();
+            // Drop before the read: a clean close leaves the index with no sidecar
+            // files, exactly as it is when the guard runs after the disk filled.
+            drop(i);
+
+            // A read-only directory stands in for that full disk, portably: nothing
+            // can be created next to index.sqlite, which is what WAL needs even to
+            // read. A rollback journal is only touched by a write, so this must work.
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+            let read = {
+                let i = Index::open(&p).unwrap();
+                (
+                    i.all_versions().unwrap().len(),
+                    i.file_contents().unwrap().len(),
+                )
+            };
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+            read
+        };
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(
+            got,
+            (2, 2),
+            "opening and reading the index must need no write"
         );
     }
 }
