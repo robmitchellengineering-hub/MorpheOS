@@ -240,7 +240,14 @@ case "$SCENARIO" in
         [ "$default" = "morpheos-a.conf" ] || { echo "    FAIL: expected default slot a"; fail=1; }
         # The trial failed BECAUSE of the payload's broken unit, not some other fault. This is
         # a diagnostic read from the console; the verdict is the history above (H8).
-        if grep -aq 'failed unit: morph-broken.service' "$serial"; then
+        #
+        # Match the prefix, not the whole sentence: the serial console is a shared buffered
+        # stream, so a line can be cut off by another writer. On 2026-10-27 the console held
+        #   boot-check[389]: morph-boot-check: failed unit: morph-broken.serv[ 4.891308] boot-check[313]: ... decision
+        # — the health check had named morph-broken.service and the history said b/trial/fallback,
+        # but the word "service" was overwritten, so an exact-match grep failed the job while the
+        # machine had done exactly the right thing (one boot-check per boot: 3 boots, 3 decisions).
+        if grep -aq 'failed unit: morph-broken' "$serial"; then
             echo "    the trial failed on morph-broken.service"
         else
             echo "    FAIL: the trial did not fail on morph-broken.service"
