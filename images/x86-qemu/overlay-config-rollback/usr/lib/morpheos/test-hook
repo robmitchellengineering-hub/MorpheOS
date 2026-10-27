@@ -54,6 +54,10 @@ case "$step" in
         cat /proc/sys/kernel/hostname > "$dir/hostname"
         sync
         say "hostname is $(cat /proc/sys/kernel/hostname); powering off"
+        # Hold this boot's notice on the screen first: it has to be readable by a person and
+        # visible to the harness's screendump, and a machine that powers off straight after
+        # showing it fails both (the full-disk scenario's frames were all black, 2026-10-27).
+        sleep 8
         systemctl poweroff
         ;;
 esac

@@ -105,6 +105,13 @@ case "$step" in
         echo 3 > "$dir/step"
         sync
         say "full-disk boot complete; powering off"
+        # Hold the notice on the screen before powering off. It was up for 0.81 s of guest time
+        # (4.124 s -> powerdown at 4.937 s in serial-full-disk-2.log), which is two defects at
+        # once: a person cannot read "your disk was full, and here is what I pruned" in under a
+        # second, and the harness cannot screendump it — every captured frame was black because
+        # the compositor never held a frame before the machine went away (2026-10-25, 2026-10-27).
+        # Eight seconds is a real person's reading time, so the test asserts what a user needs.
+        sleep 8
         [ "${MORPH_TEST_FINISH:-poweroff}" = poweroff ] && systemctl poweroff
         exit 0
         ;;
