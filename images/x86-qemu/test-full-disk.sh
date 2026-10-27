@@ -55,45 +55,58 @@ rm -f "${disk%.img}.vars.fd"
 VM_GPU=1 VM_QMP="$qmp" "$HERE/run-vm.sh" "$disk" "$log" "${VM_TIMEOUT:-1800}" &
 vm=$!
 
-# The notice appears on the second boot, after the fill and the reboot; wait for it before
-# screendumping (AGENTS.md H14: wait for the "ready" signal, never sleep past it).
-shown=""
-for _ in $(seq 1 600); do
-    if grep -aq 'flow-notice: shown' "$log" 2>/dev/null; then shown=1; break; fi
-    if ! kill -0 "$vm" 2>/dev/null; then break; fi
-    sleep 1
-done
-if [ -z "$shown" ]; then
-    echo "    FAIL: the notice never showed"
-    grep -a 'space-guard\|flow-notice\|strata' "$log" | tail -20 || true
-    fail=1
-else
-    python3 - "$qmp" "$WORK" <<'PY' || fail=1
+# The notice is on screen for well under a second before the driver powers the machine off:
+# 4.124 s (flow-notice: shown) to 4.937 s (reboot: Power down) of guest time in
+# serial-full-disk-2.log. So the capture has to be running BEFORE it appears. It used to start
+# after a 1 s poll of the serial log for "flow-notice: shown", and that lost the race on every
+# run — the first screendump hit a QMP socket QEMU had already closed, and the job died on a
+# BrokenPipeError traceback while every other full-disk assertion passed (2026-10-25, 2026-10-27).
+# The capture below starts with the machine and polls the screen until the band is there, the
+# machine goes away, or the timeout; its verdict is checked after the power-off wait.
+capture="$WORK/notice-capture.out"
+python3 - "$qmp" "$WORK" "${VM_TIMEOUT:-1800}" >"$capture" 2>&1 <<'PY' &
 import json, socket, sys, time
 
-qmp_path, work = sys.argv[1], sys.argv[2]
+qmp_path, work, budget = sys.argv[1], sys.argv[2], float(sys.argv[3])
+deadline = time.time() + budget
+path = f"{work}/screen-full-disk-notice.ppm"
 WARN = (0xFF, 0x6A, 0x00)  # flow-notice's colours::WARN — the notice's accent band
 
 class Qmp:
     def __init__(self, path):
         self.sock = socket.socket(socket.AF_UNIX)
-        self.sock.connect(path)
+        while True:                       # the socket appears a moment after QEMU starts
+            try:
+                self.sock.connect(path)
+                break
+            except OSError:
+                if time.time() > deadline:
+                    sys.exit("the QMP socket never appeared")
+                time.sleep(0.1)
+        self.sock.settimeout(20)          # a wedged read must not outlive the run
         self.f = self.sock.makefile("rwb")
-        self.f.readline()  # the greeting
-        self.cmd("qmp_capabilities")
+        try:
+            self.f.readline()  # the greeting
+            self.cmd("qmp_capabilities")
+        except (OSError, EOFError) as e:
+            # The machine can go away between the connect and the handshake; that is a verdict
+            # to report, not a traceback.
+            sys.exit(f"the QMP control socket closed during the handshake: {e}")
 
     def cmd(self, name, **args):
         self.f.write((json.dumps({"execute": name, "arguments": args}) + "\n").encode())
         self.f.flush()
         while True:
-            msg = json.loads(self.f.readline())
+            line = self.f.readline()
+            if not line:                  # EOF: QEMU closed the socket (the guest powered off)
+                raise ConnectionResetError(f"{name}: the QMP socket closed")
+            msg = json.loads(line)
             if "return" in msg:
                 return msg["return"]
             if "error" in msg:
                 raise RuntimeError(f"{name}: {msg['error']}")
 
 q = Qmp(qmp_path)
-path = f"{work}/screen-full-disk-notice.ppm"
 
 def read_ppm():
     data = open(path, "rb").read()
@@ -110,24 +123,38 @@ def read_ppm():
     px = data[i+1:]
     return w, h, px
 
-# The notice's client draws only after the compositor answers its frame callback (H17), so a
-# single screendump can race the first frame. Re-screendump briefly until the WARN band shows.
-warn = 0
-for attempt in range(10):
-    q.cmd("screendump", filename=path)
-    w, h, px = read_ppm()
-    warn = sum(1 for k in range(0, w * h * 3, 3) if tuple(px[k:k+3]) == WARN)
-    if warn > 2000:
+# Poll the screen from the moment the machine starts. The notice's client draws only after the
+# compositor answers its frame callback (H17), which is why this is a poll and not one dump; and
+# the notice is up for ~0.8 s of guest time before the driver powers off, which is why the poll
+# has to already be running when it appears.
+best, frames, closed = 0, 0, False
+while time.time() < deadline:
+    try:
+        q.cmd("screendump", filename=path)
+    except (BrokenPipeError, ConnectionResetError, EOFError, socket.timeout):
+        closed = True                  # the guest powered off; keep the verdict, stop polling
         break
-    time.sleep(1)
+    except RuntimeError:
+        time.sleep(0.25)               # no GPU yet, early in boot — ask again
+        continue
+    try:
+        w, h, px = read_ppm()
+        warn = sum(1 for k in range(0, w * h * 3, 3) if tuple(px[k:k+3]) == WARN)
+    except (OSError, IndexError, ValueError):
+        time.sleep(0.25)               # a half-written PPM
+        continue
+    frames += 1
+    best = max(best, warn)
+    if warn > 2000:
+        print(f"{warn} px of {w}x{h} (frame {frames})")
+        sys.exit(0)
+    time.sleep(0.25)
 
-print(f"    screen {w}x{h}; {warn} pixels of the notice's warning colour")
-if warn > 2000:
-    sys.exit(0)
-print("    FAIL: the screendump does not show the notice's warning band")
+print(f"no screendump showed the notice's warning band: best {best} px over {frames} frames"
+      + (", the machine went away first" if closed else ", the timeout expired"))
 sys.exit(1)
 PY
-fi
+cap=$!
 
 # Wait for the decision before stopping (AGENTS.md H13), then let the driver power off.
 for _ in $(seq 1 300); do
@@ -136,6 +163,20 @@ for _ in $(seq 1 300); do
     sleep 1
 done
 wait "$vm" 2>/dev/null || true
+
+# The screendump verdict. The capture exits 0 only if a frame showed the notice's warning band;
+# a machine that went away first, or a timeout, is a FAIL with its reason printed — never a
+# traceback that leaves "did it draw?" unanswered.
+caprc=0
+wait "$cap" 2>/dev/null || caprc=$?
+capout=$(tr -d '\r\n' <"$capture" 2>/dev/null || true)
+if [ "$caprc" = 0 ]; then
+    echo "    ok    a screendump shows the notice's warning band ($capout)"
+else
+    echo "    FAIL  a screendump shows the notice's warning band — $capout"
+    grep -a 'space-guard\|flow-notice\|strata' "$log" | tail -20 || true
+    fail=1
+fi
 
 # --- The verdicts, read off the disk. ---
 
