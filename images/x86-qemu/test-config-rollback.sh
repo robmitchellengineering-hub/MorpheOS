@@ -57,66 +57,93 @@ rm -f "${disk%.img}.vars.fd"
 VM_GPU=1 VM_QMP="$qmp" "$HERE/run-vm.sh" "$disk" "$log" "${VM_TIMEOUT:-1800}" &
 vm=$!
 
-# The notice appears on the rollback boot; wait for it before screendumping (AGENTS.md H14: wait
-# for the "ready" signal, never sleep past it).
-shown=""
-for _ in $(seq 1 600); do
-    if grep -aq 'flow-notice: shown' "$log" 2>/dev/null; then shown=1; break; fi
-    if ! kill -0 "$vm" 2>/dev/null; then break; fi
-    sleep 1
-done
-if [ -z "$shown" ]; then
-    echo "    FAIL: the notice never showed"
-    grep -a 'morphd\|flow-notice\|config-rollback' "$log" | tail -20 || true
-    fail=1
-else
-    python3 - "$qmp" "$WORK" <<'PY' || fail=1
-import json, socket, sys
+# The notice is up for well under a second before the rollback boot powers the machine off, and
+# the same race that made the full-disk scenario red (2026-10-25, 2026-10-27) lives here: a
+# capture started after a 1 s poll of "flow-notice: shown" can find QMP already closed. Poll the
+# screen from the moment the machine starts instead; the verdict is checked after the power-off.
+capture="$WORK/notice-capture.out"
+python3 - "$qmp" "$WORK" "${VM_TIMEOUT:-1800}" >"$capture" 2>&1 <<'PY' &
+import json, socket, sys, time
 
-qmp_path, work = sys.argv[1], sys.argv[2]
+qmp_path, work, budget = sys.argv[1], sys.argv[2], float(sys.argv[3])
+deadline = time.time() + budget
+path = f"{work}/screen-config-rollback-notice.ppm"
 WARN = (0xFF, 0x6A, 0x00)  # flow-notice's colours::WARN — the notice's accent band
 
 class Qmp:
     def __init__(self, path):
         self.sock = socket.socket(socket.AF_UNIX)
-        self.sock.connect(path)
+        while True:                       # the socket appears a moment after QEMU starts
+            try:
+                self.sock.connect(path)
+                break
+            except OSError:
+                if time.time() > deadline:
+                    sys.exit("the QMP socket never appeared")
+                time.sleep(0.1)
+        self.sock.settimeout(20)
         self.f = self.sock.makefile("rwb")
-        self.f.readline()  # the greeting
-        self.cmd("qmp_capabilities")
+        try:
+            self.f.readline()  # the greeting
+            self.cmd("qmp_capabilities")
+        except (OSError, EOFError) as e:
+            sys.exit(f"the QMP control socket closed during the handshake: {e}")
 
     def cmd(self, name, **args):
         self.f.write((json.dumps({"execute": name, "arguments": args}) + "\n").encode())
         self.f.flush()
         while True:
-            msg = json.loads(self.f.readline())
+            line = self.f.readline()
+            if not line:                  # EOF: the guest powered off
+                raise ConnectionResetError(f"{name}: the QMP socket closed")
+            msg = json.loads(line)
             if "return" in msg:
                 return msg["return"]
             if "error" in msg:
                 raise RuntimeError(f"{name}: {msg['error']}")
 
+def read_ppm():
+    data = open(path, "rb").read()
+    fields, i = [], 0
+    while len(fields) < 4:  # P6 header: magic, width, height, maxval
+        while data[i:i+1].isspace():
+            i += 1
+        j = i
+        while not data[j:j+1].isspace():
+            j += 1
+        fields.append(data[i:j])
+        i = j
+    return int(fields[1]), int(fields[2]), data[i+1:]
+
 q = Qmp(qmp_path)
-path = f"{work}/screen-config-rollback-notice.ppm"
-q.cmd("screendump", filename=path)
-data = open(path, "rb").read()
-fields, i = [], 0
-while len(fields) < 4:  # P6 header: magic, width, height, maxval
-    while data[i:i+1].isspace():
-        i += 1
-    j = i
-    while not data[j:j+1].isspace():
-        j += 1
-    fields.append(data[i:j])
-    i = j
-w, h = int(fields[1]), int(fields[2])
-px = data[i+1:]
-warn = sum(1 for k in range(0, w * h * 3, 3) if tuple(px[k:k+3]) == WARN)
-print(f"    screen {w}x{h}; {warn} pixels of the notice's warning colour")
-if warn > 2000:
-    sys.exit(0)
-print("    FAIL: the screendump does not show the notice's warning band")
+best, frames, closed = 0, 0, False
+while time.time() < deadline:
+    try:
+        q.cmd("screendump", filename=path)
+    except (BrokenPipeError, ConnectionResetError, EOFError, socket.timeout):
+        closed = True
+        break
+    except RuntimeError:
+        time.sleep(0.25)               # no GPU yet, early in boot
+        continue
+    try:
+        w, h, px = read_ppm()
+        warn = sum(1 for k in range(0, w * h * 3, 3) if tuple(px[k:k+3]) == WARN)
+    except (OSError, IndexError, ValueError):
+        time.sleep(0.25)               # a half-written PPM
+        continue
+    frames += 1
+    best = max(best, warn)
+    if warn > 2000:
+        print(f"{warn} px of {w}x{h} (frame {frames})")
+        sys.exit(0)
+    time.sleep(0.25)
+
+print(f"no screendump showed the notice's warning band: best {best} px over {frames} frames"
+      + (", the machine went away first" if closed else ", the timeout expired"))
 sys.exit(1)
 PY
-fi
+cap=$!
 
 # Wait for the decision before reading verdicts (AGENTS.md H13), then let the driver power off.
 for _ in $(seq 1 300); do
@@ -125,6 +152,19 @@ for _ in $(seq 1 300); do
     sleep 1
 done
 wait "$vm" 2>/dev/null || true
+
+# The screendump verdict: exit 0 only if a frame showed the notice's warning band; a machine
+# that went away first, or a timeout, is a FAIL with its reason printed, never a traceback.
+caprc=0
+wait "$cap" 2>/dev/null || caprc=$?
+capout=$(tr -d '\r\n' <"$capture" 2>/dev/null || true)
+if [ "$caprc" = 0 ]; then
+    echo "    ok    a screendump shows the notice's warning band ($capout)"
+else
+    echo "    FAIL  a screendump shows the notice's warning band — $capout"
+    grep -a 'morphd\|flow-notice\|config-rollback' "$log" | tail -20 || true
+    fail=1
+fi
 
 # --- The verdicts, read off the disk. ---
 

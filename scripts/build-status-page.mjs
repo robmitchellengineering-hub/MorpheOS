@@ -123,8 +123,11 @@ const date = git(["log", "-1", "--format=%ci"]);
 const message = git(["log", "-1", "--format=%s"]);
 const generatedAt = new Date().toISOString();
 
-const b64 = (p) => `data:image/png;base64,${readFileSync(join(ROOT, p)).toString("base64")}`;
-const img = { settled: b64("status/settled.png"), drawing: b64("status/drawing.png"), phase: b64("status/phase.png") };
+// The launch screen is no longer shown as three inlined stills (~1 MB of base64 on a phone):
+// the page embeds the real thing and plays it. Rob, 2026-10-27: "put that in a card that can
+// full screen on the MorpheOS today page instead of the screen shots".
+// `login.html?nohandoff` is the same splash the boot image runs; without `nohandoff` it hands
+// over to start.html after 8 s, which would walk the visitor out of the card.
 
 const tableHtml = `
   <table>
@@ -151,10 +154,22 @@ const page = `<!doctype html>
   .lede em { color:var(--green); font-style:normal; }
   .sub { color:var(--mut); margin:0 0 36px; }
   h2 { font-size:13px; text-transform:uppercase; letter-spacing:2px; color:var(--green); margin:42px 0 14px; }
-  .shots { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; }
-  .shot { background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
-  .shot img { width:100%; display:block; }
-  .shot .cap { padding:10px 14px; font-size:13px; color:var(--mut); border-top:1px solid var(--line); }
+  .splash { position:relative; background:#05070d; border:1px solid var(--line);
+            border-radius:12px; overflow:hidden; }
+  .splash iframe { display:block; width:100%; aspect-ratio:16/9; border:0; background:#05070d; }
+  @media (max-width:640px) { .splash iframe { aspect-ratio:3/4; } }
+  .splash .bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+                 padding:10px 14px; font-size:13px; color:var(--mut); border-top:1px solid var(--line); }
+  .splash .bar .hint { flex:1 1 240px; }
+  .splash .bar b { color:var(--text); }
+  .btn { font:inherit; font-size:13px; color:var(--text); background:#111827;
+         border:1px solid var(--line); border-radius:8px; padding:7px 12px; cursor:pointer; }
+  .btn:hover, .btn:focus-visible { border-color:var(--green); color:#fff; }
+  /* Full screen: the card fills the screen, the splash flexes to it, the bar stays reachable. */
+  .splash:fullscreen, .splash:-webkit-full-screen {
+             display:flex; flex-direction:column; border:0; border-radius:0; background:#000; }
+  .splash:fullscreen iframe, .splash:-webkit-full-screen iframe {
+             flex:1 1 auto; min-height:0; height:auto; aspect-ratio:auto; }
   table { border-collapse:collapse; width:100%; font-size:14px; }
   th,td { text-align:left; padding:9px 12px; border-bottom:1px solid var(--line); vertical-align:top; }
   th { color:var(--green); text-transform:uppercase; letter-spacing:1px; font-size:11px; }
@@ -185,7 +200,8 @@ const page = `<!doctype html>
   <p class="sub">The completeness meter below is <code>docs/20-build-plan.md</code>'s task
   statuses, counted fresh each build; the table is <code>HANDOFF.md</code>'s "Where things stand"
   verbatim; the measured figures are quoted from <code>docs/00</code> and <code>docs/15</code>.
-  The screenshots are the real launch screen (<code>design/login.html</code>).</p>
+  The launch screen is the real one (<code>design/login.html</code>), running here, not a
+  screenshot of it.</p>
 
   <h2>Project completeness</h2>
   <div class="meter">
@@ -196,14 +212,18 @@ const page = `<!doctype html>
       <span style="opacity:.7">· ${tally.proposed} proposed</span></div>
   </div>
 
-  <h2>The launch screen</h2>
-  <div class="shots">
-    <div class="shot"><img src="${img.settled}" alt="settled geomesh">
-      <div class="cap"><b>Landed</b> — matrix green, wordmark + tagline (<code>t=6.0s</code>)</div></div>
-    <div class="shot"><img src="${img.drawing}" alt="geomesh drawing">
-      <div class="cap"><b>Assembling</b> — the mesh draws itself (<code>t=2.0s</code>)</div></div>
-    <div class="shot"><img src="${img.phase}" alt="colour phase">
-      <div class="cap"><b>First light</b> — colour phase, rings (<code>t=0.5s</code>)</div></div>
+  <h2>The launch screen — live</h2>
+  <div class="splash" id="splash">
+    <iframe id="splash-frame" src="login.html?nohandoff"
+            title="MorpheOS launch screen, running live with sound"
+            allow="autoplay; fullscreen" allowfullscreen></iframe>
+    <div class="bar">
+      <span class="hint"><b>Tap it once</b> — the mark draws itself in one bar (4/4 at 42 BPM)
+        and the music starts on the same sample. Then full screen, or replay it.</span>
+      <button class="btn" id="splash-replay" type="button">Replay</button>
+      <button class="btn" id="splash-fs" type="button" aria-label="Play the launch screen full screen">Full screen</button>
+    </div>
+    <noscript><div class="bar"><a href="login.html">Open the launch screen</a></div></noscript>
   </div>
 
   <h2>Measured — not estimated</h2>
@@ -220,6 +240,57 @@ const page = `<!doctype html>
     · main <code>${commit}</code> (${date}) · built ${generatedAt} · ${inlineMd(message)}
   </div>
 </div>
+<script>
+  // The card. Plain DOM, no framework, and no template literals: this block is inside the
+  // page template literal, so a dollar-brace expression in here would be interpolated at
+  // build time instead of reaching the browser.
+  (function () {
+    var card = document.getElementById('splash');
+    var frame = document.getElementById('splash-frame');
+    var fsBtn = document.getElementById('splash-fs');
+    var replay = document.getElementById('splash-replay');
+    if (!card || !frame || !fsBtn) return;
+
+    function replayAnim() {
+      // A new query each time, or the browser reuses the finished animation.
+      frame.src = 'login.html?nohandoff&r=' + Date.now();
+    }
+    function isFs() {
+      return document.fullscreenElement || document.webkitFullscreenElement || null;
+    }
+    function setLabel() {
+      fsBtn.textContent = isFs() ? 'Exit full screen' : 'Full screen';
+    }
+    function fullScreen() {
+      // Element fullscreen where it exists. iOS Safari has none for a <div>, and a refused
+      // request throws or rejects — both are answered by handing over to the full-page splash
+      // rather than leaving a dead button.
+      var el = card;
+      try {
+        var p = el.requestFullscreen ? el.requestFullscreen()
+              : el.webkitRequestFullscreen ? el.webkitRequestFullscreen()
+              : null;
+        if (!p) { location.href = 'login.html'; return; }
+        if (p && p.catch) p.catch(function () { location.href = 'login.html'; });
+      } catch (e) {
+        location.href = 'login.html';
+      }
+    }
+
+    fsBtn.addEventListener('click', function () {
+      if (isFs()) {
+        var exit = document.exitFullscreen || document.webkitExitFullscreen;
+        if (exit) exit.call(document);
+        return;
+      }
+      fullScreen();
+    });
+    replay.addEventListener('click', replayAnim);
+    document.addEventListener('fullscreenchange', setLabel);
+    document.addEventListener('webkitfullscreenchange', setLabel);
+    setLabel();
+  })();
+</script>
 </body>
 </html>
 `;
