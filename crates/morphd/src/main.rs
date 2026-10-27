@@ -159,8 +159,7 @@ fn stage_rollback_notice(from: u64, reason: &str, now: u64) -> Result<(), String
     if let Some(dir) = std::path::Path::new(path).parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
     }
-    std::fs::write(path, format!("{message}\nwarn\n"))
-        .map_err(|e| format!("writing {path}: {e}"))
+    std::fs::write(path, format!("{message}\nwarn\n")).map_err(|e| format!("writing {path}: {e}"))
 }
 
 /// Run one transaction: parse + validate the new Manifest, arm the trial, apply the settings,
