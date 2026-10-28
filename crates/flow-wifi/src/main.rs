@@ -13,8 +13,52 @@
 //! NetworkManager is called from a thread of its own: a join takes seconds, and the window
 //! must keep drawing (and answering the compositor's pings) while it does.
 
+/// One picker at a time.
+///
+/// Two independent things start this program: `flow-wifi.service`, when the machine has no
+/// network at boot, and the shell's own Wi-Fi button or Super+W. The shell only counts the
+/// pickers **it** started, so both paths can run one at the same time — which is what the first
+/// real-hardware boot showed: two Wi-Fi windows on screen, over the same NetworkManager
+/// (MacBookPro9,1, 2026-10-28). Whichever starts second exits quietly instead.
+///
+/// The check reads /proc rather than taking a lock file: a lock left behind by a crash would
+/// silence the picker for the rest of the boot, and no cleanup path is more trustworthy than the
+/// kernel's own list of running processes.
+#[cfg(target_os = "linux")]
+fn another_picker_is_running() -> bool {
+    let me = std::process::id();
+    let Ok(entries) = std::fs::read_dir("/proc") else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|s| s.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        if pid == me {
+            continue;
+        }
+        if let Ok(comm) = std::fs::read_to_string(format!("/proc/{pid}/comm")) {
+            if comm.trim() == "flow-wifi" {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 #[cfg(target_os = "linux")]
 fn main() -> std::process::ExitCode {
+    // A second picker is not an error: it is the other starter winning a race. Exit 0 so the
+    // unit that started it is not a failed unit — a failed unit is an unhealthy boot (doc 20,
+    // E11), and a diagnostic-grade detail must never be able to roll an update back.
+    if another_picker_is_running() {
+        println!("flow-wifi: a picker is already on screen; not opening a second window");
+        return std::process::ExitCode::SUCCESS;
+    }
     match client::run() {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(e) => {
