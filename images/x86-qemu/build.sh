@@ -479,6 +479,20 @@ EOF
             ln -sf "/usr/lib/systemd/system/$unit.service" \
                 "$dir/etc/systemd/system/multi-user.target.wants/$unit.service"
         done
+        # The boot report is one snapshot; the live one is a timer, because a Wi-Fi join that
+        # half-completes, a second picker window and a browser that dies all happen after it,
+        # and the journal is in RAM. A timer rather than a service so it cannot hold the boot
+        # open, and its ExecStart carries a `-` so a snapshot that fails can never mark the boot
+        # unhealthy and roll an update back (doc 20, E11).
+        ln -sf /usr/lib/systemd/system/morph-observe.timer \
+            "$dir/etc/systemd/system/timers.target.wants/morph-observe.timer"
+        # Enabling is a symlink, which succeeds even when the unit it names is not in the image —
+        # and then the stick is silent with nothing saying why. Assert the files are there.
+        for f in /usr/lib/morpheos/observe \
+                 /usr/lib/systemd/system/morph-observe.service \
+                 /usr/lib/systemd/system/morph-observe.timer; do
+            [ -e "$dir$f" ] || { echo "missing $f: the live snapshot would never run" >&2; exit 1; }
+        done
         # The overlay is what makes the console reachable at all. Assert it landed, because a
         # copy that silently did nothing would leave an image that looks right and cannot be
         # logged into — and the CI check would be looking for its own marker.

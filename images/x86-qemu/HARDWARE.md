@@ -183,10 +183,19 @@ Windows and macOS**, and the machine's own record is on it:
 /morpheos-report/001-<machine>-a/    the hardware report: one folder per boot
     summary.txt                      start here: screens, graphics, Wi-Fi, input, missing firmware
     lspci.txt lsusb.txt dmesg.txt    the raw facts behind it
+    net-live.txt                     routes, nameservers, NetworkManager's own view of the link
+    processes.txt                    every process: two copies of one client are visible here
+/morpheos-report/live-<machine>.txt  a snapshot every 20 seconds while it runs (newest is last)
 /loader/loader.conf                  which slot is the default
 /morph-boot/history.jsonl            one line per boot: <slot>/<phase>/<action>
 /morpheos/a|b/vmlinuz                the kernels
 ```
+
+**Send back `morpheos-report` whole**, including `live-<machine>.txt`. The report is taken once,
+about 15 s into the boot; the interesting failures happen after that — a Wi-Fi join that says it
+worked and reaches nothing, a second window from the same program, a browser that exits by
+itself. The live file is the rolling record of exactly those, and nothing else keeps it: the
+system journal lives in memory and dies with the power.
 
 **Booting the same stick on several machines collects all of them**: each boot adds a
 numbered folder (`001-…`, `002-…`), named after the machine's model. That is how the reference
