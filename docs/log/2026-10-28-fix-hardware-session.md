@@ -54,3 +54,30 @@ the rest of the boot, and no cleanup path is more trustworthy than the kernel's 
 **Not verified:** a booted image. That needs the `images` build and a flash, and only then does the
 next stick answer the resolver question — with `net-live.txt`, `ip route` and `/etc/resolv.conf`
 written by the capture this branch's predecessor (#160) added.
+
+## What CI taught this change, in two rounds (each cost a full ~55-minute A/B run)
+
+1. **`cargo check` is not the gate; clippy is.** `cargo check -p flow-wifi --target
+   x86_64-unknown-linux-gnu` passed locally, and CI still failed the `rust` job in 1m21s on
+   `error: this if statement can be collapsed` — clippy runs with `-D warnings`. **AGENTS.md H16
+   says a formatter is not a type-check; the same is true of `check` versus `clippy`.** The local
+   bar has to be `cargo clippy -p <crate> --target x86_64-unknown-linux-gnu -- -D warnings`.
+2. **The single-instance guard broke a test that is older than it.** `flow-wifi`'s tests run in
+   parallel in one process and start the picker with `--fake`; a process-global `/proc` scan made
+   one parallel test's picker exit, and `the_bars_button_and_super_w_open_one_picker` failed. The
+   guard now applies to the real path only (`--fake` is the harness). A rule about *one user-facing
+   window* has no business firing inside a test process.
+
+## And the console truncates in a way a prefix match cannot survive
+
+The earlier prefix fix (`failed unit: morph-broken`) was still wrong, and the A/B job proved it:
+systemd cuts a long unit name with an ellipsis **inside** the name —
+
+```
+[FAILED] Failed to start …morph-broken.servi…ervice (test scenario: bad update).
+```
+
+— so *no* substring of `morph-broken.service` is safe, and the name is wrapped in colour escapes.
+The assertion now matches `FAILED.*morph-broken`, which carries both facts (a failed start, and this
+unit) and survives the escapes, the ellipsis and the boot-check line being overwritten mid-word.
+Checked against the real log before pushing: `grep -c 'FAILED.*morph-broken'` finds exactly one line.

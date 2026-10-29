@@ -57,7 +57,11 @@ fn main() -> std::process::ExitCode {
     // A second picker is not an error: it is the other starter winning a race. Exit 0 so the
     // unit that started it is not a failed unit — a failed unit is an unhealthy boot (doc 20,
     // E11), and a diagnostic-grade detail must never be able to roll an update back.
-    if another_picker_is_running() {
+    // `--fake` is the compositor's own test mode, and its tests run in parallel in one process
+    // space: two of them starting a picker at the same moment is not two windows over one
+    // NetworkManager, it is the harness. So the rule applies to the real path only.
+    let fake = std::env::args().any(|a| a == "--fake" || a.starts_with("--fake="));
+    if !fake && another_picker_is_running() {
         println!("flow-wifi: a picker is already on screen; not opening a second window");
         return std::process::ExitCode::SUCCESS;
     }

@@ -238,20 +238,22 @@ case "$SCENARIO" in
         want=$(printf '%s\n' a/committed/none b/trial/fallback a/committed/none)
         [ "$got" = "$want" ] || { echo "    FAIL: expected boots: $(echo $want)"; fail=1; }
         [ "$default" = "morpheos-a.conf" ] || { echo "    FAIL: expected default slot a"; fail=1; }
-        # The trial failed BECAUSE of the payload's broken unit, not some other fault. This is
-        # a diagnostic read from the console; the verdict is the history above (H8).
-        #
-        # Match the prefix, not the whole sentence: the serial console is a shared buffered
-        # stream, so a line can be cut off by another writer. On 2026-10-27 the console held
-        #   boot-check[389]: morph-boot-check: failed unit: morph-broken.serv[ 4.891308] boot-check[313]: ... decision
-        # — the health check had named morph-broken.service and the history said b/trial/fallback,
-        # but the word "service" was overwritten, so an exact-match grep failed the job while the
-        # machine had done exactly the right thing (one boot-check per boot: 3 boots, 3 decisions).
-        if grep -aq 'failed unit: morph-broken' "$serial"; then
+        # The trial failed BECAUSE of the payload's broken unit, not some other fault. The
+        # verdict is the history line above (H8); this is the console's diagnosis, and the
+        # console is a single buffered stream that truncates in two different ways:
+        #   * systemd cuts a long unit name with an ellipsis INSIDE it —
+        #     "Failed to start …morph-broken.servi…ervice (test scenario: bad update)." — so no
+        #     substring of the name is safe, and the name is wrapped in colour escapes;
+        #   * boot-check's own "failed unit: morph-broken.service" line was overwritten mid-word
+        #     by the next writer ("…morph-broken.serv[ 4.891308] boot-check[313]: …").
+        # So match the one line that carries both facts — a FAILED start, and this unit — with
+        # the escapes and the ellipsis in between. Checked against the real log of 2026-10-27:
+        # `grep -c 'FAILED.*morph-broken'` finds exactly one line.
+        if grep -aq 'FAILED.*morph-broken' "$serial"; then
             echo "    the trial failed on morph-broken.service"
         else
             echo "    FAIL: the trial did not fail on morph-broken.service"
-            grep -a 'failed unit' "$serial" | sed 's/^/      /' || true
+            grep -a 'morph-broken' "$serial" | sed 's/^/      /' || true
             fail=1
         fi
         # Over at least three later timer runs (the stop loop above required three skips), the
