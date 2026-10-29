@@ -41,10 +41,12 @@ fn another_picker_is_running() -> bool {
         if pid == me {
             continue;
         }
-        if let Ok(comm) = std::fs::read_to_string(format!("/proc/{pid}/comm")) {
-            if comm.trim() == "flow-wifi" {
-                return true;
-            }
+        // One condition, not two: clippy denies `collapsible_if` here (CI runs clippy with
+        // -D warnings), and the let-chain is what this toolchain reads best.
+        if let Ok(comm) = std::fs::read_to_string(format!("/proc/{pid}/comm"))
+            && comm.trim() == "flow-wifi"
+        {
+            return true;
         }
     }
     false
