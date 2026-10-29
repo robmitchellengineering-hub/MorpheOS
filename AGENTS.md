@@ -298,6 +298,31 @@ and the images workflow found it 25 minutes in. **Rule:** `scripts/verify-embedd
 compiles every embedded program in seconds (in `check.sh` and CI); never rely on the VM run to
 find a syntax error.
 
+**H22 — a credential in a published artefact.** This repository is public, so every artefact the
+`images` workflow publishes is public. On 2026-10-29 the work to make a freshly booted machine join
+a Wi-Fi network reached for the shortest route — bake the SSID and password into the image — which
+would have published a real network's password to anyone who downloaded a stick. The right pattern
+was already in the image: `morpheos-tailscale-up.service` reads `/efi/morpheos-tailscale.key`,
+"written at flash time, never in the public image".
+**Rule:** a credential is read at boot from the ESP (`morpheos-tailscale.key`, `morpheos-wifi.txt`)
+or from `/persist`, and never from the build. `scripts/verify-no-secrets.mjs` scans the tracked
+tree in `check.sh` (with a `--self-test` that proves each rule can fail), and `build.sh` runs the
+same rule over the assembled root before an image is packed — in bash, because node is not
+guaranteed in the image build.
+**And the check itself must be able to fail.** The first version of the build-time grep passed
+`-----BEGIN …` without `-e`; grep read it as options, exited 2, and the error went to `/dev/null`,
+so the check reported "clean" over a tree that held a live key. The exit status is now checked:
+`2` is a broken check and fails the build.
+
+**H23 — "it needs a password" is a claim about the machine, not about the task.** Told that a USB
+stick had to be flashed and the flashing was remote, this session answered "it cannot be done from
+where you are" — and was wrong. `sudo -n -l` would have shown `(ALL) NOPASSWD: /bin/dd`, a rule
+written on 2026-10-16 for exactly this job. The flash then completed with no prompt, in five
+minutes. (Rob: *"I thought we figured out a way around this before, some kind of elevated
+terminal"*, and then *"remember what we do with walls"*.)
+**Rule:** before reporting a privileged action as blocked, run `sudo -n -l` and read what is
+already permitted. A wall is checked, not announced.
+
 ## Writing code here
 
 - Match the existing style: doc comments that explain **why**, module headers that

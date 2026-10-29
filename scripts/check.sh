@@ -86,6 +86,9 @@ step "task cards";       node scripts/task.mjs --self-test
 step "console text"
 node scripts/verify-console-text.mjs --self-test
 node scripts/verify-console-text.mjs
+step "no credential reaches a published artefact"
+node scripts/verify-no-secrets.mjs --self-test
+node scripts/verify-no-secrets.mjs
 step "hardware report names missing firmware";  bash scripts/verify-hwreport.sh
 step "the VM tests' embedded Python compiles"
 bash scripts/verify-embedded-python.sh --self-test
