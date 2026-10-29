@@ -1,0 +1,17 @@
+[Unit]
+Description=Write a live snapshot of the session to the USB stick (diagnostics, E6)
+Documentation=https://github.com/robmitchellengineering-hub/MorpheOS/blob/main/docs/20-build-plan.md
+# One snapshot is not enough: the things worth knowing happen after boot — a Wi-Fi join that
+# half-completes, a second picker window, the browser exiting. The journal is in RAM, so a
+# rolling copy on the stick is the only record that survives the power going off.
+
+[Service]
+Type=oneshot
+# The leading `-` is the whole safety argument, and it is not cosmetic: a failed unit makes the
+# boot unhealthy, and an unhealthy trial boot is rolled back (doc 20, E11). A diagnostic must
+# never be able to undo an update, so a snapshot that cannot be written exits 0 as far as
+# systemd is concerned. The script itself is best effort throughout.
+ExecStart=-/usr/lib/morpheos/observe
+# Never hold the boot open, and never compete with the shell for the GPU or the disk.
+Nice=10
+IOSchedulingClass=idle

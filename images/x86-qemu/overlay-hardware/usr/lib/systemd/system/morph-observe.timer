@@ -1,0 +1,13 @@
+[Unit]
+Description=Snapshot the live session to the stick every 20 seconds (diagnostics, E6)
+
+[Timer]
+# 20 s after boot rather than at boot: the first snapshot is useful, the boot is not delayed.
+OnBootSec=20s
+# Re-armed each time the previous run finishes, so a slow stick cannot pile up runs.
+OnUnitInactiveSec=20s
+AccuracySec=1s
+Unit=morph-observe.service
+
+[Install]
+WantedBy=timers.target

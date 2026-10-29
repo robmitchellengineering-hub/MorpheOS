@@ -1,0 +1,49 @@
+#!/bin/bash
+# morph-observe: a rolling snapshot of the LIVE session, on the stick (E6/E5 diagnostics).
+#
+# WHY. The hardware report is written once, ~15 s into a boot, and until 2026-10-27 it read only
+# sysfs. The first boot on real hardware (a 2012 Mac Pro) came back with "Wi-Fi says connected,
+# Firefox loads nothing, and there are two Wi-Fi windows" — and the stick held none of it: no
+# routes, no nameservers, no NetworkManager view, no window list, and the journal is in RAM so it
+# died with the power. A snapshot every 20 s is the cheapest thing that survives.
+#
+# ⚠️ IT MUST NEVER FAIL A BOOT, for the same reason hwreport must not: a failed unit makes the
+# boot unhealthy, and an unhealthy trial is rolled back (doc 20, E11). Every step is best effort,
+# the unit runs this with a `-` ExecStart, and the script exits 0 whatever happens.
+set -u
+
+ESP=${MORPH_ESP:-/efi}
+DIR="$ESP/morpheos-report"
+name=$(hostnamectl --static 2>/dev/null || hostname 2>/dev/null || echo machine)
+OUT="$DIR/live-${name}.txt"
+MAX=$((512 * 1024))    # 512 KiB: a stick left running for weeks must not fill up
+
+mkdir -p "$DIR" 2>/dev/null || exit 0
+
+{
+    printf '\n=== %s ===\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf -- '-- interfaces --\n';   ip -br a 2>/dev/null
+    printf -- '-- routes --\n';       ip route 2>/dev/null
+    printf -- '-- nameservers --\n';  cat /etc/resolv.conf 2>/dev/null
+    printf -- '-- active connections --\n'
+    nmcli -t -f NAME,DEVICE,TYPE,STATE con show --active 2>/dev/null
+    printf -- '-- devices --\n';      nmcli device status 2>/dev/null
+    # The shells and the browser: two `flow-wifi` lines here is the duplicate window, and a
+    # `flow-browser` that is gone is the browser that vanished.
+    printf -- '-- clients --\n'
+    ps -eo pid,ppid,etimes,stat,cmd 2>/dev/null \
+        | grep -E 'flow-(compositor|wifi|browser|mount|timeline|notice)|firefox' | grep -v grep
+    printf -- '-- failed units --\n'; systemctl --failed --no-pager 2>/dev/null | head -10
+    printf -- '-- journal, last 40 lines of the session --\n'
+    journalctl -b -n 40 -u flow-shell -u flow-wifi -u NetworkManager -u morph-banner \
+        --no-pager 2>/dev/null | tail -40
+} >> "$OUT" 2>/dev/null || exit 0
+
+# Bounded: keep the second half once it is over the cap, so the newest state always survives.
+sz=$(wc -c < "$OUT" 2>/dev/null || echo 0)
+if [ "${sz:-0}" -gt "$MAX" ]; then
+    tail -c $((MAX / 2)) "$OUT" > "$OUT.tmp" 2>/dev/null && mv "$OUT.tmp" "$OUT" 2>/dev/null
+fi
+
+sync 2>/dev/null || true    # the stick may be pulled out at any moment
+exit 0

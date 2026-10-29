@@ -10,6 +10,12 @@
 #   /efi/morpheos-report/<NNN>-<machine>-<slot>/
 #       summary.txt     the answers, in plain words, first
 #       lspci.txt lsusb.txt dmesg.txt journal-errors.txt drm.txt input.txt net.txt dmi.txt
+#       net-live.txt    routes, nameservers and NetworkManager's own view — what sysfs cannot see
+#       processes.txt   every process, so two copies of one client binary are visible
+#
+# This is the boot snapshot, taken once. `morph-observe` keeps writing live-<machine>.txt beside
+# it every 20 s, because the state that matters (a join that half-completes, a window that opens
+# twice, Firefox dying) happens after this has run, and the journal is in RAM.
 #
 # ⚠️ IT MUST NEVER FAIL A BOOT. A failed unit is an unhealthy boot, and an unhealthy trial is
 # rolled back: a diagnostic that broke would undo an update. Every step is best effort (no
@@ -63,6 +69,22 @@ for i in /sys/class/net/*; do
     printf '%-16s %-8s %-18s %s\n' "${i##*/}" "$(cat "$i/operstate" 2>/dev/null)" \
         "$(cat "$i/address" 2>/dev/null)" "${drv:-(virtual)}"
 done > "$dir/net.txt" 2>/dev/null
+# sysfs cannot see the things that decide whether a network WORKS: a link that says "up" and
+# reaches nothing has the same /sys/class/net entry as a good one. The first real-hardware boot
+# (2026-10-27, a 2012 Mac Pro) came back with "Wi-Fi connected, Firefox loads nothing, two Wi-Fi
+# windows" and the stick held none of it, because the report only read sysfs. These four are the
+# cheapest facts that tell those apart, and `nmcli` names the connection rather than the device.
+{
+    printf -- '-- ip -br a --\n';  ip -br a 2>/dev/null
+    printf -- '-- ip route --\n';  ip route 2>/dev/null
+    printf -- '-- resolv.conf --\n'; cat /etc/resolv.conf 2>/dev/null
+    printf -- '-- nmcli con show --active --\n'; nmcli -t -f NAME,DEVICE,TYPE,STATE con show --active 2>/dev/null
+    printf -- '-- nmcli device status --\n'; nmcli device status 2>/dev/null
+} > "$dir/net-live.txt" 2>/dev/null || true
+# Every process, so a duplicate client window is visible as two instances of the same binary.
+# The bar's Wi-Fi button and flow-wifi.service can each start a picker; the shell only counts the
+# ones it started, so two can be running with nothing in the log saying so.
+ps -eo pid,ppid,etimes,stat,cmd > "$dir/processes.txt" 2>/dev/null || true
 for f in sys_vendor product_name product_version board_vendor board_name bios_vendor \
     bios_version bios_date chassis_type; do
     printf '%-16s %s\n' "$f" "$(dmi "$f")"

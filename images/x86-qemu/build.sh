@@ -385,13 +385,30 @@ PARTLABEL=data   /persist         ext4   defaults           0  2
 tmpfs            /var/lib/systemd/linger     tmpfs  mode=0755  0  0
 tmpfs            /var/lib/systemd/rfkill     tmpfs  mode=0755  0  0
 tmpfs            /var/lib/systemd/backlight  tmpfs  mode=0755  0  0
+# NetworkManager's runtime state and tailscaled's node key live in /var/lib, which the
+# read-only root cannot hold. The first real-hardware boot (MacBookPro9,1, 2026-10-28) failed
+# here: tailscaled could not start at all — "Failed to set up special execution directory in
+# /var/lib: Read-only file system" — three times, and a Wi-Fi join that cannot write its
+# runtime state reports success while nothing downstream works. Saved networks are already
+# redirected to /persist (conf.d/30-saved-networks-on-persist.conf); this is the same fix for
+# the state that only has to last the boot.
+tmpfs            /var/lib/NetworkManager      tmpfs  mode=0700  0  0
+tmpfs            /var/lib/tailscale           tmpfs  mode=0700  0  0
 EOF
     # ⚠️ A SERVICE THAT WRITES TO THE READ-ONLY ROOT FAILS, AND A FAILED UNIT IS AN UNHEALTHY
     # BOOT. systemd-rfkill and systemd-backlight start on any machine with a radio switch or
     # a backlight (every laptop, and no VM until the Wi-Fi test's simulated radios), and logind
     # wherever D-Bus is; each failed to create its state directory. Found by test-wifi.sh.
     mkdir -p "$dir/efi" "$dir/persist" "$dir/var/lib/strata" \
-        "$dir/var/lib/systemd/linger" "$dir/var/lib/systemd/rfkill" "$dir/var/lib/systemd/backlight"
+        "$dir/var/lib/systemd/linger" "$dir/var/lib/systemd/rfkill" "$dir/var/lib/systemd/backlight" \
+        "$dir/var/lib/NetworkManager" "$dir/var/lib/tailscale"
+    # /etc/resolv.conf is written by NetworkManager on every join, and /etc is read-only here:
+    # point it at the copy NM writes under /run (conf.d/40-resolv-on-run.conf), or the machine
+    # joins a network and resolves nothing. Assert the link, because a plain file left in place
+    # would look correct and silently never update.
+    rm -f "$dir/etc/resolv.conf"
+    ln -sf /run/NetworkManager/resolv.conf "$dir/etc/resolv.conf"
+    [ -L "$dir/etc/resolv.conf" ] || { echo "/etc/resolv.conf is not a symlink: DNS would never update" >&2; exit 1; }
     # morphd boot converges the machine to the newest good generation at every start (doc 20,
     # S8/S11) — rolling back a corrupt one and recording the heal. It must be enabled here, or
     # the config rollback never happens (S8). The order in the list does not matter: systemd
@@ -478,6 +495,20 @@ EOF
         for unit in morph-banner morph-hwreport; do
             ln -sf "/usr/lib/systemd/system/$unit.service" \
                 "$dir/etc/systemd/system/multi-user.target.wants/$unit.service"
+        done
+        # The boot report is one snapshot; the live one is a timer, because a Wi-Fi join that
+        # half-completes, a second picker window and a browser that dies all happen after it,
+        # and the journal is in RAM. A timer rather than a service so it cannot hold the boot
+        # open, and its ExecStart carries a `-` so a snapshot that fails can never mark the boot
+        # unhealthy and roll an update back (doc 20, E11).
+        ln -sf /usr/lib/systemd/system/morph-observe.timer \
+            "$dir/etc/systemd/system/timers.target.wants/morph-observe.timer"
+        # Enabling is a symlink, which succeeds even when the unit it names is not in the image —
+        # and then the stick is silent with nothing saying why. Assert the files are there.
+        for f in /usr/lib/morpheos/observe \
+                 /usr/lib/systemd/system/morph-observe.service \
+                 /usr/lib/systemd/system/morph-observe.timer; do
+            [ -e "$dir$f" ] || { echo "missing $f: the live snapshot would never run" >&2; exit 1; }
         done
         # The overlay is what makes the console reachable at all. Assert it landed, because a
         # copy that silently did nothing would leave an image that looks right and cannot be
