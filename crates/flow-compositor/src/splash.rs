@@ -256,7 +256,7 @@ fn icosahedron_edges() -> Vec<(usize, usize)> {
 /// an icosahedron contains exactly those twenty triangles, so the derivation is exact and cannot
 /// drift from [`icosahedron_edges`].
 #[must_use]
-fn icosahedron_faces(v: &[V3; 12], edges: &[(usize, usize)]) -> Vec<(usize, usize, usize)> {
+fn icosahedron_faces(edges: &[(usize, usize)]) -> Vec<(usize, usize, usize)> {
     let mut linked = [[false; 12]; 12];
     for &(a, b) in edges {
         linked[a][b] = true;
@@ -289,7 +289,7 @@ fn icosahedron_faces(v: &[V3; 12], edges: &[(usize, usize)]) -> Vec<(usize, usiz
 fn subdivided_icosahedron() -> (Vec<V3>, Vec<(usize, usize)>) {
     let v = icosahedron_vertices();
     let edges = icosahedron_edges();
-    let faces = icosahedron_faces(&v, &edges);
+    let faces = icosahedron_faces(&edges);
 
     let mut verts: Vec<V3> = v.to_vec();
     let mut midpoints: std::collections::HashMap<(usize, usize), usize> =
