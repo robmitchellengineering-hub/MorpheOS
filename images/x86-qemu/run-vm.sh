@@ -48,8 +48,13 @@ fi
 # VM_MEM=<MiB> for a scenario that needs more than 1 GiB (a browser, E4).
 # A network (E5): VM_NET=1 attaches a virtio NIC on QEMU's user-mode network, where the host
 # is 10.0.2.2 and DHCP hands out 10.0.2.15. Otherwise the VM has no network at all.
+# VM_SSH=1 is VM_NET plus a forwarded port, so a test can try the machine's own door from the host the
+# way an operator would (V-21: five builds went onto a stick before anyone asked the image whether it
+# would let them in). VM_SSH_PORT sets the host side, default 2222.
+[ "${VM_SSH:-0}" = 1 ] && VM_NET=1
 NET_ARGS=(-nic none)
 [ "${VM_NET:-0}" = 1 ] && NET_ARGS=(-nic user,model=virtio-net-pci)
+[ "${VM_SSH:-0}" = 1 ] && NET_ARGS=(-nic "user,model=virtio-net-pci,hostfwd=tcp::${VM_SSH_PORT:-2222}-:22")
 
 ACCEL=tcg
 [ -w /dev/kvm ] && ACCEL=kvm
