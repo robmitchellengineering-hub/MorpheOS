@@ -364,6 +364,9 @@ make_root() {
     mkdir -p "$dir/root/.ssh" "$dir/etc/ssh/sshd_config.d" "$dir/etc/systemd/system/ssh.service.d"
     printf '%s\n' 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJbhcvkozieT1Efw8FGAObkRbiqe+Tm8nMprjOFvp99N harness-mesh admin' \
         > "$dir/root/.ssh/authorized_keys"
+    # The same key, kept where a boot-time guard can re-install it: build-time modes are exactly what
+    # failed (four builds on a refused key), so the runtime state is enforced at boot as well.
+    cp "$dir/root/.ssh/authorized_keys" "$dir/usr/lib/morpheos/mesh-admin.pub"
     chmod 700 "$dir/root/.ssh"; chmod 600 "$dir/root/.ssh/authorized_keys"
     # ⚠️ ROOT IS THE HOME DIRECTORY sshd CHECKS, NOT JUST .ssh. StrictModes refuses the whole
     # file when the home directory is group- or world-writable, and the refusal looks exactly
@@ -540,6 +543,14 @@ EOF
                  /usr/lib/systemd/system/morph-observe.service \
                  /usr/lib/systemd/system/morph-observe.timer; do
             [ -e "$dir$f" ] || { echo "missing $f: the live snapshot would never run" >&2; exit 1; }
+        done
+        # The SSH guard runs before sshd on every boot and repairs what StrictModes checks.
+        mkdir -p "$dir/etc/systemd/system/sysinit.target.wants"
+        ln -sf /usr/lib/systemd/system/morph-ssh-guard.service \
+            "$dir/etc/systemd/system/sysinit.target.wants/morph-ssh-guard.service"
+        for f in /usr/lib/morpheos/ssh-guard /usr/lib/morpheos/mesh-admin.pub \
+                 /usr/lib/systemd/system/morph-ssh-guard.service; do
+            [ -e "$dir$f" ] || { echo "missing $f: the SSH guard could not run" >&2; exit 1; }
         done
         # The overlay is what makes the console reachable at all. Assert it landed, because a
         # copy that silently did nothing would leave an image that looks right and cannot be

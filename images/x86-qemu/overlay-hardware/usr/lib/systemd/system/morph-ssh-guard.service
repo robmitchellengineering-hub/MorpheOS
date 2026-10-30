@@ -1,0 +1,19 @@
+[Unit]
+Description=Make the state sshd requires true at boot (E6)
+Documentation=https://github.com/robmitchellengineering-hub/MorpheOS/blob/main/docs/20-build-plan.md
+# Before the daemon, whatever starts it: Ubuntu 24.04 socket-activates sshd, so ordering against
+# ssh.service alone is not enough — the socket is what comes up first.
+Before=ssh.service ssh.socket
+# No network, no shell, no display: this only touches files under /root.
+DefaultDependencies=no
+After=local-fs.target
+
+[Service]
+Type=oneshot
+# `-` because a failed unit during a trial boot is an unhealthy boot, and an unhealthy trial is
+# rolled back (doc 20, E11). A repair that cannot run must not be able to undo an update.
+ExecStart=-/usr/lib/morpheos/ssh-guard
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target
