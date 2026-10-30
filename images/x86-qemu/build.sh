@@ -562,6 +562,9 @@ EOF
         done
         # And prove sshd accepts it, in the image, before anything is flashed: a drop-in sshd refuses
         # would be a machine with no door at all, and it would only be discovered at boot.
+        # sshd -t itself needs /run/sshd (its privilege-separation directory); a chroot has no /run at
+        # all, and the failure reads "Missing privilege separation directory", not "bad config".
+        mkdir -p "$dir/run/sshd" 2>/dev/null
         # The check needs a host key, and a fresh image deliberately has none — they are generated per
         # machine on first boot, because identical host keys on every stick would be its own defect. So
         # the check makes its own, inside the chroot, and removes it: what is being validated is the
