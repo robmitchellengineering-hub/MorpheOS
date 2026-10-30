@@ -372,6 +372,12 @@ make_root() {
     # provably present in the image and byte-identical on the client. The modes are asserted
     # below rather than assumed, and the drop-in pins the settings that matter so a future
     # Ubuntu default cannot quietly change the answer.
+    # OWNERSHIP, NOT JUST MODE. StrictModes refuses the key when the home directory is not owned by the
+    # account or root; a build tree can carry a different uid (a KVM guest built from this image had /root
+    # owned by 1001 while .ssh and the key were root's). chmod 0700 changes nothing about that, and the
+    # client sees only "no matching key". Proved by changing that one inode: the same image then accepted
+    # the key (2026-10-30).
+    chown 0:0 "$dir/root" "$dir/root/.ssh" "$dir/root/.ssh/authorized_keys" 2>/dev/null || true
     chmod 700 "$dir/root"
     printf '%s\n' \
         '# Pinned, not inherited: the mesh drives this machine over ssh (E6), so the settings' \
@@ -393,6 +399,10 @@ make_root() {
     # discover, and the symptom misleads (see above).
     [ "$(stat -c '%a' "$dir/root" 2>/dev/null)" = 700 ] \
         || { echo "root is not 0700: sshd StrictModes would refuse the baked key" >&2; exit 1; }
+    [ "$(stat -c '%u' "$dir/root" 2>/dev/null)" = 0 ] \
+        || { echo "root is not owned by uid 0: sshd StrictModes would refuse the baked key" >&2; exit 1; }
+    [ "$(stat -c '%u' "$dir/root/.ssh/authorized_keys" 2>/dev/null)" = 0 ] \
+        || { echo "authorized_keys is not owned by uid 0: sshd would refuse it" >&2; exit 1; }
     [ "$(stat -c '%a' "$dir/root/.ssh" 2>/dev/null)" = 700 ] \
         || { echo ".ssh is not 0700: sshd StrictModes would refuse the baked key" >&2; exit 1; }
     [ "$(stat -c '%a' "$dir/root/.ssh/authorized_keys" 2>/dev/null)" = 600 ] \
@@ -799,6 +809,11 @@ ESP_MB=300 ROOT_MB=1800 DATA_MB=256
 # (doc 20, S3 note 5). Raised only for that scenario, so the other disks keep their size.
 if [ "$SCENARIO" = autoupdate ]; then
     DATA_MB=2048
+fi
+# A stick-sized image must hold work: the root is read-only, /persist is this partition, and 256 MiB
+# cannot hold a toolchain or a tree (measured on the first hardware node, 2026-10-30).
+if [ "$HARDWARE" = 1 ]; then
+    DATA_MB=${MORPH_DATA_MB:-4096}
 fi
 rm -f "$WORK/esp.img"
 mkfs.vfat -F 32 -n ESP -C "$WORK/esp.img" $((ESP_MB * 1024)) >/dev/null
