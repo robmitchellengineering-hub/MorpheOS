@@ -11,6 +11,7 @@
 #       summary.txt     the answers, in plain words, first
 #       lspci.txt lsusb.txt dmesg.txt journal-errors.txt drm.txt input.txt net.txt dmi.txt
 #       net-live.txt    routes, nameservers and NetworkManager's own view — what sysfs cannot see
+#       ssh.txt         what sshd resolved, the modes it checks, and why it refused
 #       processes.txt   every process, so two copies of one client binary are visible
 #
 # This is the boot snapshot, taken once. `morph-observe` keeps writing live-<machine>.txt beside
@@ -81,6 +82,23 @@ done > "$dir/net.txt" 2>/dev/null
     printf -- '-- nmcli con show --active --\n'; nmcli -t -f NAME,DEVICE,TYPE,STATE con show --active 2>/dev/null
     printf -- '-- nmcli device status --\n'; nmcli device status 2>/dev/null
 } > "$dir/net-live.txt" 2>/dev/null || true
+# SSH — because "the image's own key was refused" cost four builds and could not be diagnosed from
+# the network: sshd logs WHY it refuses, and that log dies with the power. These facts are what the
+# next boot needs to explain itself without anyone at a console.
+{
+    printf -- '-- sshd -T (what the daemon actually resolved) --\n'
+    sshd -T 2>/dev/null | grep -Ei 'permitrootlogin|pubkeyauth|authorizedkeysfile|strictmodes|passwordauth|protecthome'
+    printf -- '-- modes (StrictModes refuses on a gift of a mode) --\n'
+    ls -ld /root /root/.ssh /root/.ssh/authorized_keys 2>&1
+    printf -- '-- the key the image carries, as the daemon sees it --\n'
+    ssh-keygen -lf /root/.ssh/authorized_keys 2>&1
+    printf -- '-- ssh unit --\n'
+    systemctl is-active ssh 2>&1
+    systemctl show -p FragmentPath -p DropInPaths ssh 2>&1
+    printf -- '-- what sshd said about refusals this boot --\n'
+    journalctl -b -u ssh --no-pager 2>/dev/null | grep -iE 'refus|bad owner|Failed|authorized' | tail -10
+} > "$dir/ssh.txt" 2>/dev/null || true
+
 # Every process, so a duplicate client window is visible as two instances of the same binary.
 # The bar's Wi-Fi button and flow-wifi.service can each start a picker; the shell only counts the
 # ones it started, so two can be running with nothing in the log saying so.
