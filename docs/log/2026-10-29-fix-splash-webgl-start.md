@@ -1,3 +1,4 @@
+# 2026-10-29 · DeepSeek · the full splash starts on its own, and only where it can draw
 
 ## The other half: the full splash (tier 2) existed and was born frozen
 
