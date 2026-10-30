@@ -1,0 +1,111 @@
+#!/bin/bash
+# access-selftest: the image tries its own door at every boot, and records why it is shut.
+#
+# THE WALL, AND HOW THIS GOES OVER IT. A flashed image refused the key it carries. The machine could not
+# say why, because the reason is in sshd's debug log and that log dies with the power. Five image builds
+# were spent guessing (2026-10-30, V-21). The door was shut and the machine would not name the reason.
+#
+# So the image now KNOCKS ON ITS OWN DOOR at boot: it starts a throwaway sshd on a high port in debug
+# mode (which reads the real /root/.ssh through the real StrictModes path), tries to log in with a key it
+# generates itself, and copies sshd's own explanation into the hardware report. Nothing is written to the
+# read-only root; the temporary key and its sshd are removed afterwards.
+#
+# What this proves, every boot, with no operator and no network:
+#   * sshd's effective configuration (sshd -T, the file the daemon actually reads);
+#   * whether the root key file is *usable* — the exact question the flashed image could not answer;
+#   * and sshd's own words for a refusal, e.g.
+#         Authentication refused: bad ownership or modes for directory /root
+#         User 'root' authorized keys '/root/.ssh/authorized_keys' is not a regular file
+#
+# ⚠️ BEST EFFORT. It must never fail a boot (E11): `-` on the unit, exit 0 always.
+set -u
+
+REPORT_DIR=${MORPH_REPORT_DIR:-/efi/morpheos-report}
+TMP=$(mktemp -d 2>/dev/null || echo /tmp/access-selftest.$$)
+OUT=$(mktemp 2>/dev/null || echo /tmp/access-selftest.out.$$)
+PORT=2222
+say() { echo "access-selftest: $*"; }
+
+# The question this file exists to answer, extracted from sshd's own output. Pure text in, verdict out,
+# so it can be tested without root and without a daemon.
+explain() {  # explain <debug log>
+    local log=$1
+    [ -f "$log" ] || { echo "UNKNOWN: no debug log"; return 2; }
+    local reason
+    reason=$(grep -aE 'Authentication refused: [^"]*|authorized keys .* is not a regular file|Could not open .*authorized keys|bad ownership or modes for (file|directory) [^ ]*' "$log" | head -3)
+    if [ -n "$reason" ]; then
+        printf '%s\n' "$reason"
+        return 1
+    fi
+    if grep -aq 'Accepted publickey for root' "$log"; then
+        echo "the door opened: sshd accepted a key for root"
+        return 0
+    fi
+    echo "UNKNOWN: the log shows neither an acceptance nor a refusal"
+    return 2
+}
+
+self_test() {
+    local d fail=0
+    d=$(mktemp -d)
+    printf 'debug1: Accepted publickey for root from 127.0.0.1 port 1 ssh2: ED25519 SHA256:x\n' > "$d/open.log"
+    printf 'debug1: Authentication refused: bad ownership or modes for directory /root\n' > "$d/modes.log"
+    printf "debug1: User 'root' authorized keys '/root/.ssh/authorized_keys' is not a regular file\n" > "$d/notfile.log"
+    printf 'debug1: something else happened\n' > "$d/nothing.log"
+    expect() { local name=$1 want=$2 got; explain "$3" >/dev/null; got=$?;
+        if [ "$got" = "$want" ]; then echo "ok   $name"; else echo "FAIL $name (got $got, want $want)"; fail=1; fi; }
+    expect "an accepted key is recognised" 0 "$d/open.log"
+    expect "a modes refusal is named" 1 "$d/modes.log"
+    expect "a non-regular key file is named" 1 "$d/notfile.log"
+    expect "a log with neither is UNKNOWN" 2 "$d/nothing.log"
+    rm -rf "$d"
+    [ "$fail" = 0 ] && echo "access-selftest: the reason can be seen, and can be absent" || echo "access-selftest: the reason cannot be judged"
+    return "$fail"
+}
+
+main() {
+    local stamp dir
+    stamp=$(date -u +%Y%m%dT%H%M%SZ)
+    dir="$REPORT_DIR/${stamp}-selftest"
+    mkdir -p "$dir" 2>/dev/null || { say "no report directory on the ESP; nothing recorded"; }
+
+    # 1. What the daemon actually resolved — the config, not the file that looked right.
+    sshd -T 2>/dev/null | grep -Ei 'permitrootlogin|pubkeyauth|authorizedkeysfile|strictmodes|usepam|passwordauth' \
+        > "$dir/sshd-effective.txt" 2>/dev/null || true
+    ls -ld /root /root/.ssh /root/.ssh/authorized_keys > "$dir/modes.txt" 2>&1 || true
+
+    # 2. Knock on the real door: a throwaway sshd on a high port, reading the real /root through the real
+    #    StrictModes path, then a login attempt with a key made here and never leaving the machine.
+    local debug="$dir/sshd-debug.txt"
+    ssh-keygen -q -t ed25519 -N '' -f "$TMP/id" >/dev/null 2>&1 || { say "could not make a test key"; }
+    mkdir -p "$TMP/host" 2>/dev/null
+    ssh-keygen -q -t ed25519 -N '' -f "$TMP/host/key" >/dev/null 2>&1 || true
+    if [ -f "$TMP/id" ] && [ -f "$TMP/host/key" ]; then
+        /usr/sbin/sshd -ddd -p "$PORT" -o PidFile=none -o UsePAM=no -o HostKey="$TMP/host/key" \
+            -o PermitRootLogin=yes > "$debug" 2>&1 &
+        local pid=$!
+        sleep 1
+        if timeout 8 ssh -i "$TMP/id" -p "$PORT" \
+               -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+               -o ConnectTimeout=5 root@127.0.0.1 true >> "$debug" 2>&1; then
+            say "the door opened for a self-generated key"
+        else
+            say "the door did not open; sshd's reason is in $debug"
+        fi
+        kill "$pid" 2>/dev/null || true
+        # 3. sshd's own words, into the report the operator can actually read.
+        explain "$debug" > "$dir/verdict.txt" 2>/dev/null
+    else
+        echo "UNKNOWN: could not make the throwaway keys" > "$dir/verdict.txt"
+    fi
+
+    rm -rf "$TMP" "$OUT" 2>/dev/null || true
+    cat "$dir/verdict.txt" 2>/dev/null || true
+    exit 0
+}
+
+case "${1:-}" in
+    --self-test) self_test; exit $? ;;
+    --explain) shift; explain "${1:?usage: --explain <log>}" ; exit $? ;;
+    *) main ;;
+esac

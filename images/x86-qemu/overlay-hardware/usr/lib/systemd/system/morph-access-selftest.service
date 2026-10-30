@@ -1,0 +1,18 @@
+[Unit]
+Description=Knock on the machine's own SSH door, and record why it is shut (E6/security)
+# After sshd is up, because it tests the same configuration the daemon uses. Not Before: it must never
+# hold the boot up on the path a person needs.
+After=ssh.service ssh.socket
+# The report it writes lives on the ESP; no network is needed for the test itself.
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+# `-` because a diagnostic must never fail a trial boot (E11) and roll an update back.
+ExecStart=-/usr/lib/morpheos/access-selftest
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=60
+
+[Install]
+WantedBy=sysinit.target

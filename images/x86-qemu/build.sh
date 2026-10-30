@@ -541,6 +541,15 @@ EOF
                  /usr/lib/systemd/system/morph-observe.timer; do
             [ -e "$dir$f" ] || { echo "missing $f: the live snapshot would never run" >&2; exit 1; }
         done
+        # THE DOOR TESTS ITSELF. Every boot, a throwaway sshd on a high port is brought up in debug mode
+        # against the real /root, a self-generated key tries to log in, and sshd's own reason for refusing
+        # goes into the hardware report. This is the answer to "the machine would not say why" (V-21).
+        install -m 0755 "$HERE/../../security/access-selftest" "$dir/usr/lib/morpheos/access-selftest"
+        ln -sf /usr/lib/systemd/system/morph-access-selftest.service \
+            "$dir/etc/systemd/system/sysinit.target.wants/morph-access-selftest.service"
+        for f in /usr/lib/morpheos/access-selftest /usr/lib/systemd/system/morph-access-selftest.service; do
+            [ -e "$dir$f" ] || { echo "missing $f: the door could not report itself" >&2; exit 1; }
+        done
         # The overlay is what makes the console reachable at all. Assert it landed, because a
         # copy that silently did nothing would leave an image that looks right and cannot be
         # logged into — and the CI check would be looking for its own marker.
