@@ -100,7 +100,17 @@
     ];
     const stopColors = STOPS.map((s) => new THREE.Color(s.c).convertSRGBToLinear());
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
+    // CAN THIS MACHINE DRAW IT? The full splash needs WebGL (three.js + bloom). On a machine
+    // without it the renderer throws and the screen sits blank until the handoff — so check
+    // first and go straight to the start page: the software splash has already played at boot,
+    // and a blank screen looks like a hung machine (E19's tiers: software at boot, WebGL here).
+    let renderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
+    } catch (e) {
+      location.replace('start.html');
+      throw e;
+    }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputEncoding = THREE.sRGBEncoding;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -335,14 +345,21 @@
     fetch(MUSIC_URL).then((r) => (r.ok ? r.arrayBuffer() : null)).then((buf) => {
       if (!buf) { beginAt(performance.now() / 1000); return; }
       const begin = () => {
-        if (started || audioCtx) return;
+        // A tap on an already-started page resumes a context the browser suspended, rather than
+        // doing nothing: that is the difference between "no audio" and "audio after a tap".
+        if (started || audioCtx) { audioCtx?.resume?.().catch(() => {}); return; }
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume?.().catch(() => {});
         audioCtx.decodeAudioData(buf).then((dec) => {
           const src = audioCtx.createBufferSource();
           src.buffer = dec; src.connect(audioCtx.destination); src.start(0);
           useAudio = true; beginAt(audioCtx.currentTime);
-        });
+        }).catch(() => beginAt(performance.now() / 1000));
       };
+      // AT BOOT NOBODY TAPS: this page is the first thing on the screen. Start now, and keep the
+      // gesture listeners for browsers that refuse audio without one — the picture must never
+      // wait for a finger (a frozen first frame reads as a hung machine).
+      begin();
       window.addEventListener('pointerdown', begin);
       window.addEventListener('keydown', begin);
     }).catch(() => {
@@ -353,10 +370,14 @@
       // play()'s start-up latency.
       const el = new Audio(MUSIC_URL);
       const begin = () => {
-        if (started) return;
+        if (started) { el.play().catch(() => {}); return; }
         el.play().catch(() => {});
         beginAt(performance.now() / 1000);
       };
+      // The booted image opens this page as file:///, so this is the branch that runs on a real
+      // boot — and it used to wait for a tap that never comes. Start immediately; if the profile
+      // does not allow autoplay the picture still runs and the first tap brings the sound in.
+      begin();
       window.addEventListener('pointerdown', begin);
       window.addEventListener('keydown', begin);
     });
