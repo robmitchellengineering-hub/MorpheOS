@@ -388,8 +388,23 @@
     const tmp = new THREE.Color();
     function easeOut(k) { return 1 - Math.pow(1 - k, 3); }
 
+    // CAN THIS MACHINE KEEP UP? Creating a WebGL context is not the question: Mesa's software
+    // renderer (llvmpipe) answers yes on any machine without a GPU driver — which is exactly the
+    // 2012 MacBook Pro this splash never worked on — and then draws this scene at a few frames a
+    // second. That looks like a broken animation, not a slow one, and it is worse than the
+    // software port the compositor already drew at boot. So count frames for the first second and
+    // hand over to the start page if the answer is "no".
+    let framesSeen = 0, measureFrom = null;
+    function tooSlow(now) {
+      if (measureFrom === null) { measureFrom = now; return false; }
+      framesSeen++;
+      // One second in: under ~20 fps and this machine cannot draw the full splash.
+      return (now - measureFrom) > 1000 && framesSeen < 20;
+    }
+
     function animate() {
       requestAnimationFrame(animate);
+      if (tooSlow(performance.now())) { location.replace('start.html'); return; }
       const t = STILL != null ? parseFloat(STILL) : (started ? Math.max(0, clockNow() - startClock) : 0);
       const dt = Math.min(0.1, t - lastT);
       lastT = t;
