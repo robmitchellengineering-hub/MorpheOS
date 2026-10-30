@@ -541,6 +541,14 @@ EOF
                  /usr/lib/systemd/system/morph-observe.timer; do
             [ -e "$dir$f" ] || { echo "missing $f: the live snapshot would never run" >&2; exit 1; }
         done
+        # THE FEEDBACK LOOP. A boot can send its own report to the operator, so a diagnosis never has to
+        # be carried back on the stick again — the failure that cost five builds on 2026-10-30. Opt-in by
+        # a file on the ESP, absent by default, and it never delays or fails a boot.
+        ln -sf /usr/lib/systemd/system/morph-phonehome.service \
+            "$dir/etc/systemd/system/multi-user.target.wants/morph-phonehome.service"
+        for f in /usr/lib/morpheos/phonehome /usr/lib/systemd/system/morph-phonehome.service; do
+            [ -e "$dir$f" ] || { echo "missing $f: a boot could not report itself" >&2; exit 1; }
+        done
         # The overlay is what makes the console reachable at all. Assert it landed, because a
         # copy that silently did nothing would leave an image that looks right and cannot be
         # logged into — and the CI check would be looking for its own marker.
