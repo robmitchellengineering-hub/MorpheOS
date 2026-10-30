@@ -546,6 +546,24 @@ EOF
         # logged into — and the CI check would be looking for its own marker.
         [ -f "$dir/root/.profile" ] \
             || { echo "the hardware overlay did not land in $dir" >&2; exit 1; }
+        # ⚠️ NO CREDENTIAL IN A PUBLISHED ARTEFACT (AGENTS.md H22). This repository is public,
+        # so everything this build publishes is public: a Wi-Fi password or a pre-auth key that
+        # got into the tree is a credential handed to anyone who downloads a stick. Both are
+        # read from the ESP at boot instead (`morpheos-wifi.txt`, `morpheos-tailscale.key`),
+        # written at flash time. Bash rather than the node verifier on purpose: this must run in
+        # the image build, where node is not guaranteed, and it must be the same rule.
+        for f in morpheos-wifi.txt morpheos-tailscale.key; do
+            found=$(find "$dir" -name "$f" -print -quit 2>/dev/null)
+            [ -z "$found" ] || { echo "a credential would be published: $found (read it from the ESP at boot)" >&2; exit 1; }
+        done
+        # ⚠️ `-e`, AND THE EXIT STATUS IS CHECKED. The first version of this line passed the
+        # pattern without `-e`, so grep read `-----BEGIN` as options, exited 2, and the error went
+        # to /dev/null: the check reported "clean" on a tree that held a live key. A check that
+        # cannot fail is worse than no check (H2, H6).
+        secret=$(grep -rIlE -e '-----BEGIN ([A-Z0-9]+ )*PRIVATE KEY-----' -e 'tskey-[A-Za-z0-9]{4,}' \
+            "$dir/etc" "$dir/root" "$dir/usr/lib/morpheos" "$dir/efi") && rc=0 || rc=$?
+        [ "$rc" -le 1 ] || { echo "the credential check could not run (grep exit $rc): fix the check, not the image" >&2; exit 1; }
+        [ -z "$secret" ] || { echo "a credential would be published in $secret (AGENTS.md H22)" >&2; exit 1; }
         # ⚠️ A VM IS NOT A LAPTOP, AND THE KERNEL IS WHERE THAT BITES.
         #
         # This image is meant to boot from a USB stick on real hardware, and the drivers it
