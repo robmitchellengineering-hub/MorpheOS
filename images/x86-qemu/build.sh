@@ -812,6 +812,15 @@ ESP_MB=300 ROOT_MB=1800 DATA_MB=256
 if [ "$SCENARIO" = autoupdate ]; then
     DATA_MB=2048
 fi
+# A stick-sized image must be able to hold a person's work — and, for the mesh, a toolchain and a work
+# tree, because the machine has no other writable place: the root is read-only and /persist is this
+# partition. At 256 MiB that is impossible (measured on the first real hardware node, 2026-10-30: "the
+# data partition is 268 MB, a Rust toolchain is ~1.5 GB"). The cost is sparse — an empty data partition
+# adds almost nothing to the compressed artefact — so the person-facing images get room and the
+# self-test scenarios keep their small disks for CI.
+if [ "$HARDWARE" = 1 ]; then
+    DATA_MB=${MORPH_DATA_MB:-4096}
+fi
 rm -f "$WORK/esp.img"
 mkfs.vfat -F 32 -n ESP -C "$WORK/esp.img" $((ESP_MB * 1024)) >/dev/null
 mcopy -s -i "$WORK/esp.img" "$ESPDIR"/* ::/
