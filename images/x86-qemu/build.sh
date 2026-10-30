@@ -361,11 +361,42 @@ make_root() {
     install -m 0755 "$MORPH_D" "$dir/usr/bin/morphd"
     # SSH in, so the mesh can drive this machine over the network (E6: no stick, no console
     # person). Root, key only — the mesh admin key is baked into the image.
-    mkdir -p "$dir/root/.ssh" "$dir/etc/ssh/sshd_config.d"
+    mkdir -p "$dir/root/.ssh" "$dir/etc/ssh/sshd_config.d" "$dir/etc/systemd/system/ssh.service.d"
     printf '%s\n' 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJbhcvkozieT1Efw8FGAObkRbiqe+Tm8nMprjOFvp99N harness-mesh admin' \
         > "$dir/root/.ssh/authorized_keys"
     chmod 700 "$dir/root/.ssh"; chmod 600 "$dir/root/.ssh/authorized_keys"
-    printf 'PermitRootLogin prohibit-password\nPasswordAuthentication no\n' > "$dir/etc/ssh/sshd_config.d/morpheos.conf"
+    # ⚠️ ROOT IS THE HOME DIRECTORY sshd CHECKS, NOT JUST .ssh. StrictModes refuses the whole
+    # file when the home directory is group- or world-writable, and the refusal looks exactly
+    # like "no matching key" to the client: on 2026-10-29 a machine booted from this image
+    # answered `Permission denied (publickey)` to the very key baked into it, with the key
+    # provably present in the image and byte-identical on the client. The modes are asserted
+    # below rather than assumed, and the drop-in pins the settings that matter so a future
+    # Ubuntu default cannot quietly change the answer.
+    chmod 700 "$dir/root"
+    printf '%s\n' \
+        '# Pinned, not inherited: the mesh drives this machine over ssh (E6), so the settings' \
+        '# that decide whether the baked key is accepted are ours, not the base image s.' \
+        'PermitRootLogin prohibit-password' \
+        'PubkeyAuthentication yes' \
+        'PasswordAuthentication no' \
+        'StrictModes yes' \
+        'AuthorizedKeysFile .ssh/authorized_keys' \
+        > "$dir/etc/ssh/sshd_config.d/morpheos.conf"
+    printf '%s\n' \
+        '[Service]' \
+        '# Ubuntu s ssh.service may carry ProtectHome, which hides /root from the daemon and makes' \
+        '# root key auth impossible while looking like a bad key. sshd needs /root to read' \
+        '# authorized_keys; nothing else here does.' \
+        'ProtectHome=no' \
+        > "$dir/etc/systemd/system/ssh.service.d/morpheos.conf"
+    # Assert what sshd will check, because a wrong mode here costs a build + a flash + a boot to
+    # discover, and the symptom misleads (see above).
+    [ "$(stat -c '%a' "$dir/root" 2>/dev/null)" = 700 ] \
+        || { echo "root is not 0700: sshd StrictModes would refuse the baked key" >&2; exit 1; }
+    [ "$(stat -c '%a' "$dir/root/.ssh" 2>/dev/null)" = 700 ] \
+        || { echo ".ssh is not 0700: sshd StrictModes would refuse the baked key" >&2; exit 1; }
+    [ "$(stat -c '%a' "$dir/root/.ssh/authorized_keys" 2>/dev/null)" = 600 ] \
+        || { echo "authorized_keys is not 0600" >&2; exit 1; }
     ln -sf /usr/lib/systemd/system/ssh.service "$dir/etc/systemd/system/multi-user.target.wants/ssh.service"
     # The 2012 MacBook Pro's BCM4331 Wi-Fi (E6): the `b43` driver is the one that works with
     # this chip; its firmware comes from `firmware-b43-installer` (multiverse), asserted below.
