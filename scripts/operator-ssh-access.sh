@@ -1,11 +1,14 @@
 #!/bin/bash
+# OPERATOR CHECK, NOT A CI SCENARIO. It needs the operator's private key and a host to try it against, so
+# it cannot run in the images workflow — which is why it lives here and not in images/x86-qemu/test-*.sh,
+# the scenarios that CI and scripts/test-images.sh must both name.
 # test-ssh-access.sh — boot the image in a VM and try to log in, exactly as the operator would.
 #
 # THIS IS THE TEST THAT SHOULD HAVE EXISTED FROM THE START (V-21, and Rob's question on 2026-10-30:
 # "can you boot it on a vm and see if you can access it"). Five image builds went onto a stick before
 # anyone asked the image whether its own door opens in a VM. It takes a minute and answers directly.
 #
-#   images/x86-qemu/test-ssh-access.sh <disk.img> [ssh-port]
+#   scripts/operator-ssh-access.sh <disk.img> [ssh-port]
 #
 # Needs: qemu-system-x86_64, OVMF, an ssh client. Runs on a Linux node with KVM (pacland-rog) — the
 # Mac has no QEMU at all.
