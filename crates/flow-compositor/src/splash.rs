@@ -316,7 +316,10 @@ fn subdivided_icosahedron() -> (Vec<V3>, Vec<(usize, usize)>) {
 
     let mut out_edges: Vec<(usize, usize)> = Vec::with_capacity(120);
     let mut push_edge = |a: usize, b: usize, out: &mut Vec<(usize, usize)>| {
-        if !out.iter().any(|&(x, y)| (x == a && y == b) || (x == b && y == a)) {
+        if !out
+            .iter()
+            .any(|&(x, y)| (x == a && y == b) || (x == b && y == a))
+        {
             out.push((a, b));
         }
     };
@@ -324,7 +327,17 @@ fn subdivided_icosahedron() -> (Vec<V3>, Vec<(usize, usize)>) {
         let ab = midpoint_of(a, b, &mut verts);
         let bc = midpoint_of(b, c, &mut verts);
         let ca = midpoint_of(c, a, &mut verts);
-        for (x, y) in [(a, ab), (ab, b), (b, bc), (bc, c), (c, ca), (ca, a), (ab, bc), (bc, ca), (ca, ab)] {
+        for (x, y) in [
+            (a, ab),
+            (ab, b),
+            (b, bc),
+            (bc, c),
+            (c, ca),
+            (ca, a),
+            (ab, bc),
+            (bc, ca),
+            (ca, ab),
+        ] {
             push_edge(x, y, &mut out_edges);
         }
     }
