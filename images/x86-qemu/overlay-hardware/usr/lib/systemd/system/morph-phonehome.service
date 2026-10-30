@@ -1,0 +1,19 @@
+[Unit]
+Description=Send this boot's report to the operator (E6 diagnostics)
+Documentation=https://github.com/robmitchellengineering-hub/MorpheOS/blob/main/docs/20-build-plan.md
+# After the report it sends, and after the network it needs. It must not delay either: if the network is
+# not up yet, this boot simply does not phone home — the report is still on the stick.
+After=morph-hwreport.service network-online.target
+Wants=network-online.target
+# No file on the ESP, no phone-home: absent by default on every machine.
+ConditionPathExists=/efi/morpheos-phonehome.txt
+
+[Service]
+Type=oneshot
+# `-` for the usual reason: a diagnostic must never fail a trial boot (E11) and roll an update back.
+ExecStart=-/usr/lib/morpheos/phonehome
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target
