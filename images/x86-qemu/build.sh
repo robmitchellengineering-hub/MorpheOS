@@ -541,6 +541,7 @@ EOF
                  /usr/lib/systemd/system/morph-observe.timer; do
             [ -e "$dir$f" ] || { echo "missing $f: the live snapshot would never run" >&2; exit 1; }
         done
+<<<<<<< HEAD
         # THE FEEDBACK LOOP. A boot can send its own report to the operator, so a diagnosis never has to
         # be carried back on the stick again — the failure that cost five builds on 2026-10-30. Opt-in by
         # a file on the ESP, absent by default, and it never delays or fails a boot.
@@ -549,6 +550,23 @@ EOF
         for f in /usr/lib/morpheos/phonehome /usr/lib/systemd/system/morph-phonehome.service; do
             [ -e "$dir$f" ] || { echo "missing $f: a boot could not report itself" >&2; exit 1; }
         done
+        # THE DOOR THAT CANNOT BE SHUT BY A MODE. sshd takes root's key from a command as well as from
+        # /root/.ssh/authorized_keys: ownership, file modes and the home directory cannot refuse it. This
+        # is the last-option path — if StrictModes or a bad pw_dir is what refused four builds, this is
+        # what opens the door first time.
+        install -D -m 0755 "$HERE/overlay-hardware/usr/lib/morpheos/keys-for" \
+            "$dir/usr/lib/morpheos/keys-for"
+        install -D -m 0644 "$HERE/overlay-hardware/usr/lib/systemd/system/sshd_config.d/50-morpheos-keys.conf" \
+            "$dir/etc/ssh/sshd_config.d/50-morpheos-keys.conf"
+        for f in /usr/lib/morpheos/keys-for /etc/ssh/sshd_config.d/50-morpheos-keys.conf; do
+            [ -e "$dir$f" ] || { echo "missing $f: the door could be shut by a mode again" >&2; exit 1; }
+        done
+        # And prove sshd accepts it, in the image, before anything is flashed: a drop-in sshd refuses
+        # would be a machine with no door at all, and it would only be discovered at boot.
+        if ! chroot "$dir" /usr/sbin/sshd -t 2>/tmp/sshd-t.err; then
+            echo "sshd -t failed in the image: $(head -2 /tmp/sshd-t.err)" >&2; exit 1
+        fi
+
         # The overlay is what makes the console reachable at all. Assert it landed, because a
         # copy that silently did nothing would leave an image that looks right and cannot be
         # logged into — and the CI check would be looking for its own marker.
