@@ -1,0 +1,51 @@
+#!/bin/bash
+# phonehome: send the machine's report to the operator, so a diagnosis does not have to be carried by hand.
+#
+# WHY. A flashed image refused its own SSH key, its hardware report said why — and the report lived on
+# the stick inside the machine. Five builds were spent guessing. Rob, 2026-10-30: the failure was that
+# nothing set up a feedback loop for the data that already existed. This is that loop.
+#
+#   /efi/morpheos-phonehome.txt   one line: the URL to POST to. Absent = nothing happens, ever.
+#
+# Opt-in by a file on the ESP, which only someone with the stick in hand can write. No service is opened,
+# no credential is carried, and the payload is the report the machine already writes.
+#
+# ⚠️ IT MUST NEVER FAIL A BOOT (E11): best effort throughout, `-` on the unit, exit 0 always.
+set -u
+
+ESP=${MORPH_ESP:-/efi}
+CONF="$ESP/morpheos-phonehome.txt"
+REPORTS="$ESP/morpheos-report"
+say() { echo "phonehome: $*"; }
+
+[ -f "$CONF" ] || { say "no $CONF — phone-home is off for this machine"; exit 0; }
+URL=$(head -1 "$CONF" | tr -d '\r\n ')
+[ -n "$URL" ] || { say "$CONF is empty — nothing to send to"; exit 0; }
+command -v curl >/dev/null 2>&1 || { say "no curl in this image"; exit 0; }
+
+# The newest report: that is the boot that just happened.
+newest=$(ls -d "$REPORTS"/*/ 2>/dev/null | sort | tail -1)
+[ -n "$newest" ] || { say "no report under $REPORTS"; exit 0; }
+
+# One text blob: the answers first, then the files that explain a refusal. Small on purpose — a phone-home
+# that needs a proxy is not a feedback loop, it is another thing to configure.
+payload=$(mktemp 2>/dev/null || echo /tmp/phonehome.$$)
+{
+    printf 'machine: %s\n' "$(hostname 2>/dev/null)"
+    printf 'boot: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf 'report: %s\n\n' "$(basename "$newest")"
+    for f in summary.txt ssh.txt net-live.txt net.txt journal-errors.txt; do
+        [ -f "$newest/$f" ] || continue
+        printf '===== %s =====\n' "$f"
+        head -c 60000 "$newest/$f" 2>/dev/null
+        printf '\n'
+    done
+} > "$payload" 2>/dev/null
+
+bytes=$(wc -c < "$payload" 2>/dev/null || echo 0)
+say "sending $bytes bytes to $URL"
+curl -fsS --max-time 30 -H 'content-type: text/plain; charset=utf-8' \
+     --data-binary "@$payload" "$URL" >/tmp/phonehome.out 2>&1 \
+    && say "sent" || say "send failed: $(tail -1 /tmp/phonehome.out 2>/dev/null)"
+rm -f "$payload"
+exit 0
