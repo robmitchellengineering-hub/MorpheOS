@@ -1,0 +1,21 @@
+[Unit]
+Description=The splash's music, played once as the shell draws it (E19)
+Documentation=https://github.com/robmitchellengineering-hub/MorpheOS/blob/main/docs/20-build-plan.md
+# The picture comes from flow-shell (the boot splash is the compositor's first frames), so the
+# music follows it rather than racing it: the draw is one bar at 42 BPM, and starting the track
+# before the compositor is on screen plays most of it to an empty display.
+After=flow-shell.service
+Wants=flow-shell.service
+# No sound card is not a failure: a VM has none, and neither has a machine with only HDMI.
+ConditionPathExists=/usr/share/morpheos/theme.wav
+
+[Service]
+Type=oneshot
+# `-` on purpose: a failed unit during a trial boot is an unhealthy boot, and an unhealthy trial is
+# rolled back (doc 20, E11). A boot chime must never be able to undo an update.
+ExecStart=-/usr/lib/morpheos/boot-sound
+# Never hold anything else up, and never compete with the compositor for the display.
+Nice=5
+
+[Install]
+WantedBy=multi-user.target
