@@ -1,0 +1,29 @@
+#!/bin/sh
+# keys-for: the key sshd should accept for a user — supplied by a COMMAND, not by a file.
+#
+# WHY THIS EXISTS. A flashed image refused the key in /root/.ssh/authorized_keys, and four candidate causes
+# share one symptom (V-21, PLAN-morpheos-sshd-access): /root owned by the wrong uid, the file missing or not
+# regular, root's pw_dir not being /root so a relative AuthorizedKeysFile looked elsewhere, and a symlinked
+# .ssh into a world-writable directory. Guessing between them cost five image builds.
+#
+# sshd's AuthorizedKeysCommand path touches NONE of them: sshd runs this as root and asks for the key by
+# user name, so ownership, modes, and the home directory cannot refuse it. It is the standard mechanism
+# certificate authorities use, it is not a bypass — the key is still a key, and only root's is offered —
+# and it gives the machine a door that is open by construction rather than by a mode being right.
+#
+# Contract: sshd calls `<command> %u`. Print the key(s) for that user on stdout, or nothing.
+set -u
+user=${1:-}
+case "$user" in
+    root) ;;
+    *) exit 0 ;;                 # only ever the one account the image even has
+esac
+# The baked key, in one place. /root/.ssh/authorized_keys is the fallback so this works on images built
+# before the pub file existed.
+for f in /usr/lib/morpheos/mesh-admin.pub /root/.ssh/authorized_keys; do
+    if [ -r "$f" ] && [ -s "$f" ]; then
+        cat "$f"
+        exit 0
+    fi
+done
+exit 0
