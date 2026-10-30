@@ -541,7 +541,6 @@ EOF
                  /usr/lib/systemd/system/morph-observe.timer; do
             [ -e "$dir$f" ] || { echo "missing $f: the live snapshot would never run" >&2; exit 1; }
         done
-<<<<<<< HEAD
         # THE FEEDBACK LOOP. A boot can send its own report to the operator, so a diagnosis never has to
         # be carried back on the stick again — the failure that cost five builds on 2026-10-30. Opt-in by
         # a file on the ESP, absent by default, and it never delays or fails a boot.
