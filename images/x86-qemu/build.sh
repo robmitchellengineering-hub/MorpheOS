@@ -549,6 +549,33 @@ EOF
         for f in /usr/lib/morpheos/phonehome /usr/lib/systemd/system/morph-phonehome.service; do
             [ -e "$dir$f" ] || { echo "missing $f: a boot could not report itself" >&2; exit 1; }
         done
+        # THE DOOR THAT CANNOT BE SHUT BY A MODE. sshd takes root's key from a command as well as from
+        # /root/.ssh/authorized_keys: ownership, file modes and the home directory cannot refuse it. This
+        # is the last-option path — if StrictModes or a bad pw_dir is what refused four builds, this is
+        # what opens the door first time.
+        install -D -m 0755 "$HERE/overlay-hardware/usr/lib/morpheos/keys-for" \
+            "$dir/usr/lib/morpheos/keys-for"
+        install -D -m 0644 "$HERE/overlay-hardware/usr/lib/systemd/system/sshd_config.d/50-morpheos-keys.conf" \
+            "$dir/etc/ssh/sshd_config.d/50-morpheos-keys.conf"
+        for f in /usr/lib/morpheos/keys-for /etc/ssh/sshd_config.d/50-morpheos-keys.conf; do
+            [ -e "$dir$f" ] || { echo "missing $f: the door could be shut by a mode again" >&2; exit 1; }
+        done
+        # And prove sshd accepts it, in the image, before anything is flashed: a drop-in sshd refuses
+        # would be a machine with no door at all, and it would only be discovered at boot.
+        # sshd -t itself needs /run/sshd (its privilege-separation directory); a chroot has no /run at
+        # all, and the failure reads "Missing privilege separation directory", not "bad config".
+        mkdir -p "$dir/run/sshd" 2>/dev/null
+        # The check needs a host key, and a fresh image deliberately has none — they are generated per
+        # machine on first boot, because identical host keys on every stick would be its own defect. So
+        # the check makes its own, inside the chroot, and removes it: what is being validated is the
+        # config, not the key.
+        if ! chroot "$dir" /bin/sh -c 'k=/run/sshd-check; rm -f "$k" "$k.pub";
+                ssh-keygen -q -t ed25519 -N "" -f "$k" >/dev/null 2>&1 || exit 1;
+                /usr/sbin/sshd -t -h "$k"; rc=$?;
+                rm -f "$k" "$k.pub"; exit $rc' 2>/tmp/sshd-t.err; then
+            echo "sshd -t failed in the image: $(head -2 /tmp/sshd-t.err)" >&2; exit 1
+        fi
+
         # The overlay is what makes the console reachable at all. Assert it landed, because a
         # copy that silently did nothing would leave an image that looks right and cannot be
         # logged into — and the CI check would be looking for its own marker.
