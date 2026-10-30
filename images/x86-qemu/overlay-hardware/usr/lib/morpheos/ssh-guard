@@ -1,0 +1,61 @@
+#!/bin/bash
+# morph-ssh-guard: make the state sshd requires true at BOOT, not only at build time.
+#
+# WHY. A flashed image answered `Permission denied (publickey)` to the very key it carries, four
+# builds running, and the network could not say why: sshd logs the reason and the log lives in RAM.
+# The research (PLANS/PLAN-morpheos-sshd-access.md) narrowed it to three causes, all of them runtime
+# state that a build-time chmod cannot guarantee:
+#
+#   1. /root owned by a uid other than 0 — StrictModes refuses on OWNERSHIP as well as mode, and the
+#      build only ever set the mode;
+#   2. /root/.ssh/authorized_keys missing, not a regular file, or resolving through a world-writable
+#      directory;
+#   3. root's pw_dir in /etc/passwd not being /root, so a relative AuthorizedKeysFile looks elsewhere.
+#
+# (A read-only /root is NOT a cause: tested live against the system sshd, key auth still succeeds.)
+#
+# This runs before ssh.service, repairs 1 and 2, and REPORTS what it found — so the next failure is
+# diagnosed from the machine's own record instead of from a guess.
+#
+# ⚠️ IT MUST NEVER FAIL A BOOT: best effort throughout, `-` on the unit's ExecStart, exit 0 always.
+set -u
+
+# Paths are parameterised so the guard can be tested off the real /root (which is the whole point:
+# a test that only runs as root on a booted image is how four builds were spent).
+KEY_FILE=${MORPH_SSH_KEY:-/usr/lib/morpheos/mesh-admin.pub}
+HOME_DIR=${MORPH_SSH_HOME:-/root}
+AUTH=$HOME_DIR/.ssh/authorized_keys
+say() { echo "morph-ssh-guard: $*"; }
+
+# 1. Ownership and modes. The owner is what the build never set.
+# mkdir BEFORE chmod: on a fresh image the directory may not exist yet, and a chmod that runs first
+# fails silently while the mkdir that follows leaves it 0755 — which StrictModes then refuses. That
+# ordering was caught by the guard's own test, not by a boot.
+mkdir -p "$HOME_DIR" "$HOME_DIR/.ssh" 2>/dev/null || true
+chown 0:0 "$HOME_DIR" "$HOME_DIR/.ssh" 2>/dev/null || true
+chmod 0700 "$HOME_DIR" 2>/dev/null || true
+chmod 0700 "$HOME_DIR/.ssh" 2>/dev/null || true
+
+# 2. The key itself. If the file is absent, not a regular file, or empty, install the baked key.
+if [ -f "$KEY_FILE" ]; then
+    if [ ! -f "$AUTH" ] || [ ! -s "$AUTH" ]; then
+        say "$AUTH is missing or empty; installing the baked key"
+        printf '%s\n' "$(cat "$KEY_FILE")" > "$AUTH" 2>/dev/null || true
+    fi
+    # The key must be present even when the file exists — a file with the wrong key looks identical
+    # to a file with the right one from the client side.
+    if ! grep -qF "$(cut -d' ' -f1,2 < "$KEY_FILE")" "$AUTH" 2>/dev/null; then
+        say "the baked key is not in $AUTH; appending it"
+        cat "$KEY_FILE" >> "$AUTH" 2>/dev/null || true
+    fi
+fi
+chown 0:0 "$AUTH" 2>/dev/null || true
+chmod 0600 "$AUTH" 2>/dev/null || true
+
+# 3. Report what sshd will actually see. This is the line that would have saved four builds.
+say "modes: $(ls -ld "$HOME_DIR" "$HOME_DIR/.ssh" "$AUTH" 2>&1 | tr '\n' ' ')"
+say "key: $(ssh-keygen -lf "$AUTH" 2>&1 | head -1)"
+if [ ! -f "$AUTH" ]; then say "⚠️ $AUTH does not exist"; fi
+if [ -L "$AUTH" ]; then say "⚠️ $AUTH is a symlink (resolved path is what StrictModes checks)"; fi
+
+exit 0
