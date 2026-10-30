@@ -562,7 +562,14 @@ EOF
         done
         # And prove sshd accepts it, in the image, before anything is flashed: a drop-in sshd refuses
         # would be a machine with no door at all, and it would only be discovered at boot.
-        if ! chroot "$dir" /usr/sbin/sshd -t 2>/tmp/sshd-t.err; then
+        # The check needs a host key, and a fresh image deliberately has none — they are generated per
+        # machine on first boot, because identical host keys on every stick would be its own defect. So
+        # the check makes its own, inside the chroot, and removes it: what is being validated is the
+        # config, not the key.
+        if ! chroot "$dir" /bin/sh -c 'k=/run/sshd-check; rm -f "$k" "$k.pub";
+                ssh-keygen -q -t ed25519 -N "" -f "$k" >/dev/null 2>&1 || exit 1;
+                /usr/sbin/sshd -t -h "$k"; rc=$?;
+                rm -f "$k" "$k.pub"; exit $rc' 2>/tmp/sshd-t.err; then
             echo "sshd -t failed in the image: $(head -2 /tmp/sshd-t.err)" >&2; exit 1
         fi
 
