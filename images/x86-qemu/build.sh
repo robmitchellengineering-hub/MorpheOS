@@ -141,7 +141,13 @@ TAILSCALE_KEY_URL=https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg
 # systemd-resolved for DNS: the browser has to reach the network (E5).
 # Mesa, because Firefox needs GL to render (WebRender), and the base carries none: with no
 # GL it comes up blank — "no Firefox" on a screen that otherwise works (E6, MacBookPro9,1).
-BROWSER_PKGS="$BASE_PKGS,firefox,fonts-dejavu-core,network-manager,wpasupplicant,systemd-resolved,libgl1-mesa-dri,libegl-mesa0,libgbm1,libglx-mesa0,pipewire,pipewire-pulse,wireplumber,alsa-ucm-conf,tailscale"
+# A MACHINE THAT CAN BUILD ON ITSELF. Rob, 2026-10-31: "build yourself properly from the inside your online".
+# The image carried git and curl but no compiler, so a Rust toolchain installed into /persist could compile
+# and then fail to link: no cc, no ld, no libc6-dev, and rust-lld without binutils is not a real linker.
+# gcc + binutils + libc6-dev + make is ~200 MB, which is why it goes in the person-facing images rather
+# than every test scenario.
+DEV_PKGS=build-essential,pkg-config
+BROWSER_PKGS="$BASE_PKGS,$DEV_PKGS,firefox,fonts-dejavu-core,network-manager,wpasupplicant,systemd-resolved,libgl1-mesa-dri,libegl-mesa0,libgbm1,libglx-mesa0,pipewire,pipewire-pulse,wireplumber,alsa-ucm-conf,tailscale"
 BROWSER_KEY="$BROWSER_PKGS,(linux-modules-extra)"
 if [ "$SCENARIO" = browser ] || [ "$SCENARIO" = plain ]; then
     BROWSER_BASE="$WORK/rootfs-browser"
@@ -359,6 +365,12 @@ make_root() {
     install -m 0755 "$STRATA" "$dir/usr/bin/strata"
     # The Manifest applier (doc 20, S11): makes the current generation real at every boot.
     install -m 0755 "$MORPH_D" "$dir/usr/bin/morphd"
+    # A COMPILER IN THE IMAGE. Rob, 2026-10-31: "build yourself properly from the inside". With git and
+    # curl alone a toolchain installed into /persist could compile and then fail at the link — no cc, no
+    # ld, no libc6-dev. gcc/binutils/make come in with DEV_PKGS; this fails the build if they did not.
+    for tool in /usr/bin/gcc /usr/bin/ld /usr/bin/make; do
+        [ -x "$dir$tool" ] || { echo "missing $tool: the machine could not build on itself" >&2; exit 1; }
+    done
     # SSH in, so the mesh can drive this machine over the network (E6: no stick, no console
     # person). Root, key only — the mesh admin key is baked into the image.
     mkdir -p "$dir/root/.ssh" "$dir/etc/ssh/sshd_config.d" "$dir/etc/systemd/system/ssh.service.d"
