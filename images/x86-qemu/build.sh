@@ -371,10 +371,18 @@ make_root() {
     # The files live in the repo (overlay-identity), not in a heredoc: a heredoc whose quoting or
     # placement drifts produces an image that calls itself Ubuntu, and the assertion below was the only
     # thing that noticed — in the A/B job, where it looked for a file the block had not written.
-    cp -a "$HERE/overlay-identity/." "$dir/"
+    cp -a "$HERE/overlay-identity/." "$dir/" || {
+        echo "could not copy $HERE/overlay-identity into $dir" >&2; exit 1; }
     ln -sf ../etc/os-release "$dir/usr/lib/os-release" 2>/dev/null || true
     for f in /etc/os-release /etc/lsb-release /etc/issue.net; do
-        [ -s "$dir$f" ] || { echo "identity file $f is missing from the image" >&2; exit 1; }
+        [ -s "$dir$f" ] || {
+            # Say WHAT is there, so the next failure explains itself instead of costing a round trip.
+            echo "identity file $f is missing from the image ($dir)" >&2
+            echo "  overlay source: $HERE/overlay-identity" >&2
+            ls -la "$HERE/overlay-identity" 2>&1 | sed 's/^/    src: /' >&2
+            ls -la "$dir/etc" 2>&1 | head -5 | sed 's/^/    dst: /' >&2
+            exit 1
+        }
     done
     grep -q '^NAME="MorpheOS"' "$dir/etc/os-release" \
         || { echo "os-release does not say MorpheOS" >&2; exit 1; }
