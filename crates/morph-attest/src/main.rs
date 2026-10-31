@@ -360,7 +360,7 @@ mod tests {
         let empty = std::env::temp_dir().join(format!("morph-attest-empty-{}", std::process::id()));
         let _ = fs::remove_dir_all(&empty);
         fs::create_dir_all(&empty).unwrap();
-        let err = Facts { root: empty }.collect().unwrap_err();
+        let err = Facts { root: empty.clone() }.collect().unwrap_err();
         assert!(err.contains("not a MorpheOS root"), "unexpected: {err}");
         let _ = fs::remove_dir_all(&empty);
     }
