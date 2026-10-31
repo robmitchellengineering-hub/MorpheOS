@@ -84,6 +84,8 @@ impl SealedSession {
                     at: before,
                     // The record describes the transition FROM `before`; the seal is what makes it checkable.
                     restored: 0,
+                    // What the state IS now. A later digest that differs means something wrote around the seal.
+                    digest: self.layer.digest()?,
                     sealed_at: 0, // stamped by `SessionLayer::seal`
                 };
                 let sealed = self.layer.seal(&record, &self.key)?;
@@ -112,6 +114,36 @@ impl SealedSession {
         let record = self.layer.undo_to(at)?;
         let sealed = self.layer.seal(&record, &self.key)?;
         Ok(Committed { sealed, restored: record.restored })
+    }
+
+    /// Compare the state on disk with the digest of the last sealed transition. Anything that differs — added,
+    /// changed or removed — is a write that happened outside a sealed change.
+    ///
+    /// This is the software answer to a limit permissions cannot close: root can always write to a file. What
+    /// root cannot do is write and stay invisible.
+    pub fn drift(&self) -> Result<Vec<String>> {
+        let history = self.layer.transitions()?;
+        let Some(last) = history.last() else {
+            // No sealed transition yet: the state has never been claimed, so nothing can have drifted from it.
+            return Ok(Vec::new());
+        };
+        let now = self.layer.digest()?;
+        let then = &last.record.digest;
+        let mut out = Vec::new();
+        for (path, hash) in &now {
+            match then.get(path) {
+                Some(old) if old == hash => {}
+                Some(_) => out.push(format!("changed outside a seal: {path}")),
+                None => out.push(format!("added outside a seal: {path}")),
+            }
+        }
+        for path in then.keys() {
+            if !now.contains_key(path) {
+                out.push(format!("removed outside a seal: {path}"));
+            }
+        }
+        out.sort();
+        Ok(out)
     }
 
     /// Every sealed transition, verified. An edited record is refused here, not discovered later.
@@ -205,6 +237,49 @@ mod tests {
         assert_eq!(s.read("a.md").unwrap(), b"one");
         assert!(undone.sealed.record.label.contains("undo"));
         assert_eq!(s.history().unwrap().len(), 3, "two changes and the undo, all sealed");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The promise that permissions cannot keep: root can write to any file. What root cannot do is write and
+    /// stay invisible — a write that bypasses the seal shows up as drift, with the path named.
+    #[test]
+    fn a_write_around_the_seal_is_reported_with_its_path() {
+        let dir = scratch("drift");
+        let s = SealedSession::open(&dir, "report", "strata://query?under=.", key()).unwrap();
+        s.change("sealed", |layer| { layer.write("a.md", b"sealed content")?; Ok(()) }).unwrap();
+        assert_eq!(s.drift().unwrap(), Vec::<String>::new(), "a clean session must report no drift");
+
+        // Write directly into the layer, exactly as a process that does not know about sealing would.
+        let sneaky = dir.join("capsule/layer/home/sneaky.txt");
+        std::fs::create_dir_all(sneaky.parent().unwrap()).unwrap();
+        std::fs::write(&sneaky, b"written around the seal").unwrap();
+
+        let drift = s.drift().unwrap();
+        assert_eq!(drift.len(), 1, "expected exactly one drifted path: {drift:?}");
+        assert!(drift[0].contains("added outside a seal"), "{drift:?}");
+        assert!(drift[0].contains("sneaky.txt"), "the path must be named: {drift:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_removed_file_is_drift_too() {
+        let dir = scratch("drift-remove");
+        let s = SealedSession::open(&dir, "report", "strata://query?under=.", key()).unwrap();
+        s.change("sealed", |layer| { layer.write("a.md", b"here")?; Ok(()) }).unwrap();
+        std::fs::remove_file(dir.join("session/a.md")).unwrap();
+        let drift = s.drift().unwrap();
+        assert_eq!(drift.len(), 1, "{drift:?}");
+        assert!(drift[0].contains("removed outside a seal"), "{drift:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_sealed_change_then_undo_leaves_no_drift() {
+        let dir = scratch("drift-undo");
+        let s = SealedSession::open(&dir, "report", "strata://query?under=.", key()).unwrap();
+        let at = s.change("one", |layer| { layer.write("a.md", b"one")?; Ok(()) }).unwrap();
+        s.undo_to(at.sealed.record.at).unwrap();
+        assert_eq!(s.drift().unwrap(), Vec::<String>::new(), "a sealed undo is not drift");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

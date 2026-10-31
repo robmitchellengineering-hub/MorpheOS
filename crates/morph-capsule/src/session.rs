@@ -11,6 +11,8 @@
 
 use std::path::{Path, PathBuf};
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::{Capsule, Error, Result, StrataQuery};
@@ -33,11 +35,49 @@ pub struct TransitionRecord {
     pub at: i64,
     /// How many paths the undo restored or removed, across both the session and its capsule.
     pub restored: u64,
+    /// What the state WAS when this transition was sealed: path → content hash, for the session's files and the
+    /// capsule's layer together. This is what makes "nothing happened outside a sealed change" checkable: a
+    /// later digest that differs means something wrote around the seal. Without it, a history can say what it
+    /// recorded but never whether it recorded everything.
+    #[serde(default)]
+    pub digest: BTreeMap<String, String>,
     /// When the record itself was made (ns). Distinct per transition — the first version of this struct had
     /// no such field, so a change and the undo of it shared a filename (both used `at`) and one silently
     /// overwrote the other. A history that loses entries without saying so is the bug this field prevents.
     #[serde(default)]
     pub sealed_at: i64,
+}
+
+/// Walk `dir`, hashing every file into `out` under `prefix/relative-path`. Symlinks are recorded by target rather
+/// than followed: following them would let a session's digest reach outside the session.
+fn collect(dir: &Path, prefix: &str, out: &mut BTreeMap<String, String>) -> Result<()> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(source) => {
+            return Err(Error::Io { what: format!("reading {}", dir.display()), source })
+        }
+    };
+    for entry in entries {
+        let entry = entry.map_err(|source| Error::Io { what: format!("reading {}", dir.display()), source })?;
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let meta = std::fs::symlink_metadata(&path)
+            .map_err(|source| Error::Io { what: format!("stat {}", path.display()), source })?;
+        let rel = format!("{prefix}/{name}");
+        if meta.file_type().is_dir() {
+            collect(&path, &rel, out)?;
+        } else if meta.file_type().is_symlink() {
+            let target = std::fs::read_link(&path)
+                .map_err(|source| Error::Io { what: format!("reading link {}", path.display()), source })?;
+            out.insert(rel, format!("symlink:{}", target.display()));
+        } else {
+            let bytes = std::fs::read(&path)
+                .map_err(|source| Error::Io { what: format!("reading {}", path.display()), source })?;
+            out.insert(rel, strata::store::hash_hex(&bytes));
+        }
+    }
+    Ok(())
 }
 
 pub struct SessionLayer {
@@ -132,6 +172,16 @@ impl SessionLayer {
         query.resolve(&strata)
     }
 
+    /// A digest of the state this session governs: every file under the session's own directory and under the
+    /// capsule's layer, by relative path, hashed. Directories are not entries; an empty directory is not state.
+    pub fn digest(&self) -> Result<BTreeMap<String, String>> {
+        let mut out = BTreeMap::new();
+        for (root, prefix) in [(&self.session_dir, "session"), (self.capsule.layer(), "capsule")] {
+            collect(root, prefix, &mut out)?;
+        }
+        Ok(out)
+    }
+
     /// Where a session keeps its sealed transitions.
     pub fn transitions_dir(&self) -> PathBuf {
         self.root.join("transitions")
@@ -213,6 +263,8 @@ impl SessionLayer {
             // `steps` is what actually happened to a path (restored or removed); `unchanged` is not
             // a restore, so counting it would inflate the record.
             restored: (session_rewind.steps.len() + capsule_rewind.steps.len()) as u64,
+            // An undo sealed the state it left behind, so it can be checked like any other transition.
+            digest: self.digest()?,
             // The record carries its own moment from birth, so what the caller holds is byte-identical to what
             // `seal` signs and what is later loaded.
             sealed_at: self.capsule.now(),
