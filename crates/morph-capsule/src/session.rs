@@ -176,7 +176,9 @@ impl SessionLayer {
     /// capsule's layer, by relative path, hashed. Directories are not entries; an empty directory is not state.
     pub fn digest(&self) -> Result<BTreeMap<String, String>> {
         let mut out = BTreeMap::new();
-        for (root, prefix) in [(&self.session_dir, "session"), (self.capsule.layer(), "capsule")] {
+        // Both roots as `&Path`, so the tuple has one type.
+        let roots: [(&Path, &str); 2] = [(&self.session_dir, "session"), (self.capsule.layer(), "capsule")];
+        for (root, prefix) in roots {
             collect(root, prefix, &mut out)?;
         }
         Ok(out)
