@@ -59,19 +59,35 @@ jobs:
           ls -l "$RUNNER_TEMP/kbuild/out/"
           cat "$RUNNER_TEMP/kbuild/out/build-report.txt"
 
+      # A static init, cross-compiled for the architecture under test. It exists because the first version
+      # of this gate put the runner's x86_64 busybox into the initramfs: x86_64 booted and passed, arm64
+      # built, booted, and then could not exec its own init — a gate that would have "passed" the easy
+      # architecture and hidden the failure on the one that mattered.
       - name: A tiny initramfs whose only job is to say what the kernel calls itself
         run: |
           set -e
+          case "${{ matrix.arch }}" in
+            x86_64) CC=gcc ;;
+            arm64)  CC=aarch64-linux-gnu-gcc ;;
+            arm)    CC=arm-linux-gnueabihf-gcc ;;
+          esac
+          cat > "$RUNNER_TEMP/hello.c" <<'C'
+          #include <stdio.h>
+          #include <sys/utsname.h>
+          int main(void) {
+              struct utsname u;
+              if (uname(&u) != 0) return 1;
+              printf("MORPHEOS-GATE uname-s: %s\n", u.sysname);
+              printf("MORPHEOS-GATE uname-r: %s\n", u.release);
+              fflush(stdout);
+              return 0;
+          }
+          C
+          "$CC" -static -o "$RUNNER_TEMP/init" "$RUNNER_TEMP/hello.c"
+          file "$RUNNER_TEMP/init" || true
           D="$RUNNER_TEMP/initrd"
-          mkdir -p "$D"/{bin,proc,sys,dev}
-          cp /usr/bin/busybox "$D/bin/" 2>/dev/null || cp "$(command -v busybox)" "$D/bin/"
-          cat > "$D/init" <<'INIT'
-          #!/bin/busybox sh
-          /bin/busybox mount -t proc proc /proc
-          echo "MORPHEOS-GATE uname-s: $(/bin/busybox uname -s)"
-          echo "MORPHEOS-GATE uname-r: $(/bin/busybox uname -r)"
-          /bin/busybox poweroff -f
-          INIT
+          mkdir -p "$D"
+          cp "$RUNNER_TEMP/init" "$D/init"
           chmod +x "$D/init"
           (cd "$D" && find . | cpio -o -H newc 2>/dev/null | gzip -9) > "$RUNNER_TEMP/initrd.gz"
 
@@ -95,7 +111,7 @@ jobs:
               -nographic -no-reboot -m 1024 > "$LOG" 2>&1 || true
           else
             # arm64: the virt machine is the closest thing to a Pi 5 or an arm64 server for a boot test.
-            timeout 240 qemu-system-aarch64 \
+            timeout 420 qemu-system-aarch64 \
               -machine virt -cpu cortex-a57 -m 1024 -smp 2 \
               -kernel "$RUNNER_TEMP/kbuild/out/vmlinuz-morpheos" \
               -initrd "$RUNNER_TEMP/initrd.gz" \
@@ -121,6 +137,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-serial-log
+          name: kernel-serial-log-${{ matrix.arch }}
           path: ${{ runner.temp }}/serial.log
           if-no-files-found: warn
