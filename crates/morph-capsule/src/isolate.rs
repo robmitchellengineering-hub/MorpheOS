@@ -67,7 +67,12 @@ impl super::Capsule {
     /// populate. Creating them here means the bootstrap cannot fail half-way through for a missing directory.
     fn prepare_rootfs(&self) -> Result<PathBuf> {
         let root = self.rootfs();
-        for dir in ["usr", "bin", "sbin", "lib", "lib64", "etc", "proc", "dev", "tmp", "home", "root", "var"] {
+        // `.oldroot` must exist inside the new root before pivot_root: the first attempt failed with
+        // "failed to change root from `.` to `.oldroot`: No such file or directory", which is what a pivot
+        // without the mount point looks like.
+        for dir in [
+            "usr", "bin", "sbin", "lib", "lib64", "etc", "proc", "dev", "tmp", "home", "root", "var", ".oldroot",
+        ] {
             std::fs::create_dir_all(root.join(dir)).map_err(|source| Error::Io {
                 what: format!("creating {}", root.join(dir).display()),
                 source,
@@ -212,7 +217,9 @@ mod tests {
     fn the_capsule_cannot_read_a_file_outside_itself() {
         let dir = scratch("hostfile");
         let c = super::super::Capsule::open(&dir, "reader").unwrap();
-        let host_marker = PathBuf::from(format!("/root/capsule-host-marker-{}", std::process::id()));
+        // `/persist` is the writable host filesystem (the root is read-only by design), so the marker goes
+        // there: the first version wrote to /root, which failed with EROFS and skipped the whole test.
+        let host_marker = PathBuf::from(format!("/persist/capsule-host-marker-{}", std::process::id()));
         let marker_path = host_marker.display().to_string();
         if std::fs::write(&host_marker, b"HOST-SECRET").is_err() {
             eprintln!("skipping: not root, so a pivot_root test proves nothing");
