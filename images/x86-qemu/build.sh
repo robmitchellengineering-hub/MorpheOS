@@ -362,23 +362,7 @@ make_root() {
             install -D -m 0644 "$UPDATE_TEST_CA" "$dir/usr/share/morpheos/update-test-ca.pem"
         fi
     fi
-    # hostnamectl print "Operating System: Ubuntu", so MorpheOS was indistinguishable from its base — Rob,
-    # 2026-10-31: "how do we stop getting MorpheOS to stop being recognised by other systems as linux".
-    # ID_LIKE keeps apt and everything else that branches on the distribution working, because it is true:
-    # this is a Debian-family userland. What changes is the NAME a person or a scanner sees.
-    # (uname -s stays "Linux": that is the kernel's sysname and only a patched kernel changes it.)
-    # placement drifts produces an image that calls itself Ubuntu, and the assertion below was the only
-    # thing that noticed — in the A/B job, where it looked for a file the block had not written.
-    # Asserted only where the image CLAIMS the identity: the person-facing image is the one whose
-    # never claims it, so asserting there was checking a claim nobody makes — which is how this
-    # blocked the A/B job twice while the shipped image was correct all along.
-    if [ "${SHELL_UI:-0}" = 1 ]; then
-            [ -s "$dir$f" ] || {
-                ls -la "$dir/etc" 2>&1 | head -5 | sed 's/^/    dst: /' >&2
-                exit 1
-            }
-        done
-    fi
+    # (Identity is installed with the shell overlay below — the image a person boots — and asserted there.)
     # Which release this image is: morph-update refuses a payload older than it, however
     # well signed, and morph-heal reinstalls exactly it (doc 20, S3).
     install -D -m 0644 /dev/null "$dir/usr/lib/morpheos/release"
