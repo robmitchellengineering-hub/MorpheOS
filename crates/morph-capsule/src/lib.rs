@@ -20,9 +20,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+mod isolate;
 mod query;
 mod session;
 
+pub use isolate::Isolation;
 pub use query::{ResolvedFile, StrataQuery};
 pub use session::{SessionLayer, TransitionRecord};
 
