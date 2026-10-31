@@ -15,6 +15,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Capsule, Error, Result, StrataQuery};
 
+/// A transition record together with the signature that makes it checkable later by someone who was not
+/// there. The seal is ed25519 over the record's canonical JSON — the same primitive `morph-attest` uses for
+/// the machine's self-description, so one public key can check both what the machine is and what it did.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SealedTransition {
+    pub record: TransitionRecord,
+    pub signature: String,
+    pub key: String,
+}
+
 /// A record of one transition, written into the session so the machine can say what was undone and when.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TransitionRecord {
@@ -113,6 +123,65 @@ impl SessionLayer {
         query.resolve(&strata)
     }
 
+    /// Where a session keeps its sealed transitions.
+    pub fn transitions_dir(&self) -> PathBuf {
+        self.session_dir.join(".transitions")
+    }
+
+    /// Seal a transition with `key` and keep it. A transition nobody sealed is a claim with no author, and the
+    /// product's promise ("prove what it did") needs the author.
+    pub fn seal(&self, record: &TransitionRecord, key: &ed25519_dalek::SigningKey) -> Result<SealedTransition> {
+        let payload = serde_json::to_vec(record).map_err(|e| Error::Refused(format!("{e}")))?;
+        let sealed = SealedTransition {
+            record: record.clone(),
+            signature: morph_attest::sign_payload(key, &payload),
+            key: morph_attest::hex(key.verifying_key().as_bytes()),
+        };
+        std::fs::create_dir_all(self.transitions_dir()).map_err(|source| Error::Io {
+            what: format!("creating {}", self.transitions_dir().display()),
+            source,
+        })?;
+        let path = self
+            .transitions_dir()
+            .join(format!("{}.json", record.at));
+        std::fs::write(&path, serde_json::to_vec_pretty(&sealed).map_err(|e| Error::Refused(format!("{e}")))?)
+            .map_err(|source| Error::Io { what: format!("writing {}", path.display()), source })?;
+        Ok(sealed)
+    }
+
+    /// Read the sealed transitions, and **refuse** any whose signature does not cover its record. The refusal
+    /// is the point: a history that silently accepts an edited record is a history nobody can use as evidence.
+    pub fn transitions(&self) -> Result<Vec<SealedTransition>> {
+        let dir = self.transitions_dir();
+        let mut out = Vec::new();
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(e) => e,
+            Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(out),
+            Err(source) => {
+                return Err(Error::Io { what: format!("reading {}", dir.display()), source })
+            }
+        };
+        for entry in entries {
+            let entry = entry.map_err(|source| Error::Io { what: format!("reading {}", dir.display()), source })?;
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            let bytes = std::fs::read(&path)
+                .map_err(|source| Error::Io { what: format!("reading {}", path.display()), source })?;
+            let sealed: SealedTransition = serde_json::from_slice(&bytes)
+                .map_err(|e| Error::Refused(format!("{} is not a sealed transition: {e}", path.display())))?;
+            let payload = serde_json::to_vec(&sealed.record)
+                .map_err(|e| Error::Refused(format!("{e}")))?;
+            morph_attest::verify_payload(&sealed.key, &payload, &sealed.signature).map_err(|why| {
+                Error::Refused(format!("{} is not trustworthy: {why}", path.display()))
+            })?;
+            out.push(sealed);
+        }
+        out.sort_by_key(|s| s.record.at);
+        Ok(out)
+    }
+
     /// Undo the session **and** its capsule to a moment, as one transition. This is the unit the product
     /// promises: a change a person made and a change an application made, taken back together.
     pub fn undo_to(&self, at: i64) -> Result<TransitionRecord> {
@@ -171,6 +240,38 @@ mod tests {
             "the application's state must come back in the SAME undo"
         );
         assert!(record.restored >= 2, "both paths must be reported as restored: {}", record.restored);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_sealed_transition_verifies_and_a_tampered_one_is_refused() {
+        let dir = scratch("seal");
+        let s = SessionLayer::open(&dir, "report", "strata://query?under=.").unwrap();
+        let key = ed25519_dalek::SigningKey::from_bytes(&[11u8; 32]);
+        s.write("a.md", b"one").unwrap();
+        let at = s.record().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        s.write("a.md", b"two").unwrap();
+        s.record().unwrap();
+        let record = s.undo_to(at).unwrap();
+        s.seal(&record, &key).unwrap();
+
+        let loaded = s.transitions().unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].record, record, "the same record must verify");
+
+        // Now edit the stored record the way an attacker editing history would: one field.
+        let path = s.transitions_dir().join(format!("{}.json", record.at));
+        let text = std::fs::read_to_string(&path).unwrap();
+        let mut value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        value["record"]["restored"] = serde_json::json!(999);
+        std::fs::write(&path, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
+
+        match s.transitions() {
+            Err(Error::Refused(why)) => assert!(why.contains("not trustworthy"), "unexpected: {why}"),
+            Ok(v) => panic!("an edited transition was accepted: {v:?}"),
+            Err(other) => panic!("unexpected error: {other:?}"),
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -7,6 +7,8 @@ repository.workspace = true
 description = "MorpheOS: a capsule is an app plus a Strata-versioned user layer, so what it does can be undone"
 
 [dependencies]
+ed25519-dalek = "2"
+morph-attest = { path = "../morph-attest" }
 strata = { path = "../strata" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"

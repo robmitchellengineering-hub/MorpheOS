@@ -176,6 +176,27 @@ pub fn evaluate(signed: &SignedStatement, trusted: Option<&VerifyingKey>, now: &
     }
 }
 
+
+/// Sign arbitrary canonical bytes. The transition record of a session or a capsule needs the same seal the
+/// machine's self-description gets, and it is not a `Statement` — so this is the primitive, exposed rather than
+/// duplicated. The signature covers exactly `payload`; a caller that signs a structure must serialise it
+/// canonically first, or two machines with the same facts will disagree.
+pub fn sign_payload(key: &SigningKey, payload: &[u8]) -> String {
+    hex(&key.sign(payload).to_bytes())
+}
+
+/// Check a payload signature against a hex verifying key. Returns the reason, not just a bool: "why" is what
+/// someone reading a refusal needs.
+pub fn verify_payload(key_hex: &str, payload: &[u8], signature_hex: &str) -> Result<(), String> {
+    let key_bytes = unhex(key_hex).ok_or("the key is not hex")?;
+    let key_bytes: [u8; 32] = key_bytes.try_into().map_err(|_| "the key is not 32 bytes")?;
+    let vk = VerifyingKey::from_bytes(&key_bytes).map_err(|_| "the key is not an ed25519 public key")?;
+    let sig_bytes = unhex(signature_hex).ok_or("the signature is not hex")?;
+    let sig_bytes: [u8; 64] = sig_bytes.try_into().map_err(|_| "the signature is not 64 bytes")?;
+    vk.verify(payload, &Signature::from_bytes(&sig_bytes))
+        .map_err(|_| "the signature does not cover these bytes".to_string())
+}
+
 pub fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -227,6 +248,19 @@ mod tests {
     fn key() -> SigningKey {
         // A fixed key: a test that generates randomness proves nothing about reproducibility.
         SigningKey::from_bytes(&[7u8; 32])
+    }
+
+    #[test]
+    fn a_payload_signature_covers_exactly_its_bytes() {
+        let key = key();
+        let payload = b"transition: {restored: 2}";
+        let sig = sign_payload(&key, payload);
+        assert!(verify_payload(&hex(key.verifying_key().as_bytes()), payload, &sig).is_ok());
+        // One changed byte must fail: this is the property the transition record depends on.
+        assert!(verify_payload(&hex(key.verifying_key().as_bytes()), b"transition: {restored: 3}", &sig).is_err());
+        // And a foreign key must not verify it.
+        let other = SigningKey::from_bytes(&[3u8; 32]);
+        assert!(verify_payload(&hex(other.verifying_key().as_bytes()), payload, &sig).is_err());
     }
 
     #[test]
