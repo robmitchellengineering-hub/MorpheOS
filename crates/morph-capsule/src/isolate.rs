@@ -87,7 +87,9 @@ impl super::Capsule {
     pub fn spawn_isolated(&self, script: &str) -> Result<Child> {
         let root = self.prepare_rootfs()?;
         // The entry script lives in the layer, so it is versioned with the capsule's own state.
-        let entry = self.layer().join(".capsule-entry");
+        // Inside the new root, not beside it: the chroot cannot see the layer, only the layer's rootfs. It is
+        // still inside the layer, so Strata versions it like every other thing the capsule writes.
+        let entry = self.rootfs().join(".capsule-entry");
         std::fs::write(&entry, script).map_err(|source| Error::Io {
             what: format!("writing {}", entry.display()),
             source,
