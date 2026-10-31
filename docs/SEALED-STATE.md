@@ -72,6 +72,42 @@ building the command, not only the library.
    end-to-end undo deleted the record of what it undid. They live at `<root>/transitions`, outside anything a
    rewind touches. **A history inside the thing it describes is not a history.**
 
+## The second half: impossible where possible, detectable always
+
+Permissions stop everyone but the owner. They cannot stop root — so the product answers that with detection
+rather than a promise:
+
+```
+$ morph-session verify --deep      # a clean session
+history: 1 sealed transition(s), all verified
+state: clean (nothing written outside a sealed transition)
+
+$ echo sneaky > $R/s/capsule/layer/home/sneaky.txt     # root, around the seal
+$ morph-session verify --deep
+history: 1 sealed transition(s), all verified
+state: 1 path(s) written outside a sealed transition:
+  added outside a seal: capsule/home/sneaky.txt
+exit=1
+```
+
+Every sealed transition records a **digest** of the state it sealed (path → content hash, over the session's
+files and the capsule's layer together). `verify --deep` compares that with the state on disk and names each
+added, changed or removed path. A sealed undo is not drift; a write around the seal is.
+
+And permissions, on the same machine:
+
+```
+700 .strata   700 transitions   600 key        # owner-only
+as nobody: write into the history  → Permission denied
+as nobody: overwrite the key       → Permission denied
+as nobody: read the history        → Permission denied
+```
+
+> **The two halves together:** a change the seal does not know about is either *impossible* (another user) or
+> *visible* (root, named path, exit 1). What is left is root editing the store *and* every seal consistently,
+> which is no longer a gap in this design but a gap in the machine's root of trust — and that is measured boot
+> (IMA + TPM), not permissions.
+
 ## Where the state lives
 
 ```
