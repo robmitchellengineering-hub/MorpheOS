@@ -61,14 +61,10 @@ cd "linux-$KVER"
 # Branding by a deterministic edit, not a patch: a hand-written diff has context that drifts between
 # point releases, and a patch that silently fails to apply would produce a kernel that calls itself Linux
 # while the build looks green. branding.patch stays as the explanation of WHY, not as the mechanism.
-if ! grep -q 'UTS_SYSNAME "MorpheOS"' include/linux/uts.h; then
-    sed -i 's/#define UTS_SYSNAME "Linux"/#define UTS_SYSNAME "MorpheOS"/' include/linux/uts.h
-fi
-grep -q 'UTS_SYSNAME "MorpheOS"' include/linux/uts.h || {
-    echo "could not set UTS_SYSNAME to MorpheOS — refusing to build a kernel with the wrong name" >&2
-    exit 1
-}
-echo "branding: UTS_SYSNAME is MorpheOS"
+# THIS IS THE PROOF BRANCH (test/gate-must-fail) AND IT IS DELIBERATELY WRONG.
+# The branding is left as Linux so the gate has something it must catch. If this branch goes green, the
+# gate does not work.
+echo "branding: DELIBERATELY LEFT AS Linux (proof that the gate catches it)"
 
 # 3. Our configuration, merged on top of a small base so the result is a decision list rather than a
 #    vendor defconfig with everything enabled.

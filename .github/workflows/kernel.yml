@@ -10,7 +10,7 @@ name: kernel
 
 on:
   push:
-    branches: [secure]
+    branches: [secure, 'test/**']
     paths: ['secure/kernel/**', '.github/workflows/kernel.yml']
   pull_request:
     paths: ['secure/kernel/**', '.github/workflows/kernel.yml']
