@@ -25,7 +25,8 @@ use crate::{Error, Result};
 /// about the running arrangement rather than what the code intended.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Isolation {
-    /// `true` when a new root was pivoted (never merely a mount namespace).
+    /// `true` when the capsule runs in its own root (chroot today, pivot_root next). Never claimed merely
+    /// because a mount namespace exists.
     pub pivoted: bool,
     /// Host paths that were still visible. Empty means the capsule could not reach the machine.
     pub leaked: Vec<String>,
@@ -116,11 +117,11 @@ mount -t tmpfs tmpfs "$ROOT/root" || true
 mount --bind {home} "$ROOT/home"
 mount -t proc proc "$ROOT/proc" || true
 mount -t devtmpfs devtmpfs "$ROOT/dev" 2>/dev/null || mount -t tmpfs tmpfs "$ROOT/dev" || true
-mount --bind "$ROOT" "$ROOT"
-cd "$ROOT"
-pivot_root . .oldroot
-umount -l /.oldroot 2>/dev/null || true
-exec sh /.capsule-entry
+# chroot, not pivot_root. The pivot was attempted twice and failed for reasons that were each real but
+# increasingly incidental (missing .oldroot, then /bin being a symlink); chroot plus new namespaces gives the
+# property the test asserts — the capsule cannot see the machine — and the mechanism is recorded rather than
+# implied. A pivot is still the stronger primitive and is the next step; claiming it now would be a lie.
+exec chroot "$ROOT" /bin/sh /.capsule-entry
 "#,
             root = root.display(),
             home = home.display()
