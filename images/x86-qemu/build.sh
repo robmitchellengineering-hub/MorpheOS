@@ -72,6 +72,8 @@ MORPH_MANIFEST=${MORPH_MANIFEST:-$REPO/target/release/morph-manifest}
 MORPH_D=${MORPH_D:-$REPO/target/release/morphd}
 # The machine that can state what it is (docs/ATTESTATION.md). Same build, same release profile.
 MORPH_ATTEST=${MORPH_ATTEST:-$REPO/target/release/morph-attest}
+# A session whose every change is sealed (docs/SEALED-STATE.md). Same build, same release profile.
+MORPH_SESSION=${MORPH_SESSION:-$REPO/target/release/morph-session}
 MORPH_AUTOUPDATE=${MORPH_AUTOUPDATE:-$REPO/target/release/morph-autoupdate}
 SDBOOT_EFI=${SDBOOT_EFI:-/usr/lib/systemd/boot/efi/systemd-bootx64.efi}
 FLOW_COMPOSITOR=${FLOW_COMPOSITOR:-$REPO/target/release/flow-compositor}
@@ -367,6 +369,11 @@ make_root() {
     install -m 0755 "$MORPH_ATTEST" "$dir/usr/bin/morph-attest"
     [ -x "$dir/usr/bin/morph-attest" ] \
         || { echo "morph-attest did not install: the machine could not state what it is" >&2; exit 1; }
+    # SEALED STATE: a machine whose changes can be signed and checked, so "prove what it did" is a command and
+    # not a promise. Installed with the identity because a person booting this image should be able to run it.
+    install -m 0755 "$MORPH_SESSION" "$dir/usr/bin/morph-session"
+    [ -x "$dir/usr/bin/morph-session" ] \
+        || { echo "morph-session did not install: the machine could not prove what it did" >&2; exit 1; }
     # SSH in, so the mesh can drive this machine over the network (E6: no stick, no console
     # person). Root, key only — the mesh admin key is baked into the image.
     mkdir -p "$dir/root/.ssh" "$dir/etc/ssh/sshd_config.d" "$dir/etc/systemd/system/ssh.service.d"

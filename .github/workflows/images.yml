@@ -52,6 +52,9 @@ jobs:
       # would install a file that was never compiled, and fail as a missing file rather than as a
       # missing build — the sort of failure that costs a round trip to diagnose.
       - run: cargo build --release -p morph-attest
+      # The session binary the image installs (docs/SEALED-STATE.md). Same reason as the line above: an
+      # install of a binary nobody built fails as a missing file, which reads like a packaging bug.
+      - run: cargo build --release -p morph-capsule
       # The SAME script the builder runs in WSL2 (doc 20, S10), with the image and VM tools,
       # and KVM opened up if the runner has it.
       - name: Install image and VM tools (scripts/setup-linux.sh --images)
