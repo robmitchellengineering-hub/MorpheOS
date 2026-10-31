@@ -201,32 +201,49 @@ mod tests {
     }
 
     /// THE RUNG-1 FALSIFIER: a file on the machine, outside the capsule, must be unreadable inside it.
-    /// This needs root (mount + pivot_root), which is why it runs on the mesh node, not on the Mac.
+    ///
+    /// The first version of this test used a glob that could not match the file it created, so it passed on a
+    /// failed `cat` rather than on isolation — the same false-pass class as a tamper test that changes a value
+    /// to itself. This version names the exact path, proves from the host that the file is readable there,
+    /// and only then asserts that the capsule cannot read it.
+    ///
+    /// Needs root (mount + pivot_root), which is why it runs on the mesh node.
     #[test]
     fn the_capsule_cannot_read_a_file_outside_itself() {
         let dir = scratch("hostfile");
         let c = super::super::Capsule::open(&dir, "reader").unwrap();
-        // A marker on the machine, in two places a capsule must not reach: /root and /tmp of the host.
         let host_marker = PathBuf::from(format!("/root/capsule-host-marker-{}", std::process::id()));
+        let marker_path = host_marker.display().to_string();
         if std::fs::write(&host_marker, b"HOST-SECRET").is_err() {
             eprintln!("skipping: not root, so a pivot_root test proves nothing");
             return;
         }
+        // Control: the file IS readable from the host. Without this, a typo would look like isolation.
+        assert_eq!(
+            std::fs::read(&host_marker).unwrap(),
+            b"HOST-SECRET",
+            "the control failed: the marker is not readable even on the host"
+        );
         c.write("home/own.txt", b"CAPSULE-OWN").unwrap();
 
-        let (code, stdout, stderr) = c
-            .run_isolated("cat /root/../../root/capsule-host-marker-*.txt 2>/dev/null; cat /home/own.txt")
-            .unwrap();
+        let script = format!(
+            "echo own:$(cat /home/own.txt); echo host:$(cat {marker_path} 2>/dev/null || echo NOT-VISIBLE); \
+             echo persist:$(ls /persist 2>/dev/null | head -1 || echo ABSENT)"
+        );
+        let (code, stdout, _stderr) = c.run_isolated(&script).unwrap();
         let _ = std::fs::remove_file(&host_marker);
 
         assert!(
-            stdout.contains("CAPSULE-OWN"),
-            "the capsule must be able to read its own layer: code={code:?} stdout={stdout} stderr={stderr}"
+            stdout.contains("own:CAPSULE-OWN"),
+            "the capsule must read its own layer: code={code:?} stdout={stdout}"
         );
         assert!(
-            !stdout.contains("HOST-SECRET"),
-            "the capsule read a file from the host's /root: {}",
-            stdout
+            stdout.contains("host:NOT-VISIBLE"),
+            "the capsule read the host's /root marker: {stdout}"
+        );
+        assert!(
+            stdout.contains("persist:ABSENT"),
+            "the host's /persist was visible inside the capsule: {stdout}"
         );
     }
 
