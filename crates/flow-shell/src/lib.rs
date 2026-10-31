@@ -378,6 +378,13 @@ impl Frame {
 pub struct SessionView {
     /// The session model: identity, label, feel, and what it is opening.
     pub model: Session,
+    /// Where this session's state lives: a `SessionLayer` root (a person's files plus the capsule's layer,
+    /// recorded in one Strata history — see `morph-capsule`). The shell carries the handle rather than the
+    /// implementation, so a compositor does not link a database to know where a session's work is.
+    ///
+    /// `None` means a session with no persistent state yet (a terminal-only session), which is a real state
+    /// and not an error.
+    pub layer_root: Option<PathBuf>,
     /// Where it is drawn. Laid out by the shell, not by the session.
     pub surface: Rect,
     /// The text the session has accumulated. Private: input reaches it only through
@@ -523,12 +530,48 @@ impl Shell {
         let id = model.id();
         self.sessions.push(SessionView {
             model,
+            layer_root: None,
             surface: Rect::new(0, 0, 0, 0),
             terminal: Terminal::new(),
         });
         self.focused = Some(id);
         self.relayout();
         id
+    }
+
+    /// Give a session its state: the root of its `SessionLayer`. A session is the unit of the machine, so
+    /// this is how "the thing I was doing" becomes "the files and app state I can undo".
+    ///
+    /// Returns false when there is no such session — attaching state to a session that does not exist is a
+    /// caller bug, and silence would hide it.
+    pub fn attach_layer(&mut self, id: SessionId, root: impl Into<PathBuf>) -> bool {
+        match self.sessions.iter_mut().find(|s| s.model.id() == id) {
+            Some(view) => {
+                view.layer_root = Some(root.into());
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Where a session's state lives, if it has any.
+    #[must_use]
+    pub fn layer_root(&self, id: SessionId) -> Option<&PathBuf> {
+        self.sessions
+            .iter()
+            .find(|s| s.model.id() == id)
+            .and_then(|s| s.layer_root.as_ref())
+    }
+
+    /// Forget a session, returning where its state lived so the caller can keep it. Closing a session must
+    /// never be how a person loses their work: the layer is theirs, and the shell only forgets the view.
+    pub fn close_session_keeping_state(&mut self, id: SessionId) -> Option<PathBuf> {
+        let root = self.layer_root(id).cloned();
+        if self.close_session(id) {
+            root
+        } else {
+            None
+        }
     }
 
     /// Forget a session. Returns whether it existed.
