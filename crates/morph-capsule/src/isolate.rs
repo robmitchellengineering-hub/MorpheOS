@@ -107,12 +107,20 @@ impl super::Capsule {
 ROOT={root}
 # /bin and /sbin are symlinks into /usr on this system, so binding the link binds nothing useful: the
 # first attempt pivoted successfully and then failed with "exec: sh: not found". Resolve first.
-for d in usr bin sbin lib lib64 etc; do
+for d in usr bin sbin lib lib64; do
   if [ -e "/$d" ]; then
     src=$(readlink -f "/$d")
     mount --bind -o ro "$src" "$ROOT/$d" || echo "bootstrap: could not bind /$d" >&2
   fi
 done
+# /etc is NOT bind-mounted wholesale: doing that leaked the host's /etc/shadow into the capsule, which the
+# measurement caught (leaked=[/etc/shadow]). Only what a dynamic binary needs is copied in.
+for f in passwd group nsswitch.conf hosts localtime ld.so.cache ld.so.conf resolv.conf; do
+  if [ -e "/etc/$f" ]; then
+    cp -a "/etc/$f" "$ROOT/etc/$f" 2>/dev/null || true
+  fi
+done
+mkdir -p "$ROOT/etc/ld.so.conf.d" 2>/dev/null || true
 mount -t tmpfs tmpfs "$ROOT/tmp" || true
 mount -t tmpfs tmpfs "$ROOT/var" || true
 mount -t tmpfs tmpfs "$ROOT/root" || true
