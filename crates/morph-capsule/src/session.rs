@@ -136,9 +136,12 @@ impl SessionLayer {
     /// Seal a transition with `key` and keep it. A transition nobody sealed is a claim with no author, and the
     /// product's promise ("prove what it did") needs the author.
     pub fn seal(&self, record: &TransitionRecord, key: &ed25519_dalek::SigningKey) -> Result<SealedTransition> {
-        // Stamp the record with its own moment, so two transitions that share an `at` cannot collide.
+        // Stamp the record with its own moment if it does not have one yet. Stamping here as well as at creation
+        // would give the record the caller holds and the record on disk different moments.
         let mut record = record.clone();
-        record.sealed_at = self.capsule.now();
+        if record.sealed_at == 0 {
+            record.sealed_at = self.capsule.now();
+        }
         let payload = serde_json::to_vec(&record).map_err(|e| Error::Refused(format!("{e}")))?;
         let sealed = SealedTransition {
             record: record.clone(),
@@ -206,7 +209,9 @@ impl SessionLayer {
             // `steps` is what actually happened to a path (restored or removed); `unchanged` is not
             // a restore, so counting it would inflate the record.
             restored: (session_rewind.steps.len() + capsule_rewind.steps.len()) as u64,
-            sealed_at: 0, // stamped by `seal`
+            // The record carries its own moment from birth, so what the caller holds is byte-identical to what
+            // `seal` signs and what is later loaded.
+            sealed_at: self.capsule.now(),
         })
     }
 }
