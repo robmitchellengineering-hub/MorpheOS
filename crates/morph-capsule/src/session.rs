@@ -105,6 +105,17 @@ impl SessionLayer {
 
         // The capsule reuses the session's store, so one rewind covers both. `Capsule::open` would create its
         // own history beside it, which is precisely the split that makes "undo the session" a lie.
+        // WHO CAN WRITE. The store and the sealed history are owner-only: another user must not be able to edit
+        // the history it cannot author. The layer stays the application's workspace (0700 too — the app runs as
+        // this session's owner), and the capsule's rootfs is rebuilt per run.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for dir in [&strata_root, &root.join("transitions")] {
+                let _ = std::fs::create_dir_all(dir);
+                let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
+            }
+        }
         let capsule = Capsule::open_with_store(root.join("capsule"), label, &strata_root)?;
         let query = StrataQuery::parse(query)?;
         Ok(Self { capsule, session_dir, strata_root, query, root })

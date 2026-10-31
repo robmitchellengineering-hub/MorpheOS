@@ -8,7 +8,8 @@
 //!   morph-session open    --root DIR --label L [--query URL] --key PATH
 //!   morph-session run     --root DIR --key PATH [--isolated] -- <command...>
 //!   morph-session undo    --root DIR --key PATH [--at NS]
-//!   morph-session history --root DIR
+//!   morph-session history --root DIR [--key PATH]
+//!   morph-session verify  --root DIR --key PATH [--deep]
 //!
 //! Exit codes: 0 done, 1 refused, 2 misuse. `history` refuses a history that does not verify, because a history
 //! a tool cannot check is not evidence.
@@ -73,6 +74,12 @@ fn main() -> ExitCode {
             if std::fs::write(&out, morph_attest::hex(&seed)).is_err() {
                 eprintln!("morph-session: could not write {}", out.display());
                 return ExitCode::from(1);
+            }
+            // 0600: a key anybody can read seals nothing.
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(&out, std::fs::Permissions::from_mode(0o600));
             }
             let key = SigningKey::from_bytes(&seed);
             println!(
@@ -216,8 +223,48 @@ fn main() -> ExitCode {
                 }
             }
         }
+        "verify" => {
+            let session = match open(&args) {
+                Ok(s) => s,
+                Err(why) => {
+                    eprintln!("morph-session: {why}");
+                    return ExitCode::from(1);
+                }
+            };
+            // The history first: a seal that does not verify makes any drift report meaningless.
+            match session.history() {
+                Ok(history) => println!("history: {} sealed transition(s), all verified", history.len()),
+                Err(why) => {
+                    eprintln!("morph-session: history does not verify: {why}");
+                    return ExitCode::from(1);
+                }
+            }
+            if args.iter().any(|a| a == "--deep") {
+                match session.drift() {
+                    Ok(drift) if drift.is_empty() => {
+                        println!("state: clean (nothing written outside a sealed transition)");
+                        ExitCode::SUCCESS
+                    }
+                    Ok(drift) => {
+                        eprintln!("state: {} path(s) written outside a sealed transition:", drift.len());
+                        for d in drift {
+                            eprintln!("  {d}");
+                        }
+                        ExitCode::from(1)
+                    }
+                    Err(why) => {
+                        eprintln!("morph-session: {why}");
+                        ExitCode::from(1)
+                    }
+                }
+            } else {
+                ExitCode::SUCCESS
+            }
+        }
         other => {
-            eprintln!("morph-session: unknown command '{other}' (keygen|open|run|undo|history)");
+            eprintln!(
+                "morph-session: unknown command '{other}' (keygen|open|run|undo|history|verify)"
+            );
             ExitCode::from(2)
         }
     }
