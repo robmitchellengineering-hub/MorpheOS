@@ -49,6 +49,7 @@
 //! [ADR 0011]: ../../docs/adr/0011-the-humans-mark.md
 
 use std::collections::BTreeSet;
+use std::path::PathBuf;
 
 mod font;
 mod input;
