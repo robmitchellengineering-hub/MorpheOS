@@ -352,6 +352,37 @@ make_root() {
             install -D -m 0644 "$UPDATE_TEST_CA" "$dir/usr/share/morpheos/update-test-ca.pem"
         fi
     fi
+    # WHAT THE MACHINE CALLS ITSELF. Ubuntu's os-release made every tool report "Ubuntu 24.04.5 LTS" and
+    # hostnamectl print "Operating System: Ubuntu", so MorpheOS was indistinguishable from its base — Rob,
+    # 2026-10-31: "how do we stop getting MorpheOS to stop being recognised by other systems as linux".
+    # ID_LIKE keeps apt and everything else that branches on the distribution working, because it is true:
+    # this is a Debian-family userland. What changes is the NAME a person or a scanner sees.
+    # (uname -s stays "Linux": that is the kernel's sysname and only a patched kernel changes it.)
+    mkdir -p "$dir/etc"
+    cat > "$dir/etc/os-release" <<'OSREL'
+PRETTY_NAME="MorpheOS 1.0"
+NAME="MorpheOS"
+VERSION_ID="1.0"
+VERSION="1.0 (Noble)"
+VERSION_CODENAME=noble
+ID=morpheos
+ID_LIKE="debian ubuntu"
+HOME_URL="https://github.com/robmitchellengineering-hub/MorpheOS"
+SUPPORT_URL="https://github.com/robmitchellengineering-hub/MorpheOS"
+BUG_REPORT_URL="https://github.com/robmitchellengineering-hub/MorpheOS/issues"
+LOGO=morpheos
+UBUNTU_CODENAME=noble
+OSREL
+    ln -sf ../etc/os-release "$dir/usr/lib/os-release" 2>/dev/null || true
+    cat > "$dir/etc/lsb-release" <<'LSB'
+DISTRIB_ID=MorpheOS
+DISTRIB_RELEASE=1.0
+DISTRIB_CODENAME=noble
+DISTRIB_DESCRIPTION="MorpheOS 1.0 (Noble)"
+LSB
+    printf 'MorpheOS 1.0 \\n \\l\n\n' > "$dir/etc/issue.net"
+    grep -q '^NAME="MorpheOS"' "$dir/etc/os-release" \
+        || { echo "os-release does not say MorpheOS" >&2; exit 1; }
     # Which release this image is: morph-update refuses a payload older than it, however
     # well signed, and morph-heal reinstalls exactly it (doc 20, S3).
     install -D -m 0644 /dev/null "$dir/usr/lib/morpheos/release"
