@@ -1,0 +1,15 @@
+[package]
+name = "morph-attest"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "MorpheOS: a signed statement of what this machine is, verifiable by anyone holding our key"
+
+[dependencies]
+# The same three primitives morph-update already uses: no system library to link, which is what lets this
+# run on a 512 MB Pi Zero as well as a rack machine.
+blake3 = "1.8.7"
+ed25519-dalek = "2"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
