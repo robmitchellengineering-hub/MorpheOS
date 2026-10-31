@@ -149,6 +149,8 @@ TAILSCALE_KEY_URL=https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg
 DEV_PKGS=build-essential,pkg-config
 BROWSER_PKGS="$BASE_PKGS,$DEV_PKGS,firefox,fonts-dejavu-core,network-manager,wpasupplicant,systemd-resolved,libgl1-mesa-dri,libegl-mesa0,libgbm1,libglx-mesa0,pipewire,pipewire-pulse,wireplumber,alsa-ucm-conf,tailscale"
 BROWSER_KEY="$BROWSER_PKGS,(linux-modules-extra)"
+# The person-facing images are the ones that carry DEV_PKGS (see the compiler assertion below).
+INSTALLS_DEV_PKGS=0
 if [ "$SCENARIO" = browser ] || [ "$SCENARIO" = plain ]; then
     BROWSER_BASE="$WORK/rootfs-browser"
     if [ "$(cat "$BROWSER_BASE/.complete" 2>/dev/null)" != "$BROWSER_KEY" ]; then
@@ -164,6 +166,8 @@ if [ "$SCENARIO" = browser ] || [ "$SCENARIO" = plain ]; then
         gpg --dearmor < "$key" > "$keyring"
         ts_key="$WORK/tailscale-keyring.gpg"
         curl -fsSL "$TAILSCALE_KEY_URL" -o "$ts_key"
+        # This is the person-facing image, so it carries DEV_PKGS and the compiler assertion expects them.
+        INSTALLS_DEV_PKGS=1
         mmdebstrap --variant=apt \
             --include="$BROWSER_PKGS" \
             --aptopt='APT::Install-Recommends "false"' \
@@ -365,12 +369,18 @@ make_root() {
     install -m 0755 "$STRATA" "$dir/usr/bin/strata"
     # The Manifest applier (doc 20, S11): makes the current generation real at every boot.
     install -m 0755 "$MORPH_D" "$dir/usr/bin/morphd"
-    # A COMPILER IN THE IMAGE. Rob, 2026-10-31: "build yourself properly from the inside". With git and
-    # curl alone a toolchain installed into /persist could compile and then fail at the link — no cc, no
-    # ld, no libc6-dev. gcc/binutils/make come in with DEV_PKGS; this fails the build if they did not.
-    for tool in /usr/bin/gcc /usr/bin/ld /usr/bin/make; do
-        [ -x "$dir$tool" ] || { echo "missing $tool: the machine could not build on itself" >&2; exit 1; }
-    done
+    # A COMPILER IN THE IMAGE, on the images a person gets. Rob, 2026-10-31: "build yourself properly from
+    # the inside". With git and curl alone a toolchain installed into /persist could compile and then fail
+    # at the link — no cc, no ld, no libc6-dev. DEV_PKGS carries gcc/binutils/make, and this fails the
+    # build if they did not arrive.
+    #
+    # Only where DEV_PKGS is actually installed: the test scenarios are built small on purpose, and
+    # asserting a toolchain on an image that never claims one is how this check broke the A/B job.
+    if [ "${INSTALLS_DEV_PKGS:-0}" = 1 ]; then
+        for tool in /usr/bin/gcc /usr/bin/ld /usr/bin/make; do
+            [ -x "$dir$tool" ] || { echo "missing $tool: the machine could not build on itself" >&2; exit 1; }
+        done
+    fi
     # SSH in, so the mesh can drive this machine over the network (E6: no stick, no console
     # person). Root, key only — the mesh admin key is baked into the image.
     mkdir -p "$dir/root/.ssh" "$dir/etc/ssh/sshd_config.d" "$dir/etc/systemd/system/ssh.service.d"
