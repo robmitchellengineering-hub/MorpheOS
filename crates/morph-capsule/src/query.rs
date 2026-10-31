@@ -87,7 +87,7 @@ impl StrataQuery {
             let Some(version) = index.latest(&path).map_err(|e| Error::Strata(format!("{e}")))? else {
                 continue;
             };
-            if version.kind == strata::Kind::Deleted {
+            if version.kind == strata::index::Kind::Deleted {
                 continue;
             }
             if let Some(since) = self.since {
