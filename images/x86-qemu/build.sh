@@ -362,36 +362,22 @@ make_root() {
             install -D -m 0644 "$UPDATE_TEST_CA" "$dir/usr/share/morpheos/update-test-ca.pem"
         fi
     fi
-    # WHAT THE MACHINE CALLS ITSELF. Ubuntu's os-release made every tool report "Ubuntu 24.04.5 LTS" and
     # hostnamectl print "Operating System: Ubuntu", so MorpheOS was indistinguishable from its base — Rob,
     # 2026-10-31: "how do we stop getting MorpheOS to stop being recognised by other systems as linux".
     # ID_LIKE keeps apt and everything else that branches on the distribution working, because it is true:
     # this is a Debian-family userland. What changes is the NAME a person or a scanner sees.
     # (uname -s stays "Linux": that is the kernel's sysname and only a patched kernel changes it.)
-    # The files live in the repo (overlay-identity), not in a heredoc: a heredoc whose quoting or
     # placement drifts produces an image that calls itself Ubuntu, and the assertion below was the only
     # thing that noticed — in the A/B job, where it looked for a file the block had not written.
-    cp -a "$HERE/overlay-identity/." "$dir/" || {
-        echo "could not copy $HERE/overlay-identity into $dir" >&2; exit 1; }
-    ln -sf ../etc/os-release "$dir/usr/lib/os-release" 2>/dev/null || true
     # Asserted only where the image CLAIMS the identity: the person-facing image is the one whose
-    # os-release a person or a scanner reads. The A/B test fixture is built from a different path and
     # never claims it, so asserting there was checking a claim nobody makes — which is how this
     # blocked the A/B job twice while the shipped image was correct all along.
     if [ "${SHELL_UI:-0}" = 1 ]; then
-        for f in /etc/os-release /etc/lsb-release /etc/issue.net; do
             [ -s "$dir$f" ] || {
-                echo "identity file $f is missing from the image ($dir)" >&2
-                echo "  overlay source: $HERE/overlay-identity" >&2
-                ls -la "$HERE/overlay-identity" 2>&1 | sed 's/^/    src: /' >&2
                 ls -la "$dir/etc" 2>&1 | head -5 | sed 's/^/    dst: /' >&2
                 exit 1
             }
         done
-        grep -q '^NAME="MorpheOS"' "$dir/etc/os-release" \
-            || { echo "os-release does not say MorpheOS" >&2; exit 1; }
-        grep -q '^ID=morpheos' "$dir/etc/os-release" \
-            || { echo "os-release does not carry ID=morpheos" >&2; exit 1; }
     fi
     # Which release this image is: morph-update refuses a payload older than it, however
     # well signed, and morph-heal reinstalls exactly it (doc 20, S3).
@@ -527,6 +513,19 @@ EOF
     fi
     if [ "$SHELL_UI" = 1 ]; then
         cp -a "$HERE/overlay-shell/." "$dir/"
+        # WHAT THE MACHINE CALLS ITSELF, installed with the shell because this is the image a person
+        # boots. Ubuntu's os-release made every tool report "Ubuntu 24.04.5 LTS", so MorpheOS was
+        # indistinguishable from its base (Rob, 2026-10-31). ID_LIKE keeps apt working: this IS a
+        # Debian-family userland; what changes is the name a person or a scanner sees.
+        cp -a "$HERE/overlay-identity/." "$dir/"
+        ln -sf ../etc/os-release "$dir/usr/lib/os-release" 2>/dev/null || true
+        for f in /etc/os-release /etc/lsb-release /etc/issue.net; do
+            [ -s "$dir$f" ] || { echo "identity file $f is missing from the image ($dir)" >&2; exit 1; }
+        done
+        grep -q '^NAME="MorpheOS"' "$dir/etc/os-release" \
+            || { echo "os-release does not say MorpheOS" >&2; exit 1; }
+        grep -q '^ID=morpheos' "$dir/etc/os-release" \
+            || { echo "os-release does not carry ID=morpheos" >&2; exit 1; }
         install -m 0755 "$FLOW_COMPOSITOR" "$dir/usr/bin/flow-compositor"
         install -m 0755 "$SOLID_WINDOW" "$dir/usr/bin/solid-window"
         install -m 0755 "$FLOW_WIFI" "$dir/usr/bin/flow-wifi"
