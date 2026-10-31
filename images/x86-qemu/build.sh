@@ -817,7 +817,11 @@ chmod 0700 "$DATADIR/strata"
 # A at 1134 MiB (94%). 1600 puts it at 71%. Then 2026-10-16, git+curl+ca-certificates (node/dev
 # tools) pushed slot A to 1428 MiB (89%); 1800 puts it back to 79%. Each raise is deliberate and
 # said in the pull request: a machine installed with one slot size keeps it (doc 20, E7).
-ESP_MB=300 ROOT_MB=1800 DATA_MB=256
+# ROOT_MB 1800 -> 2400 on 2026-10-31, deliberately: adding a build toolchain (DEV_PKGS) took slot A to
+# 1761 MiB of 1800, past the 85% guard this file itself enforces — and the same guard was about to trip for
+# any further addition (audio, identity). A machine installed with one slot size keeps it (E7), so this is
+# the moment to raise it: 2400 leaves the toolchain with real headroom, and the stick is 123 GB.
+ESP_MB=300 ROOT_MB=2400 DATA_MB=256
 # The autoupdate scenario downloads the payload's shrunk root image (~450 MiB — see the size
 # build-payload.sh prints) to /persist before installing it, which 256 MiB cannot hold
 # (doc 20, S3 note 5). Raised only for that scenario, so the other disks keep their size.
