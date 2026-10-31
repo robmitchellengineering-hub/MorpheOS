@@ -60,6 +60,22 @@ ACCEL=tcg
 RTC_ARGS=()
 [ -n "${VM_RTC:-}" ] && RTC_ARGS=(-rtc "base=$VM_RTC")
 
+# VM_TPM=1 gives the guest a TPM 2.0 through swtpm, so IMA measurements can extend into a PCR and the machine
+# has a hardware-backed value to report. The state directory sits beside the disk, which means a TPM's identity
+# lasts exactly as long as the disk it belongs to — the right lifetime for a test VM, and stated here because a
+# TPM that silently resets is worse than one that is absent.
+TPM_ARGS=()
+if [ "${VM_TPM:-0}" = 1 ]; then
+    command -v swtpm >/dev/null 2>&1 || { echo "VM_TPM=1 but swtpm is not installed" >&2; exit 1; }
+    TPM_DIR="$(dirname "$DISK")/tpm"
+    rm -rf "$TPM_DIR"; mkdir -p "$TPM_DIR/state"
+    swtpm socket --tpm2 --tpmstate "dir=$TPM_DIR/state" \
+        --ctrl "type=unixio,path=$TPM_DIR/swtpm.sock" --daemon || {
+        echo "swtpm did not start" >&2; exit 1; }
+    TPM_ARGS=(-chardev "socket,id=chrtpm,path=$TPM_DIR/swtpm.sock" \
+              -tpmdev emulator,id=tpm0,chardev=chrtpm -device tpm-tis,tpmdev=tpm0)
+fi
+
 exec timeout --foreground "$TIMEOUT" qemu-system-x86_64 \
     -machine q35,accel="$ACCEL" -cpu max -smp 2 -m "${VM_MEM:-1024}" \
     -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
@@ -68,5 +84,5 @@ exec timeout --foreground "$TIMEOUT" qemu-system-x86_64 \
     "${PAYLOAD_ARGS[@]}" "${USB_ARGS[@]}" \
     -device i6300esb -action watchdog=reset \
     "${DISPLAY_ARGS[@]}" "${MONITOR_ARGS[@]}" \
-    "${RTC_ARGS[@]}" "${NET_ARGS[@]}" -display none \
+    "${RTC_ARGS[@]}" "${TPM_ARGS[@]}" "${NET_ARGS[@]}" -display none \
     -serial file:"$LOG"
