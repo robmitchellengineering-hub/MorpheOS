@@ -70,6 +70,8 @@ MORPH_UPDATE=${MORPH_UPDATE:-$REPO/target/release/morph-update}
 MORPH_HEAL=${MORPH_HEAL:-$REPO/target/release/morph-heal}
 MORPH_MANIFEST=${MORPH_MANIFEST:-$REPO/target/release/morph-manifest}
 MORPH_D=${MORPH_D:-$REPO/target/release/morphd}
+# The machine that can state what it is (docs/ATTESTATION.md). Same build, same release profile.
+MORPH_ATTEST=${MORPH_ATTEST:-$REPO/target/release/morph-attest}
 MORPH_AUTOUPDATE=${MORPH_AUTOUPDATE:-$REPO/target/release/morph-autoupdate}
 SDBOOT_EFI=${SDBOOT_EFI:-/usr/lib/systemd/boot/efi/systemd-bootx64.efi}
 FLOW_COMPOSITOR=${FLOW_COMPOSITOR:-$REPO/target/release/flow-compositor}
@@ -359,6 +361,12 @@ make_root() {
     install -m 0755 "$STRATA" "$dir/usr/bin/strata"
     # The Manifest applier (doc 20, S11): makes the current generation real at every boot.
     install -m 0755 "$MORPH_D" "$dir/usr/bin/morphd"
+    # ATTESTATION: a machine that can say what it is, signed. Installed here because this is the image a
+    # person boots; the key is provisioned into /persist at first use, never baked in (a key in a published
+    # artefact is a key everybody has — the SOP rule V-21 taught us).
+    install -m 0755 "$MORPH_ATTEST" "$dir/usr/bin/morph-attest"
+    [ -x "$dir/usr/bin/morph-attest" ] \
+        || { echo "morph-attest did not install: the machine could not state what it is" >&2; exit 1; }
     # SSH in, so the mesh can drive this machine over the network (E6: no stick, no console
     # person). Root, key only — the mesh admin key is baked into the image.
     mkdir -p "$dir/root/.ssh" "$dir/etc/ssh/sshd_config.d" "$dir/etc/systemd/system/ssh.service.d"
