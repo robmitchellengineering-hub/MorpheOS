@@ -501,7 +501,10 @@ EOF
         # boots. Ubuntu's os-release made every tool report "Ubuntu 24.04.5 LTS", so MorpheOS was
         # indistinguishable from its base (Rob, 2026-10-31). ID_LIKE keeps apt working: this IS a
         # Debian-family userland; what changes is the name a person or a scanner sees.
-        cp -a "$HERE/overlay-identity/." "$dir/"
+        # The identity files travel INSIDE overlay-shell (etc/os-release, etc/lsb-release, etc/issue.net),
+        # which is the copy that put them in the image verified on the raw disk after the 1.1 flash. A
+        # separate overlay directory was copied and did not land in the A/B root; carrying them in the
+        # overlay that is already known to work removes the question.
         ln -sf ../etc/os-release "$dir/usr/lib/os-release" 2>/dev/null || true
         for f in /etc/os-release /etc/lsb-release /etc/issue.net; do
             [ -s "$dir$f" ] || { echo "identity file $f is missing from the image ($dir)" >&2; exit 1; }
