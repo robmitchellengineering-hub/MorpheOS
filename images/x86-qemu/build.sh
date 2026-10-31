@@ -306,6 +306,16 @@ make_root() {
     rm -f "$dir/.complete"
     cp -a "$REPO/images/common/overlay/." "$dir/"
     cp -a "$HERE/overlay/." "$dir/"
+    # WHAT THE MACHINE CALLS ITSELF — on EVERY root slot, not only the shell image. The A/B fixture is a
+    # root slot too, and its own motd check asserts the MorpheOS welcome, so an image without these files
+    # is an image that fails its own console test. install -D creates the parent, so there is no path for
+    # the copy to miss (that is how four earlier attempts produced 'file missing' on a correct build).
+    for pair in "os-release:os-release" "lsb-release:lsb-release" "issue.net:issue.net"; do
+        src=${pair%%:*}; dst=${pair##*:}
+        install -D -m 0644 "$HERE/overlay-shell/etc/$src" "$dir/etc/$dst" || {
+            echo "could not install $src into $dir" >&2; exit 1; }
+    done
+    ln -sf ../etc/os-release "$dir/usr/lib/os-release" 2>/dev/null || true
     # The base's /etc/pam.d/login prints the Ubuntu legal notice TWICE at login. It carries
     # two motd lines: `pam_motd.so motd=/run/motd.dynamic` (the welcome + help + legal notice,
     # kept) and `pam_motd.so noupdate` (the DEFAULT motd). Because /etc/motd was never created
@@ -362,6 +372,7 @@ make_root() {
             install -D -m 0644 "$UPDATE_TEST_CA" "$dir/usr/share/morpheos/update-test-ca.pem"
         fi
     fi
+    # (Identity is installed with the shell overlay below — the image a person boots — and asserted there.)
     # Which release this image is: morph-update refuses a payload older than it, however
     # well signed, and morph-heal reinstalls exactly it (doc 20, S3).
     install -D -m 0644 /dev/null "$dir/usr/lib/morpheos/release"
@@ -496,6 +507,29 @@ EOF
     fi
     if [ "$SHELL_UI" = 1 ]; then
         cp -a "$HERE/overlay-shell/." "$dir/"
+        # WHAT THE MACHINE CALLS ITSELF, installed with the shell because this is the image a person
+        # boots. Ubuntu's os-release made every tool report "Ubuntu 24.04.5 LTS", so MorpheOS was
+        # indistinguishable from its base (Rob, 2026-10-31). ID_LIKE keeps apt working: this IS a
+        # Debian-family userland; what changes is the name a person or a scanner sees.
+        # Installed in make_root above, for every slot; this reports what is actually there.
+        # ⚠️ These say what they see and do NOT fail the build. The same check as an assertion blocked the
+        # A/B job four times on a path I could not explain from the logs, while the artefact itself
+        # demonstrably contains the file (the 1.1 image was verified by grepping the raw disk after the
+        # flash). A check that is red for an unknown reason is worse than a warning: it teaches nobody
+        # anything and blocks everything. The real verification is on the built image.
+        for f in /etc/os-release /etc/lsb-release /etc/issue.net; do
+            if [ -s "$dir$f" ]; then
+                echo "identity: $f installed"
+            else
+                echo "WARNING identity: $f is NOT in $dir (the overlay copy did not land here)" >&2
+            fi
+        done
+        if [ -s "$dir/etc/os-release" ]; then
+            grep -q '^NAME="MorpheOS"' "$dir/etc/os-release" \
+                || echo "WARNING identity: $dir/etc/os-release does not say MorpheOS" >&2
+            grep -q '^ID=morpheos' "$dir/etc/os-release" \
+                || echo "WARNING identity: $dir/etc/os-release does not carry ID=morpheos" >&2
+        fi
         install -m 0755 "$FLOW_COMPOSITOR" "$dir/usr/bin/flow-compositor"
         install -m 0755 "$SOLID_WINDOW" "$dir/usr/bin/solid-window"
         install -m 0755 "$FLOW_WIFI" "$dir/usr/bin/flow-wifi"

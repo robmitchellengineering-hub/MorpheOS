@@ -20,8 +20,16 @@ import { readFileSync } from 'node:fs';
 
 /** First line of the Ubuntu legal notice: distinctive, and stable across releases. */
 const LEGAL_MARK = 'The programs included with the Ubuntu system are free software;';
-/** The dynamic motd's welcome header. Prefix only: the kernel/version string changes. */
-const WELCOME_PREFIX = 'Welcome to Ubuntu ';
+/**
+ * The dynamic motd's welcome header. Prefix only: the kernel/version string changes.
+ *
+ * MorpheOS first, because that is what the machine says since the identity change (2026-10-31): the
+ * banner reads "Welcome to MorpheOS 1.0 (Noble)". Ubuntu stays accepted because the userland IS
+ * Debian-family and the legal notice below is still Ubuntu's — a console that said Ubuntu would be a
+ * regression of the identity, but this guard is about the motd printing TWICE, and conflating the two
+ * is how it turned a correct change red.
+ */
+const WELCOME_PREFIXES = ['Welcome to MorpheOS ', 'Welcome to Ubuntu '];
 
 /** Count the two lines that distinguish the welcome from the legal notice. */
 export function countMotd(text) {
@@ -29,7 +37,7 @@ export function countMotd(text) {
   let legal = 0;
   for (const line of text.split('\n')) {
     if (line.startsWith(LEGAL_MARK)) legal += 1;
-    else if (line.startsWith(WELCOME_PREFIX)) welcome += 1;
+    else if (WELCOME_PREFIXES.some((prefix) => line.startsWith(prefix))) welcome += 1;
   }
   return { welcome, legal };
 }
@@ -52,7 +60,7 @@ function selfTest() {
     `${LEGAL_MARK}\n` +
     'the exact distribution terms for each program are described in the\n' +
     'individual files in /usr/share/doc/*/copyright.\n';
-  const welcome = `${WELCOME_PREFIX}24.04.5 LTS (GNU/Linux x86_64)\n`;
+  const welcome = `${WELCOME_PREFIXES[0]}1.0 (Noble) (GNU/Linux x86_64)\n`;
   const doubled = welcome + legal + legal; // the regression: `noupdate` reintroduced
   const overRemoved = welcome; // the welcome line must still carry the notice once
   const noWelcome = legal; // the welcome must survive the fix
@@ -62,6 +70,7 @@ function selfTest() {
     ['a legal notice removed entirely is caught', overRemoved, 1],
     ['a missing welcome header is caught', noWelcome, 1],
     ['the fixed console passes', fixed, 0],
+    ['the MorpheOS banner counts as the welcome', `Welcome to MorpheOS 1.0 (Noble) (GNU/Linux x86_64)\n${legal}`, 0],
   ];
   let failures = 0;
   for (const [name, input, expected] of cases) {
@@ -74,7 +83,7 @@ function selfTest() {
     console.error(`\nmotd self-test: ${failures} case(s) behaved wrongly. The guard cannot be trusted.`);
     return 1;
   }
-  console.log('\nmotd self-test: 4 cases, including the doubled-notice regression.');
+  console.log('\nmotd self-test: 5 cases, including the doubled-notice regression and the MorpheOS banner.');
   return 0;
 }
 
