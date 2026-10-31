@@ -102,8 +102,13 @@ impl super::Capsule {
         let bootstrap = format!(
             r#"set -e
 ROOT={root}
+# /bin and /sbin are symlinks into /usr on this system, so binding the link binds nothing useful: the
+# first attempt pivoted successfully and then failed with "exec: sh: not found". Resolve first.
 for d in usr bin sbin lib lib64 etc; do
-  [ -d /$d ] && mount --bind -o ro /$d "$ROOT/$d" || true
+  if [ -e "/$d" ]; then
+    src=$(readlink -f "/$d")
+    mount --bind -o ro "$src" "$ROOT/$d" || echo "bootstrap: could not bind /$d" >&2
+  fi
 done
 mount -t tmpfs tmpfs "$ROOT/tmp" || true
 mount -t tmpfs tmpfs "$ROOT/var" || true
