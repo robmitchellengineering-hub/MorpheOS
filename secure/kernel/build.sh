@@ -82,8 +82,15 @@ scripts/kconfig/merge_config.sh -m -O . .config "$HERE/config.common" "$HERE/con
 make ARCH="$KARCH" olddefconfig
 
 # 4. Build.
-echo "building with -j$JOBS"
-make ARCH="$KARCH" -j"$JOBS" bzImage modules
+# The image target differs per architecture: bzImage is x86-only, arm64 builds Image, arm builds zImage.
+# Asking for bzImage on arm64 is 'No rule to make target', which is how the first multi-arch run failed.
+case "$KARCH" in
+    x86_64) IMG_TARGET=bzImage ;;
+    arm64)  IMG_TARGET=Image ;;
+    arm)    IMG_TARGET=zImage ;;
+esac
+echo "building $IMG_TARGET with -j$JOBS"
+make ARCH="$KARCH" -j"$JOBS" "$IMG_TARGET" modules
 
 # 5. Package, and write the report.
 OUT="$WORK/out"
