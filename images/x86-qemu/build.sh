@@ -352,34 +352,6 @@ make_root() {
             install -D -m 0644 "$UPDATE_TEST_CA" "$dir/usr/share/morpheos/update-test-ca.pem"
         fi
     fi
-    # WHAT THE MACHINE CALLS ITSELF. Ubuntu's os-release made every tool report "Ubuntu 24.04.5 LTS".
-    # ID_LIKE keeps apt and everything else that branches on the distribution working, because it is true:
-    # this is a Debian-family userland. What changes is the NAME a person or a scanner sees.
-    mkdir -p "$dir/etc"
-    cat > "$dir/etc/os-release" <<'OSREL'
-PRETTY_NAME="MorpheOS 1.0"
-NAME="MorpheOS"
-VERSION_ID="1.0"
-VERSION="1.0 (Noble)"
-VERSION_CODENAME=noble
-ID=morpheos
-ID_LIKE="debian ubuntu"
-HOME_URL="https://github.com/robmitchellengineering-hub/MorpheOS"
-SUPPORT_URL="https://github.com/robmitchellengineering-hub/MorpheOS"
-BUG_REPORT_URL="https://github.com/robmitchellengineering-hub/MorpheOS/issues"
-LOGO=morpheos
-UBUNTU_CODENAME=noble
-OSREL
-    ln -sf ../etc/os-release "$dir/usr/lib/os-release" 2>/dev/null || true
-    cat > "$dir/etc/lsb-release" <<'LSB'
-DISTRIB_ID=MorpheOS
-DISTRIB_RELEASE=1.0
-DISTRIB_CODENAME=noble
-DISTRIB_DESCRIPTION="MorpheOS 1.0 (Noble)"
-LSB
-    printf 'MorpheOS 1.0 \\n \\l\n\n' > "$dir/etc/issue.net"
-    grep -q '^NAME="MorpheOS"' "$dir/etc/os-release" \
-        || { echo "os-release does not say MorpheOS" >&2; exit 1; }
     # Which release this image is: morph-update refuses a payload older than it, however
     # well signed, and morph-heal reinstalls exactly it (doc 20, S3).
     install -D -m 0644 /dev/null "$dir/usr/lib/morpheos/release"
@@ -502,6 +474,10 @@ EOF
     fi
     if [ "$SHELL_UI" = 1 ]; then
         cp -a "$HERE/overlay-shell/." "$dir/"
+        # The identity travels with the shell overlay, so it lands by the same copy every other file in
+        # that overlay does — an inline heredoc wrote to a path the assertion could not see.
+        grep -q '^NAME="MorpheOS"' "$dir/etc/os-release" \
+            || { echo "the image does not identify as MorpheOS" >&2; exit 1; }
         install -m 0755 "$FLOW_COMPOSITOR" "$dir/usr/bin/flow-compositor"
         install -m 0755 "$SOLID_WINDOW" "$dir/usr/bin/solid-window"
         install -m 0755 "$FLOW_WIFI" "$dir/usr/bin/flow-wifi"

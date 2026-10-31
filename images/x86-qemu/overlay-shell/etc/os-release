@@ -1,0 +1,12 @@
+PRETTY_NAME="MorpheOS 1.0"
+NAME="MorpheOS"
+VERSION_ID="1.0"
+VERSION="1.0 (Noble)"
+VERSION_CODENAME=noble
+ID=morpheos
+ID_LIKE="debian ubuntu"
+HOME_URL="https://github.com/robmitchellengineering-hub/MorpheOS"
+SUPPORT_URL="https://github.com/robmitchellengineering-hub/MorpheOS"
+BUG_REPORT_URL="https://github.com/robmitchellengineering-hub/MorpheOS/issues"
+LOGO=morpheos
+UBUNTU_CODENAME=noble
