@@ -96,7 +96,25 @@ impl BootControl for SdBoot {
         let path = self.loader_conf();
         let text =
             std::fs::read_to_string(&path).map_err(io(format!("reading {}", path.display())))?;
-        parse_default(&text)
+        match parse_default(&text) {
+            Ok(slot) => Ok(slot),
+            // A default that is not `morpheos-a.conf`/`morpheos-b.conf` is a CUSTOM ENTRY, not a broken
+            // table: our own Phase 0 kernel boots from `morpheos-our.conf`, and a person may point the
+            // loader at a kernel of their own. The machine still knows which slot it is running — the
+            // kernel command line carries `morph.slot=` — so answer from that instead of refusing.
+            //
+            // This was found by booting our kernel in a VM: morph-boot reported
+            // "boot state is not readable: loader.conf default 'morpheos-our.conf' is not a MorpheOS slot"
+            // on a machine that was perfectly healthy, which would have made every rollback decision
+            // guess.
+            Err(Error::Corrupt(_)) => self.booted_slot().map_err(|_| {
+                Error::Corrupt(format!(
+                    "loader.conf default is not a MorpheOS slot and the command line names no slot: {}",
+                    text.trim()
+                ))
+            }),
+            Err(e) => Err(e),
+        }
     }
 
     fn set_default_slot(&mut self, slot: Slot) -> Result<()> {
@@ -173,5 +191,55 @@ mod tests {
         assert_eq!(parse_cmdline_slot(c).unwrap(), Slot::B);
         assert!(parse_cmdline_slot("root=/dev/sda2 quiet").is_err());
         assert!(parse_cmdline_slot("morph.slot=c").is_err());
+    }
+}
+
+
+#[cfg(test)]
+mod custom_entry_tests {
+    use super::*;
+
+    /// A loader default that names a kernel of our own is not a broken table. Found by booting the Phase 0
+    /// kernel in a VM: morph-boot refused a healthy machine because `morpheos-our.conf` is not a slot entry.
+    #[test]
+    fn a_custom_default_is_read_as_the_running_slot() {
+        let esp = std::env::temp_dir().join("morph-boot-custom-entry");
+        let _ = std::fs::remove_dir_all(&esp);
+        std::fs::create_dir_all(esp.join("loader")).unwrap();
+        std::fs::write(
+            esp.join("loader/loader.conf"),
+            "default morpheos-our.conf\ntimeout 0\n",
+        )
+        .unwrap();
+        let cmdline = esp.join("cmdline");
+        std::fs::write(&cmdline, "root=PARTLABEL=root-b ro morph.slot=b").unwrap();
+
+        let backend = SdBoot {
+            esp: esp.clone(),
+            cmdline,
+            bootctl: std::path::PathBuf::from("bootctl"),
+        };
+        assert_eq!(backend.default_slot().unwrap(), Slot::B, "the command line is the truth");
+        let _ = std::fs::remove_dir_all(&esp);
+    }
+
+    /// And with no slot on the command line there is nothing true to say, so it must still refuse rather
+    /// than invent a slot.
+    #[test]
+    fn a_custom_default_with_no_slot_on_the_cmdline_is_still_an_error() {
+        let esp = std::env::temp_dir().join("morph-boot-custom-entry-noslot");
+        let _ = std::fs::remove_dir_all(&esp);
+        std::fs::create_dir_all(esp.join("loader")).unwrap();
+        std::fs::write(esp.join("loader/loader.conf"), "default morpheos-our.conf\n").unwrap();
+        let cmdline = esp.join("cmdline");
+        std::fs::write(&cmdline, "root=PARTLABEL=root-a ro").unwrap();
+
+        let backend = SdBoot {
+            esp: esp.clone(),
+            cmdline,
+            bootctl: std::path::PathBuf::from("bootctl"),
+        };
+        assert!(backend.default_slot().is_err(), "no cmdline slot means no answer");
+        let _ = std::fs::remove_dir_all(&esp);
     }
 }
