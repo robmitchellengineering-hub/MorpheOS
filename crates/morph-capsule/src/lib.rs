@@ -20,6 +20,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+mod query;
+mod session;
+
+pub use query::{ResolvedFile, StrataQuery};
+pub use session::{SessionLayer, TransitionRecord};
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
@@ -91,10 +97,23 @@ impl Capsule {
     /// `root/.strata`, so the history travels with the capsule and never with a global tool.
     pub fn open(root: impl Into<PathBuf>, label: impl Into<String>) -> Result<Self> {
         let root = root.into();
+        Self::open_with_store(root.clone(), label, root.join(".strata"))
+    }
+
+    /// A capsule that records into an **existing** Strata store. This is how a session's files and its
+    /// capsule's layer end up in one history: `Capsule::open` gives each capsule its own store, which is
+    /// exactly the split that would make "undo the session" mean two unrelated rewinds.
+    pub fn open_with_store(
+        root: impl Into<PathBuf>,
+        label: impl Into<String>,
+        strata_root: impl Into<PathBuf>,
+    ) -> Result<Self> {
+        let root = root.into();
         let layer = root.join("layer");
         std::fs::create_dir_all(layer.join("home")).map_err(io(format!("creating {}", layer.display())))?;
-        std::fs::create_dir_all(root.join(".strata"))
-            .map_err(io(format!("creating {}", root.join(".strata").display())))?;
+        let strata_root = strata_root.into();
+        std::fs::create_dir_all(&strata_root)
+            .map_err(io(format!("creating {}", strata_root.display())))?;
 
         let manifest_path = root.join("capsule.json");
         let manifest = match std::fs::read(&manifest_path) {
@@ -114,7 +133,6 @@ impl Capsule {
             }
         };
 
-        let strata_root = root.join(".strata");
         let strata = strata::Strata::open(&strata_root).map_err(|e| Error::Strata(format!("{e}")))?;
         Ok(Self { root, layer, strata, manifest })
     }
