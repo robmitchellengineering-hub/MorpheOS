@@ -84,6 +84,7 @@ impl SealedSession {
                     at: before,
                     // The record describes the transition FROM `before`; the seal is what makes it checkable.
                     restored: 0,
+                    sealed_at: 0, // stamped by `SessionLayer::seal`
                 };
                 let sealed = self.layer.seal(&record, &self.key)?;
                 Ok(Committed { sealed, restored: 0 })

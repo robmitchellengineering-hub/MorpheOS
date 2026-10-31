@@ -29,10 +29,15 @@ pub struct SealedTransition {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TransitionRecord {
     pub label: String,
-    /// The moment the state before the change was recorded (ns).
+    /// The moment the state before the change was recorded (ns). This is what an undo returns to.
     pub at: i64,
     /// How many paths the undo restored or removed, across both the session and its capsule.
     pub restored: u64,
+    /// When the record itself was made (ns). Distinct per transition — the first version of this struct had
+    /// no such field, so a change and the undo of it shared a filename (both used `at`) and one silently
+    /// overwrote the other. A history that loses entries without saying so is the bug this field prevents.
+    #[serde(default)]
+    pub sealed_at: i64,
 }
 
 pub struct SessionLayer {
@@ -131,7 +136,10 @@ impl SessionLayer {
     /// Seal a transition with `key` and keep it. A transition nobody sealed is a claim with no author, and the
     /// product's promise ("prove what it did") needs the author.
     pub fn seal(&self, record: &TransitionRecord, key: &ed25519_dalek::SigningKey) -> Result<SealedTransition> {
-        let payload = serde_json::to_vec(record).map_err(|e| Error::Refused(format!("{e}")))?;
+        // Stamp the record with its own moment, so two transitions that share an `at` cannot collide.
+        let mut record = record.clone();
+        record.sealed_at = self.capsule.now();
+        let payload = serde_json::to_vec(&record).map_err(|e| Error::Refused(format!("{e}")))?;
         let sealed = SealedTransition {
             record: record.clone(),
             signature: morph_attest::sign_payload(key, &payload),
@@ -143,7 +151,7 @@ impl SessionLayer {
         })?;
         let path = self
             .transitions_dir()
-            .join(format!("{}.json", record.at));
+            .join(format!("{}.json", record.sealed_at));
         std::fs::write(&path, serde_json::to_vec_pretty(&sealed).map_err(|e| Error::Refused(format!("{e}")))?)
             .map_err(|source| Error::Io { what: format!("writing {}", path.display()), source })?;
         Ok(sealed)
@@ -178,7 +186,7 @@ impl SessionLayer {
             })?;
             out.push(sealed);
         }
-        out.sort_by_key(|s| s.record.at);
+        out.sort_by_key(|s| s.record.sealed_at);
         Ok(out)
     }
 
