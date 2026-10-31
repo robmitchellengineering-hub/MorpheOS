@@ -1,0 +1,12 @@
+[package]
+name = "morph-capsule"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "MorpheOS: a capsule is an app plus a Strata-versioned user layer, so what it does can be undone"
+
+[dependencies]
+strata = { path = "../strata" }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
