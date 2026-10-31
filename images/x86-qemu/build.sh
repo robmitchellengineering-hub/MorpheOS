@@ -306,6 +306,16 @@ make_root() {
     rm -f "$dir/.complete"
     cp -a "$REPO/images/common/overlay/." "$dir/"
     cp -a "$HERE/overlay/." "$dir/"
+    # WHAT THE MACHINE CALLS ITSELF — on EVERY root slot, not only the shell image. The A/B fixture is a
+    # root slot too, and its own motd check asserts the MorpheOS welcome, so an image without these files
+    # is an image that fails its own console test. install -D creates the parent, so there is no path for
+    # the copy to miss (that is how four earlier attempts produced 'file missing' on a correct build).
+    for pair in "os-release:os-release" "lsb-release:lsb-release" "issue.net:issue.net"; do
+        src=${pair%%:*}; dst=${pair##*:}
+        install -D -m 0644 "$HERE/overlay-shell/etc/$src" "$dir/etc/$dst" || {
+            echo "could not install $src into $dir" >&2; exit 1; }
+    done
+    ln -sf ../etc/os-release "$dir/usr/lib/os-release" 2>/dev/null || true
     # The base's /etc/pam.d/login prints the Ubuntu legal notice TWICE at login. It carries
     # two motd lines: `pam_motd.so motd=/run/motd.dynamic` (the welcome + help + legal notice,
     # kept) and `pam_motd.so noupdate` (the DEFAULT motd). Because /etc/motd was never created
@@ -501,11 +511,7 @@ EOF
         # boots. Ubuntu's os-release made every tool report "Ubuntu 24.04.5 LTS", so MorpheOS was
         # indistinguishable from its base (Rob, 2026-10-31). ID_LIKE keeps apt working: this IS a
         # Debian-family userland; what changes is the name a person or a scanner sees.
-        # The identity files travel INSIDE overlay-shell (etc/os-release, etc/lsb-release, etc/issue.net),
-        # which is the copy that put them in the image verified on the raw disk after the 1.1 flash. A
-        # separate overlay directory was copied and did not land in the A/B root; carrying them in the
-        # overlay that is already known to work removes the question.
-        ln -sf ../etc/os-release "$dir/usr/lib/os-release" 2>/dev/null || true
+        # Installed in make_root above, for every slot; this reports what is actually there.
         # ⚠️ These say what they see and do NOT fail the build. The same check as an assertion blocked the
         # A/B job four times on a path I could not explain from the logs, while the artefact itself
         # demonstrably contains the file (the 1.1 image was verified by grepping the raw disk after the
