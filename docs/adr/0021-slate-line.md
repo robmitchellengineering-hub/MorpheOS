@@ -23,8 +23,9 @@ screen, which an activation-locked device does not have.
 What was left was the thing the ask actually wanted — a tablet a person can hold, running
 MorpheOS itself, and usable for ordinary computing — which is a hardware **shape**, not a kernel
 port. The repository already builds the software for it: the `plain` x86 image is the shell,
-Firefox, the Wi-Fi picker and the A/B pair, and it has never been booted on real hardware
-([HARDWARE.md](../../images/x86-qemu/HARDWARE.md)).
+Firefox, the Wi-Fi picker and the A/B pair. It has been booted on real hardware once — a 2012
+MacBook Pro (`MacBookPro9,1`), from the stick, on 2026-10-31, recorded in
+[HARDWARE.md](../../images/x86-qemu/HARDWARE.md) — and never on a tablet.
 
 ## Decision
 

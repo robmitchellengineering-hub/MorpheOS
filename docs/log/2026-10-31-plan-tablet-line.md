@@ -17,8 +17,16 @@ that is what this `plan/` pull request is:
   real-hardware boot that has not happened yet, so it cannot be `open`.
 - [doc 07](../07-scaling-profiles.md): the Slate named as Desk's shape, not a new tier.
 
-**Nothing here is proven on hardware.** No tablet has been booted; the x86 image has never been
-booted on real hardware at all (HARDWARE.md). The language throughout is "builds" and "would
+**Correction, same session — it *has* booted on real hardware.** Rob: *"The x86 booted on real
+hardware you can see it on the robmesh MorpheOS."* He is right, and the first draft of this PR was
+wrong: `nodes/morpheos-2012.json` is a probe run **inside** a booted MorpheOS on a 2012 MacBook Pro
+(`MacBookPro9,1`) — read-only root, hostname `morpheos-a`, `/persist` and `/persist/work` mounted,
+root ssh answering — and `runs/morpheos-2012/2026-10-31T0254Z-…` is the run record. HARDWARE.md,
+doc 23 and ADR 0021 all said "never booted"; all three now say what is true: **one machine, one
+older layout (1800 MiB slots; `main` builds 2400), and no tablet yet.** The lesson is the mesh's own
+A10: a stale document is not the machine.
+
+**Nothing here is proven on a tablet.** No touch screen, no tablet Wi-Fi chip, no tablet firmware. The language throughout is "builds" and "would
 prove", and E21's Done when is written as report lines for exactly that reason.
 
 Next, outside this pull request: the `plain` image build from `main` on `pacland-rog`, then the

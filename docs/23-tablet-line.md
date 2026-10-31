@@ -56,9 +56,11 @@ decided way an iPad participates, and it is not part of this line.
 
 ## 4. What the line would prove, in order
 
-1. **E6 first.** A boot on real hardware, from the stick, with the hardware report read back.
-   Until a person has booted it, a Slate is a claim and not a device ([AGENTS.md](../AGENTS.md),
-   "A build is not a boot").
+1. **E6 first.** The image has booted on one real machine — a 2012 MacBook Pro, from the stick, on
+   2026-10-31, with a read-only root, `/persist` mounted and root ssh answering ([HARDWARE.md](../images/x86-qemu/HARDWARE.md)).
+   That is the baseline a Slate inherits, and it is more than most lines start with. What has
+   **not** happened is a boot on a *tablet*: its touch panel, its Wi-Fi chip and its firmware are
+   all untried, and a laptop boot does not speak for any of them.
 2. **Then the touch path:** touch input into the compositor, an on-screen keyboard, rotation, and
    suspend/resume. None of these are exercised by a keyboard-and-mouse boot, so none of them are
    proven by it.
