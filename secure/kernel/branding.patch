@@ -1,0 +1,18 @@
+diff --git a/include/linux/uts.h b/include/linux/uts.h
+--- a/include/linux/uts.h
++++ b/include/linux/uts.h
+@@ -9,7 +9,12 @@
+  * The utsname structure is the one place where the kernel tells userland what it is. Every tool that
+  * asks "what am I running on" gets its answer from here: `uname -s`, and every library that reports a
+  * platform. It is a kernel constant, which is why a userland wrapper cannot change it — a program calls
+  * the uname() syscall, not our binary.
++ *
++ * MorpheOS: the machine reports the operating system it runs, not the kernel family it borrows. The ABI
++ * is still Linux (Firefox, PipeWire and every driver expect that); the name is ours. Rob, 2026-10-31:
++ * "how do we stop getting MorpheOS to stop being recognised by other systems as linux".
+  */
+-#define UTS_SYSNAME "Linux"
++#define UTS_SYSNAME "MorpheOS"
+ 
+ /*
+  * Linux 2.0 required that the UTS_SYSNAME, UTS_NODENAME and UTS_RELEASE fields
