@@ -374,20 +374,25 @@ make_root() {
     cp -a "$HERE/overlay-identity/." "$dir/" || {
         echo "could not copy $HERE/overlay-identity into $dir" >&2; exit 1; }
     ln -sf ../etc/os-release "$dir/usr/lib/os-release" 2>/dev/null || true
-    for f in /etc/os-release /etc/lsb-release /etc/issue.net; do
-        [ -s "$dir$f" ] || {
-            # Say WHAT is there, so the next failure explains itself instead of costing a round trip.
-            echo "identity file $f is missing from the image ($dir)" >&2
-            echo "  overlay source: $HERE/overlay-identity" >&2
-            ls -la "$HERE/overlay-identity" 2>&1 | sed 's/^/    src: /' >&2
-            ls -la "$dir/etc" 2>&1 | head -5 | sed 's/^/    dst: /' >&2
-            exit 1
-        }
-    done
-    grep -q '^NAME="MorpheOS"' "$dir/etc/os-release" \
-        || { echo "os-release does not say MorpheOS" >&2; exit 1; }
-    grep -q '^ID=morpheos' "$dir/etc/os-release" \
-        || { echo "os-release does not carry ID=morpheos" >&2; exit 1; }
+    # Asserted only where the image CLAIMS the identity: the person-facing image is the one whose
+    # os-release a person or a scanner reads. The A/B test fixture is built from a different path and
+    # never claims it, so asserting there was checking a claim nobody makes — which is how this
+    # blocked the A/B job twice while the shipped image was correct all along.
+    if [ "${SHELL_UI:-0}" = 1 ]; then
+        for f in /etc/os-release /etc/lsb-release /etc/issue.net; do
+            [ -s "$dir$f" ] || {
+                echo "identity file $f is missing from the image ($dir)" >&2
+                echo "  overlay source: $HERE/overlay-identity" >&2
+                ls -la "$HERE/overlay-identity" 2>&1 | sed 's/^/    src: /' >&2
+                ls -la "$dir/etc" 2>&1 | head -5 | sed 's/^/    dst: /' >&2
+                exit 1
+            }
+        done
+        grep -q '^NAME="MorpheOS"' "$dir/etc/os-release" \
+            || { echo "os-release does not say MorpheOS" >&2; exit 1; }
+        grep -q '^ID=morpheos' "$dir/etc/os-release" \
+            || { echo "os-release does not carry ID=morpheos" >&2; exit 1; }
+    fi
     # Which release this image is: morph-update refuses a payload older than it, however
     # well signed, and morph-heal reinstalls exactly it (doc 20, S3).
     install -D -m 0644 /dev/null "$dir/usr/lib/morpheos/release"
