@@ -45,6 +45,10 @@ pub struct SessionLayer {
     session_dir: PathBuf,
     strata_root: PathBuf,
     query: StrataQuery,
+    /// The session root. The sealed history lives at `<root>/transitions`, NOT inside `session/`, because an
+    /// undo rewinds `session/` — and the first end-to-end run proved what that means: the undo deleted the seal
+    /// recording the change it was undoing. A history inside the thing it describes is not a history.
+    root: PathBuf,
 }
 
 impl SessionLayer {
@@ -63,7 +67,7 @@ impl SessionLayer {
         // own history beside it, which is precisely the split that makes "undo the session" a lie.
         let capsule = Capsule::open_with_store(root.join("capsule"), label, &strata_root)?;
         let query = StrataQuery::parse(query)?;
-        Ok(Self { capsule, session_dir, strata_root, query })
+        Ok(Self { capsule, session_dir, strata_root, query, root })
     }
 
     pub fn capsule(&self) -> &Capsule {
@@ -130,7 +134,7 @@ impl SessionLayer {
 
     /// Where a session keeps its sealed transitions.
     pub fn transitions_dir(&self) -> PathBuf {
-        self.session_dir.join(".transitions")
+        self.root.join("transitions")
     }
 
     /// Seal a transition with `key` and keep it. A transition nobody sealed is a claim with no author, and the
