@@ -143,7 +143,10 @@ mod tests {
         let dir = scratch("commit");
         let s = SealedSession::open(&dir, "report", "strata://query?under=.", key()).unwrap();
         let committed = s
-            .change("write report.md", |layer| layer.write("report.md", b"draft one"))
+            .change("write report.md", |layer| {
+                layer.write("report.md", b"draft one")?;
+                Ok(())
+            })
             .unwrap();
         assert_eq!(s.read("report.md").unwrap(), b"draft one");
         assert!(
@@ -163,7 +166,10 @@ mod tests {
     fn a_failed_change_is_taken_back_and_leaves_no_seal() {
         let dir = scratch("fail");
         let s = SealedSession::open(&dir, "report", "strata://query?under=.", key()).unwrap();
-        s.change("first", |layer| layer.write("a.md", b"original")).unwrap();
+        s.change("first", |layer| {
+                layer.write("a.md", b"original")?;
+                Ok(())
+            }).unwrap();
         let before = s.read("a.md").unwrap();
         assert_eq!(before, b"original");
 
@@ -185,8 +191,14 @@ mod tests {
     fn an_undo_is_itself_a_sealed_change() {
         let dir = scratch("undo");
         let s = SealedSession::open(&dir, "report", "strata://query?under=.", key()).unwrap();
-        s.change("one", |layer| layer.write("a.md", b"one")).unwrap();
-        let at = s.change("two", |layer| layer.write("a.md", b"two")).unwrap();
+        s.change("one", |layer| {
+                layer.write("a.md", b"one")?;
+                Ok(())
+            }).unwrap();
+        let at = s.change("two", |layer| {
+                layer.write("a.md", b"two")?;
+                Ok(())
+            }).unwrap();
         // Undo the second change, then seal it: an undo must be as checkable as the change it reverses.
         let undone = s.undo_to(at.sealed.record.at).unwrap();
         assert_eq!(s.read("a.md").unwrap(), b"one");
@@ -199,7 +211,10 @@ mod tests {
     fn a_foreign_key_cannot_vouch_for_this_history() {
         let dir = scratch("foreign");
         let s = SealedSession::open(&dir, "report", "strata://query?under=.", key()).unwrap();
-        s.change("one", |layer| layer.write("a.md", b"one")).unwrap();
+        s.change("one", |layer| {
+                layer.write("a.md", b"one")?;
+                Ok(())
+            }).unwrap();
         let history = s.history().unwrap();
         let recorded = &history[0];
 
