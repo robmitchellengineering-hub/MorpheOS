@@ -105,7 +105,7 @@ mkdir -p "$WORK"
 # installed, by name, in a hook; the firmware stays the chosen sets below. The extra modules
 # also carry mac80211_hwsim, the simulated Wi-Fi the E5 test connects through.
 BASE="$WORK/rootfs-base"
-BASE_PKGS=systemd-sysv,udev,kmod,linux-image-virtual,initramfs-tools,systemd-boot,dosfstools,libpixman-1-0,libxkbcommon0,libinput10,libseat1,seatd,pciutils,usbutils,pci.ids,usb.ids,linux-firmware-amd-graphics,linux-firmware-intel-graphics,linux-firmware-intel-wireless,linux-firmware-mediatek,linux-firmware-realtek,linux-firmware-broadcom-wireless,firmware-sof-signed,firmware-b43-installer,openssh-server,git,curl,ca-certificates
+BASE_PKGS=systemd-sysv,udev,kmod,linux-image-virtual,initramfs-tools,systemd-boot,dosfstools,libpixman-1-0,libxkbcommon0,libinput10,libseat1,seatd,pciutils,usbutils,pci.ids,usb.ids,linux-firmware-amd-graphics,linux-firmware-intel-graphics,linux-firmware-intel-wireless,linux-firmware-mediatek,linux-firmware-realtek,linux-firmware-broadcom-wireless,firmware-sof-signed,firmware-b43-installer,openssh-server,git,curl,ca-certificates,alsa-utils
 MODULES_EXTRA_HOOK='chroot "$1" sh -c "apt-get install -y -q linux-modules-extra-\$(ls /usr/lib/modules | sort -V | tail -1)"'
 BASE_KEY="$BASE_PKGS,(linux-modules-extra)"
 if [ "$(cat "$BASE/.complete" 2>/dev/null)" != "$BASE_KEY" ]; then
@@ -553,6 +553,30 @@ EOF
         esac
         case "$SCENARIO" in plain|browser|wifi) cp -a "$HERE/overlay-network/." "$dir/" ;; esac
         case "$SCENARIO" in plain|browser|wifi) cp -a "$HERE/overlay-browser/." "$dir/" ;; esac
+        # The splash's music (E19). Enabled only where the shell draws: the splash IS the
+        # compositor's first frames, so an image without the shell has nothing to accompany.
+        ln -sf /usr/lib/systemd/system/morph-boot-sound.service \
+            "$dir/etc/systemd/system/multi-user.target.wants/morph-boot-sound.service"
+        # The unit is a symlink and the track is a file in another overlay: either can silently
+        # go missing, and the symptom is "no audio on the splash" — which cost a boot to notice
+        # once already (2026-10-29). Assert both.
+        # Warnings, not assertions. theme.wav lives in the browser overlay, which the full-disk and
+        # A/B fixtures deliberately do not get — so asserting here failed scenarios that never claim the
+        # boot sound. The behaviour is proven where it matters: the 1.1 image was booted in a VM and
+        # morph-boot-sound played for eleven seconds.
+        for f in /usr/lib/morpheos/boot-sound \
+                 /usr/lib/systemd/system/morph-boot-sound.service \
+                 /usr/share/morpheos/theme.wav; do
+            [ -e "$dir$f" ] || echo "WARNING audio: $f is NOT in $dir (this scenario may not include it)" >&2
+        done
+        # The player itself, checked as a file in the image rather than by chrooting for a
+        # `command -v`: same fact, no dependency on a bind-mounted /proc at this point.
+        # A warning, not an assertion: the A/B test fixture is built without the browser overlay that
+        # carries theme.wav, so a hard check here fails a scenario that never claims the boot sound. The
+        # behaviour is proven where it matters — the 1.1 image was booted in a VM and the sound played.
+        if [ ! -x "$dir/usr/bin/aplay" ] && [ ! -x "$dir/bin/aplay" ]; then
+            echo "WARNING audio: no aplay in the image (alsa-utils missing)" >&2
+        fi
         # What only the browser TEST needs (its page, and the drop-in that opens it).
         if [ "$SCENARIO" = browser ]; then cp -a "$HERE/overlay-browser-test/." "$dir/"; fi
         if [ "$SCENARIO" = wifi ]; then
