@@ -197,6 +197,18 @@ pub fn verify_payload(key_hex: &str, payload: &[u8], signature_hex: &str) -> Res
         .map_err(|_| "the signature does not cover these bytes".to_string())
 }
 
+
+/// The claimed facts about a boot: what the kernel measured, and — stated in the payload itself — whether a TPM
+/// was involved. A signed log without a hardware root is not a quote, and the text says so where a verifier
+/// reads it rather than in a footnote elsewhere.
+pub fn boot_payload(ima_log: &[u8], boot_id: &str) -> String {
+    let entries = ima_log.iter().filter(|b| **b == b'\n').count() as u64;
+    format!(
+        "morpheos-measured-boot v1\nboot_id: {boot_id}\nima_entries: {entries}\nima_log_blake3: {}\ntpm_quote: none (no TPM on this machine)\n",
+        blake3::hash(ima_log).to_hex()
+    )
+}
+
 pub fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -248,6 +260,23 @@ mod tests {
     fn key() -> SigningKey {
         // A fixed key: a test that generates randomness proves nothing about reproducibility.
         SigningKey::from_bytes(&[7u8; 32])
+    }
+
+    #[test]
+    fn the_boot_payload_changes_only_when_the_measurements_do() {
+        let log = b"10 abc ima-ng sha256:... boot_aggregate\n";
+        let a = boot_payload(log, "boot-1");
+        let b = boot_payload(log, "boot-1");
+        assert_eq!(a, b, "the same log and boot must produce the same payload");
+        let changed = boot_payload(b"10 def ima-ng sha256:... other\n", "boot-1");
+        assert_ne!(a, changed, "a different measurement log must produce a different payload");
+        let other_boot = boot_payload(log, "boot-2");
+        assert_ne!(a, other_boot, "the payload must be bound to the boot it describes");
+        assert!(a.contains("ima_entries: 1"));
+        assert!(
+            a.contains("tpm_quote: none"),
+            "without a TPM the payload must say so where a verifier reads it"
+        );
     }
 
     #[test]
