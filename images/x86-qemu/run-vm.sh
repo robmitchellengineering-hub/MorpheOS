@@ -55,6 +55,11 @@ fi
 NET_ARGS=(-nic none)
 [ "${VM_NET:-0}" = 1 ] && NET_ARGS=(-nic user,model=virtio-net-pci)
 [ "${VM_SSH:-0}" = 1 ] && NET_ARGS=(-nic "user,model=virtio-net-pci,hostfwd=tcp::${VM_SSH_PORT:-2222}-:22")
+# VM_AUDIO=1 gives the guest an HDA device so the audio path (aplay -> card -> sink) can be exercised in a
+# VM instead of only on the laptop. `-audiodev none` means nothing is heard here — the test is that ALSA
+# sees a card and the player succeeds, not that a human is listening (2026-10-31).
+AUDIO_ARGS=()
+[ "${VM_AUDIO:-0}" = 1 ] && AUDIO_ARGS=(-audiodev none,id=snd0 -device intel-hda -device hda-duplex,audiodev=snd0)
 
 ACCEL=tcg
 [ -w /dev/kvm ] && ACCEL=kvm
@@ -73,5 +78,5 @@ exec timeout --foreground "$TIMEOUT" qemu-system-x86_64 \
     "${PAYLOAD_ARGS[@]}" "${USB_ARGS[@]}" \
     -device i6300esb -action watchdog=reset \
     "${DISPLAY_ARGS[@]}" "${MONITOR_ARGS[@]}" \
-    "${RTC_ARGS[@]}" "${NET_ARGS[@]}" -display none \
+    "${RTC_ARGS[@]}" "${NET_ARGS[@]}" "${AUDIO_ARGS[@]}" -display none \
     -serial file:"$LOG"
