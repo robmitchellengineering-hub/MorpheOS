@@ -34,15 +34,17 @@ cd "linux-$KVER"
 
 # 2. Our patches. The branding one is the whole identity argument: UTS_SYSNAME is a kernel constant, so
 #    this is the only place `uname -s` can become MorpheOS.
-if git apply --check "$HERE/branding.patch" 2>/dev/null; then
-    git apply "$HERE/branding.patch"
-    echo "branding patch applied"
-elif grep -q 'UTS_SYSNAME "MorpheOS"' include/linux/uts.h; then
-    echo "branding patch already applied"
-else
-    echo "branding patch does not apply — the source is not the version this patch was written for" >&2
-    exit 1
+# Branding by a deterministic edit, not a patch: a hand-written diff has context that drifts between
+# point releases, and a patch that silently fails to apply would produce a kernel that calls itself Linux
+# while the build looks green. branding.patch stays as the explanation of WHY, not as the mechanism.
+if ! grep -q 'UTS_SYSNAME "MorpheOS"' include/linux/uts.h; then
+    sed -i 's/#define UTS_SYSNAME "Linux"/#define UTS_SYSNAME "MorpheOS"/' include/linux/uts.h
 fi
+grep -q 'UTS_SYSNAME "MorpheOS"' include/linux/uts.h || {
+    echo "could not set UTS_SYSNAME to MorpheOS — refusing to build a kernel with the wrong name" >&2
+    exit 1
+}
+echo "branding: UTS_SYSNAME is MorpheOS"
 
 # 3. Our configuration, merged on top of a small base so the result is a decision list rather than a
 #    vendor defconfig with everything enabled.
