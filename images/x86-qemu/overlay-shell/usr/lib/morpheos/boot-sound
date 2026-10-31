@@ -1,0 +1,56 @@
+#!/bin/bash
+# boot-sound: the splash's music, played once when the shell draws it (doc 20, E19).
+#
+# WHY IT EXISTS. The boot splash is the software port of the design (`splash.rs`), and it draws
+# the mark, the rings and the wordmark with no audio at all — the music lives in the browser
+# prototype (`design/login.html`) and nothing played it on a real boot. Rob, 2026-10-29: "there is
+# no audio on the splash screen when it boots".
+#
+# ⚠️ THE CARD MATTERS. A laptop with a discrete GPU exposes two HDA devices — Intel for the
+# speakers, NVIDIA for HDMI — and the HDMI one is silence when nothing is plugged into it, which
+# looks exactly like a broken audio driver. So the internal output is preferred by NAME, and the
+# first playback device is only a fallback.
+#
+# ⚠️ AND IT MUST NEVER FAIL A BOOT: every step is best effort, the unit runs it with a `-`, and it
+# exits 0 whatever happens. A diagnostic-grade nicety must not make a trial boot unhealthy, or it
+# rolls an update back (doc 20, E11).
+set -u
+
+TRACK=${MORPH_BOOT_TRACK:-/usr/share/morpheos/theme.wav}
+SINK_CMD=${MORPH_BOOT_APLAY:-aplay}
+
+[ -f "$TRACK" ] || { echo "boot-sound: no track at $TRACK"; exit 0; }
+command -v "$SINK_CMD" >/dev/null 2>&1 || { echo "boot-sound: no $SINK_CMD installed"; exit 0; }
+
+# Pick a card and device: the internal speakers if the name says so, else the first that plays.
+# Kept as a pure function of `aplay -l` output so it can be tested without a sound card.
+pick() {
+    awk '
+        /^card [0-9]+:/ {
+            card = $2; sub(":", "", card)
+            dev = ""
+            for (i = 1; i <= NF; i++) if ($i == "device") { dev = $(i + 1); sub(":", "", dev) }
+            if (dev == "") next
+            if (first == "") first = card " " dev
+            if ($0 ~ /Analog|Speaker|Headphone/) { good = card " " dev; exit }
+        }
+        END { if (good != "") print good; else if (first != "") print first }
+    '
+}
+
+devices=$("$SINK_CMD" -l 2>/dev/null || true)
+chosen=$(printf '%s\n' "$devices" | pick)
+[ -n "$chosen" ] || { echo "boot-sound: no playback device; silence is correct"; exit 0; }
+card=${chosen%% *}
+dev=${chosen##* }
+
+# Unmute and set a sane level: a fresh ALSA state often has Master at 0 or muted, which is another
+# silence that looks like a missing driver.
+amixer -c "$card" sset Master unmute >/dev/null 2>&1 || true
+amixer -c "$card" sset Master 80% >/dev/null 2>&1 || true
+amixer -c "$card" sset PCM unmute >/dev/null 2>&1 || true
+amixer -c "$card" sset PCM 80% >/dev/null 2>&1 || true
+
+echo "boot-sound: playing $TRACK on card $card device $dev"
+"$SINK_CMD" -q -D "plughw:$card,$dev" "$TRACK" 2>/dev/null || echo "boot-sound: the device refused the track"
+exit 0
