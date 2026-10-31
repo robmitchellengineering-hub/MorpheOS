@@ -206,6 +206,7 @@ impl SessionLayer {
             // `steps` is what actually happened to a path (restored or removed); `unchanged` is not
             // a restore, so counting it would inflate the record.
             restored: (session_rewind.steps.len() + capsule_rewind.steps.len()) as u64,
+            sealed_at: 0, // stamped by `seal`
         })
     }
 }
