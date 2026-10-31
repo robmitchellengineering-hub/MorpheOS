@@ -105,7 +105,7 @@ mkdir -p "$WORK"
 # installed, by name, in a hook; the firmware stays the chosen sets below. The extra modules
 # also carry mac80211_hwsim, the simulated Wi-Fi the E5 test connects through.
 BASE="$WORK/rootfs-base"
-BASE_PKGS=systemd-sysv,udev,kmod,linux-image-virtual,initramfs-tools,systemd-boot,dosfstools,libpixman-1-0,libxkbcommon0,libinput10,libseat1,seatd,pciutils,usbutils,pci.ids,usb.ids,linux-firmware-amd-graphics,linux-firmware-intel-graphics,linux-firmware-intel-wireless,linux-firmware-mediatek,linux-firmware-realtek,linux-firmware-broadcom-wireless,firmware-sof-signed,firmware-b43-installer,openssh-server,git,curl,ca-certificates
+BASE_PKGS=systemd-sysv,udev,kmod,linux-image-virtual,initramfs-tools,systemd-boot,dosfstools,libpixman-1-0,libxkbcommon0,libinput10,libseat1,seatd,pciutils,usbutils,pci.ids,usb.ids,linux-firmware-amd-graphics,linux-firmware-intel-graphics,linux-firmware-intel-wireless,linux-firmware-mediatek,linux-firmware-realtek,linux-firmware-broadcom-wireless,firmware-sof-signed,firmware-b43-installer,openssh-server,git,curl,ca-certificates,alsa-utils
 MODULES_EXTRA_HOOK='chroot "$1" sh -c "apt-get install -y -q linux-modules-extra-\$(ls /usr/lib/modules | sort -V | tail -1)"'
 BASE_KEY="$BASE_PKGS,(linux-modules-extra)"
 if [ "$(cat "$BASE/.complete" 2>/dev/null)" != "$BASE_KEY" ]; then
@@ -141,7 +141,10 @@ TAILSCALE_KEY_URL=https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg
 # systemd-resolved for DNS: the browser has to reach the network (E5).
 # Mesa, because Firefox needs GL to render (WebRender), and the base carries none: with no
 # GL it comes up blank — "no Firefox" on a screen that otherwise works (E6, MacBookPro9,1).
-BROWSER_PKGS="$BASE_PKGS,firefox,fonts-dejavu-core,network-manager,wpasupplicant,systemd-resolved,libgl1-mesa-dri,libegl-mesa0,libgbm1,libglx-mesa0,pipewire,pipewire-pulse,wireplumber,alsa-ucm-conf,tailscale"
+# A compiler, so the machine can build on itself (Rob, 2026-10-31). ~200 MB, so it rides with
+# the person-facing images only; the test scenarios keep their small disks.
+DEV_PKGS=build-essential,pkg-config
+BROWSER_PKGS="$BASE_PKGS,$DEV_PKGS,firefox,fonts-dejavu-core,network-manager,wpasupplicant,systemd-resolved,libgl1-mesa-dri,libegl-mesa0,libgbm1,libglx-mesa0,pipewire,pipewire-pulse,wireplumber,alsa-ucm-conf,tailscale"
 BROWSER_KEY="$BROWSER_PKGS,(linux-modules-extra)"
 if [ "$SCENARIO" = browser ] || [ "$SCENARIO" = plain ]; then
     BROWSER_BASE="$WORK/rootfs-browser"
@@ -474,6 +477,8 @@ EOF
     fi
     if [ "$SHELL_UI" = 1 ]; then
         cp -a "$HERE/overlay-shell/." "$dir/"
+        grep -q '^NAME="MorpheOS"' "$dir/etc/os-release" \
+            || { echo "the image does not identify as MorpheOS" >&2; exit 1; }
         install -m 0755 "$FLOW_COMPOSITOR" "$dir/usr/bin/flow-compositor"
         install -m 0755 "$SOLID_WINDOW" "$dir/usr/bin/solid-window"
         install -m 0755 "$FLOW_WIFI" "$dir/usr/bin/flow-wifi"
@@ -805,7 +810,10 @@ chmod 0700 "$DATADIR/strata"
 # A at 1134 MiB (94%). 1600 puts it at 71%. Then 2026-10-16, git+curl+ca-certificates (node/dev
 # tools) pushed slot A to 1428 MiB (89%); 1800 puts it back to 79%. Each raise is deliberate and
 # said in the pull request: a machine installed with one slot size keeps it (doc 20, E7).
-ESP_MB=300 ROOT_MB=1800 DATA_MB=256
+# ROOT_MB 1800 -> 2400 on 2026-10-31: the build toolchain measured slot A at 1761 MiB of 1800,
+# past this file own 85% guard. A machine keeps the slot size it was installed with (E7), so the
+# raise is deliberate now.
+ESP_MB=300 ROOT_MB=2400 DATA_MB=256
 # The autoupdate scenario downloads the payload's shrunk root image (~450 MiB — see the size
 # build-payload.sh prints) to /persist before installing it, which 256 MiB cannot hold
 # (doc 20, S3 note 5). Raised only for that scenario, so the other disks keep their size.
