@@ -509,7 +509,13 @@ EOF
             # The package's own hostapd service is not the test's access point: keep it off.
             ln -sf /dev/null "$dir/etc/systemd/system/hostapd.service"
         fi
-        for unit in seatd flow-shell flow-notice flow-rollback-notice $apps; do
+        # morph-boot-sound: the splash's music, played once when the shell draws. ALSA directly, because
+        # PipeWire ships no units in this image and WirePlumber cannot publish a default sink without a
+        # D-Bus session (both measured on the machine, 2026-10-31).
+        [ -x "$dir/usr/bin/aplay" ] || { echo "no aplay in the image (alsa-utils missing): the splash would boot silent" >&2; exit 1; }
+        [ -f "$dir/usr/share/morpheos/theme.wav" ] || { echo "no theme.wav: the splash would boot silent" >&2; exit 1; }
+        [ -x "$dir/usr/lib/morpheos/boot-sound" ] || { echo "no boot-sound script: the splash would boot silent" >&2; exit 1; }
+        for unit in seatd flow-shell flow-notice flow-rollback-notice morph-boot-sound $apps; do
             ln -sf "/usr/lib/systemd/system/$unit.service" \
                 "$dir/etc/systemd/system/multi-user.target.wants/$unit.service"
         done
