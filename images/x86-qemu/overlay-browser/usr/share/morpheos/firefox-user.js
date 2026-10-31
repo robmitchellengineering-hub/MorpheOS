@@ -8,3 +8,13 @@
 // Intel i915), fixed by blacklisting nouveau — not by changing how Firefox draws.
 user_pref("network.manage-offline-status", false);
 user_pref("browser.offline", false);
+
+// AUTOPLAY, BECAUSE THE BOOTED IMAGE HAS NOBODY TO TAP. login.html starts the splash and its music
+// together, and a browser stops audio until it has seen a gesture — at boot the first thing on the
+// screen is that page, so the gesture never comes and the machine is silent. Firefox will play
+// without one when the profile says so; measured need, not a preference (2026-10-29: "there is no
+// audio on the splash screen when it boots").
+user_pref("media.autoplay.default", 0);
+user_pref("media.autoplay.blocking_policy", 0);
+user_pref("media.autoplay.block-webaudio", false);
+user_pref("media.autoplay.block-event.enabled", false);
