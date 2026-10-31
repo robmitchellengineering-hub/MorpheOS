@@ -141,8 +141,16 @@ TAILSCALE_KEY_URL=https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg
 # systemd-resolved for DNS: the browser has to reach the network (E5).
 # Mesa, because Firefox needs GL to render (WebRender), and the base carries none: with no
 # GL it comes up blank — "no Firefox" on a screen that otherwise works (E6, MacBookPro9,1).
-BROWSER_PKGS="$BASE_PKGS,firefox,fonts-dejavu-core,network-manager,wpasupplicant,systemd-resolved,libgl1-mesa-dri,libegl-mesa0,libgbm1,libglx-mesa0,pipewire,pipewire-pulse,wireplumber,alsa-ucm-conf,tailscale"
+# A MACHINE THAT CAN BUILD ON ITSELF. Rob, 2026-10-31: "build yourself properly from the inside your online".
+# The image carried git and curl but no compiler, so a Rust toolchain installed into /persist could compile
+# and then fail to link: no cc, no ld, no libc6-dev, and rust-lld without binutils is not a real linker.
+# gcc + binutils + libc6-dev + make is ~200 MB, which is why it goes in the person-facing images rather
+# than every test scenario.
+DEV_PKGS=build-essential,pkg-config
+BROWSER_PKGS="$BASE_PKGS,$DEV_PKGS,firefox,fonts-dejavu-core,network-manager,wpasupplicant,systemd-resolved,libgl1-mesa-dri,libegl-mesa0,libgbm1,libglx-mesa0,pipewire,pipewire-pulse,wireplumber,alsa-ucm-conf,tailscale"
 BROWSER_KEY="$BROWSER_PKGS,(linux-modules-extra)"
+# The person-facing images are the ones that carry DEV_PKGS (see the compiler assertion below).
+INSTALLS_DEV_PKGS=0
 if [ "$SCENARIO" = browser ] || [ "$SCENARIO" = plain ]; then
     BROWSER_BASE="$WORK/rootfs-browser"
     if [ "$(cat "$BROWSER_BASE/.complete" 2>/dev/null)" != "$BROWSER_KEY" ]; then
@@ -158,6 +166,8 @@ if [ "$SCENARIO" = browser ] || [ "$SCENARIO" = plain ]; then
         gpg --dearmor < "$key" > "$keyring"
         ts_key="$WORK/tailscale-keyring.gpg"
         curl -fsSL "$TAILSCALE_KEY_URL" -o "$ts_key"
+        # This is the person-facing image, so it carries DEV_PKGS and the compiler assertion expects them.
+        INSTALLS_DEV_PKGS=1
         mmdebstrap --variant=apt \
             --include="$BROWSER_PKGS" \
             --aptopt='APT::Install-Recommends "false"' \
@@ -359,6 +369,18 @@ make_root() {
     install -m 0755 "$STRATA" "$dir/usr/bin/strata"
     # The Manifest applier (doc 20, S11): makes the current generation real at every boot.
     install -m 0755 "$MORPH_D" "$dir/usr/bin/morphd"
+    # A COMPILER IN THE IMAGE, on the images a person gets. Rob, 2026-10-31: "build yourself properly from
+    # the inside". With git and curl alone a toolchain installed into /persist could compile and then fail
+    # at the link — no cc, no ld, no libc6-dev. DEV_PKGS carries gcc/binutils/make, and this fails the
+    # build if they did not arrive.
+    #
+    # Only where DEV_PKGS is actually installed: the test scenarios are built small on purpose, and
+    # asserting a toolchain on an image that never claims one is how this check broke the A/B job.
+    if [ "${INSTALLS_DEV_PKGS:-0}" = 1 ]; then
+        for tool in /usr/bin/gcc /usr/bin/ld /usr/bin/make; do
+            [ -x "$dir$tool" ] || { echo "missing $tool: the machine could not build on itself" >&2; exit 1; }
+        done
+    fi
     # SSH in, so the mesh can drive this machine over the network (E6: no stick, no console
     # person). Root, key only — the mesh admin key is baked into the image.
     mkdir -p "$dir/root/.ssh" "$dir/etc/ssh/sshd_config.d" "$dir/etc/systemd/system/ssh.service.d"
@@ -805,7 +827,11 @@ chmod 0700 "$DATADIR/strata"
 # A at 1134 MiB (94%). 1600 puts it at 71%. Then 2026-10-16, git+curl+ca-certificates (node/dev
 # tools) pushed slot A to 1428 MiB (89%); 1800 puts it back to 79%. Each raise is deliberate and
 # said in the pull request: a machine installed with one slot size keeps it (doc 20, E7).
-ESP_MB=300 ROOT_MB=1800 DATA_MB=256
+# ROOT_MB 1800 -> 2400 on 2026-10-31, deliberately: adding a build toolchain (DEV_PKGS) took slot A to
+# 1761 MiB of 1800, past the 85% guard this file itself enforces — and the same guard was about to trip for
+# any further addition (audio, identity). A machine installed with one slot size keeps it (E7), so this is
+# the moment to raise it: 2400 leaves the toolchain with real headroom, and the stick is 123 GB.
+ESP_MB=300 ROOT_MB=2400 DATA_MB=256
 # The autoupdate scenario downloads the payload's shrunk root image (~450 MiB — see the size
 # build-payload.sh prints) to /persist before installing it, which 256 MiB cannot hold
 # (doc 20, S3 note 5). Raised only for that scenario, so the other disks keep their size.
