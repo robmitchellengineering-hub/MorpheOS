@@ -267,10 +267,18 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// THE FALSIFIER. Undo while the application is running: the process must see the reverted state without
-    /// a restart, because a rollback that needs a reboot is a backup tool, not a primitive.
+    /// THE FALSIFIER. Undo while the application is running: the SAME process, never restarted, must report
+    /// the reverted state. A rollback that needs a reboot is a backup tool, not a primitive.
+    ///
+    /// Note what this test does NOT accept: asking a *new* process what the file says. That would prove the
+    /// file changed on disk and nothing about a running application — the same class of false pass as a
+    /// tamper test that changes a field to the value it already had. The evidence here is the running child's
+    /// own stdout.
     #[test]
     fn undo_reaches_a_running_application() {
+        use std::io::{BufRead, BufReader};
+        use std::sync::mpsc;
+
         let dir = scratch("running");
         let c = Capsule::open(&dir, "editor").unwrap();
         c.write("home/notes.txt", b"before").unwrap();
@@ -280,25 +288,46 @@ mod tests {
         c.write("home/notes.txt", b"after").unwrap();
         c.record().unwrap();
 
-        // A "long-running application": started before the undo, reading its state when asked.
-        let mut app = c.spawn("while true; do cat \"$HOME/notes.txt\"; echo; sleep 0.05; done").unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(150));
+        // A long-running "application": started before the undo, printing what it sees every 20 ms.
+        let mut app = c
+            .spawn("i=0; while [ $i -lt 200 ]; do cat \"$HOME/notes.txt\"; echo; sleep 0.02; i=$((i+1)); done")
+            .unwrap();
+        let stdout = app.stdout.take().expect("piped stdout");
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            for line in BufReader::new(stdout).lines().map_while(std::result::Result::ok) {
+                if tx.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+
+        // It must be reporting the pre-undo state before we touch anything, or the test proves nothing.
+        let mut saw_after = false;
+        while let Ok(line) = rx.recv_timeout(std::time::Duration::from_secs(5)) {
+            if line.trim() == "after" {
+                saw_after = true;
+                break;
+            }
+        }
+        assert!(saw_after, "the application never reported the pre-undo state");
 
         c.undo_to(at).unwrap();
 
-        // The same process, never restarted, now reports the earlier content.
-        let mut seen_before = false;
-        for _ in 0..40 {
-            std::thread::sleep(std::time::Duration::from_millis(25));
-            let output = c.run("cat \"$HOME/notes.txt\"").unwrap().1;
-            if output.trim() == "before" {
-                seen_before = true;
+        // The same child, never restarted, now reports the earlier content on its own stdout.
+        let mut saw_before = false;
+        while let Ok(line) = rx.recv_timeout(std::time::Duration::from_secs(5)) {
+            if line.trim() == "before" {
+                saw_before = true;
                 break;
             }
         }
         let _ = app.kill();
         let _ = app.wait();
-        assert!(seen_before, "the running application did not see the undone state");
+        assert!(
+            saw_before,
+            "the RUNNING application did not see the undone state; a new process reading the file is not \n             evidence that undo reaches a process that is already running"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
