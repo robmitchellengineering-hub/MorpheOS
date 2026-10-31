@@ -22,10 +22,12 @@ use serde::{Deserialize, Serialize};
 
 mod isolate;
 mod query;
+mod sealed;
 mod session;
 
 pub use isolate::Isolation;
 pub use query::{ResolvedFile, StrataQuery};
+pub use sealed::{Committed, SealedSession};
 pub use session::{SessionLayer, TransitionRecord};
 
 pub type Result<T> = std::result::Result<T, Error>;
