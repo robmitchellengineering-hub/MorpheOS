@@ -48,6 +48,10 @@ jobs:
       - run: cargo build --release -p morph-update -p morph-autoupdate
       - run: cargo build --release -p morph-heal
       - run: cargo build --release -p morph-manifest -p morphd
+      # The attestation binary the image installs (docs/ATTESTATION.md). Without this line the build
+      # would install a file that was never compiled, and fail as a missing file rather than as a
+      # missing build — the sort of failure that costs a round trip to diagnose.
+      - run: cargo build --release -p morph-attest
       # The SAME script the builder runs in WSL2 (doc 20, S10), with the image and VM tools,
       # and KVM opened up if the runner has it.
       - name: Install image and VM tools (scripts/setup-linux.sh --images)
