@@ -159,12 +159,13 @@ exec chroot "$ROOT" /bin/sh /.capsule-entry
     /// never pivoted can still reach the host's `/` and will say so.
     pub fn isolation(&self) -> Result<Isolation> {
         let probe = r#"
-for p in /persist /root/.ssh /etc/shadow-host-mark-absent /home; do
+for p in /persist /root/.ssh /etc/shadow; do
   if [ -e "$p" ]; then echo "visible:$p"; fi
 done
-echo "pid:$(ls /proc | grep -c '^[0-9]\+$')"
-echo "net:$(cat /proc/net/dev 2>/dev/null | grep -vc '^Inter-|^ face' || echo 0)"
-echo "root:$(ls / | tr '\n' ',')"
+if [ -e /home ]; then echo "visible:/home-self"; fi
+echo "pid:$(ls /proc 2>/dev/null | grep -c '^[0-9]\+$')"
+echo "net:$(ls /sys/class/net 2>/dev/null | tr '\n' ',')"
+echo "root:$(ls / 2>/dev/null | tr '\n' ',')"
 "#;
         let (_, stdout, stderr) = self.run_isolated(probe)?;
         let mut leaked = Vec::new();
@@ -174,13 +175,14 @@ echo "root:$(ls / | tr '\n' ',')"
         for line in stdout.lines() {
             if let Some(path) = line.strip_prefix("visible:") {
                 // `/home` is the capsule's own layer; anything else that is visible is a leak.
-                if path != "/home" {
+                if path != "/home-self" {
                     leaked.push(path.to_string());
                 }
             } else if let Some(n) = line.strip_prefix("pid:") {
                 pid_count = n.parse().unwrap_or(0);
-            } else if let Some(n) = line.strip_prefix("net:") {
-                net_ifaces = n.parse().unwrap_or(0);
+            } else if let Some(rest) = line.strip_prefix("net:") {
+                // Only `lo` exists in a fresh network namespace; any second interface is the host's.
+                net_ifaces = rest.split(',').filter(|s| !s.is_empty()).count();
             } else if let Some(rest) = line.strip_prefix("root:") {
                 root_listing = rest.to_string();
             }
@@ -241,9 +243,14 @@ mod tests {
         );
         c.write("home/own.txt", b"CAPSULE-OWN").unwrap();
 
+        // Explicit `if` tests: `$(cat x 2>/dev/null || echo NOT-VISIBLE)` looks right and is not — the `||`
+        // binds to the last command in the pipeline, which succeeds with empty output, so the fallback never
+        // prints. That is how this test failed after the isolation itself was working.
         let script = format!(
-            "echo own:$(cat /home/own.txt); echo host:$(cat {marker_path} 2>/dev/null || echo NOT-VISIBLE); \
-             echo persist:$(ls /persist 2>/dev/null | head -1 || echo ABSENT)"
+            r#"echo own:$(cat /home/own.txt 2>/dev/null)
+if [ -e {marker_path} ]; then echo host:READ; else echo host:NOT-VISIBLE; fi
+if [ -e /persist ]; then echo persist:VISIBLE; else echo persist:ABSENT; fi
+"#
         );
         let (code, stdout, _stderr) = c.run_isolated(&script).unwrap();
         let _ = std::fs::remove_file(&host_marker);
