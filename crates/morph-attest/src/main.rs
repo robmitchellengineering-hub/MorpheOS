@@ -3,6 +3,7 @@
 //!   morph-attest show                     print the statement (unsigned) as JSON
 //!   morph-attest sign --key PATH          print the statement, signed
 //!   morph-attest verify FILE [--trusted-key HEX]
+//!   morph-attest boot  [--key PATH]       what the kernel MEASURED at boot, signed
 //!   morph-attest keygen --out PATH        make an attestation key (refuses to overwrite)
 //!
 //! Exit codes are the contract: 0 said-and-true, 1 refused or stale, 2 misuse.
@@ -290,6 +291,56 @@ fn main() -> ExitCode {
                 }
             }
         }
+        "boot" => {
+            // The measured-boot half. IMA's runtime log is the kernel's own record of what it hashed; signing a
+            // digest of it binds that record to this boot and this machine, so a log cannot be edited after the
+            // fact. WITHOUT a TPM this is not a quote — no PCR, no hardware root — and it is named accordingly.
+            let ima = parse_flag(&args, "--ima")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("/sys/kernel/security/ima/ascii_runtime_measurements"));
+            let log = match std::fs::read(&ima) {
+                Ok(l) => l,
+                Err(e) => {
+                    eprintln!("morph-attest: no IMA log at {}: {e}", ima.display());
+                    return ExitCode::from(1);
+                }
+            };
+            let boot_id = std::fs::read_to_string("/proc/sys/kernel/random/boot_id")
+                .map(|s| s.trim().to_string())
+                .unwrap_or_else(|_| "unknown".into());
+            let entries = log.iter().filter(|b| **b == b'\n').count() as u64;
+            let mut payload = String::from("morpheos-measured-boot v1\n");
+            payload.push_str(&format!("boot_id: {boot_id}\n"));
+            payload.push_str(&format!("ima_entries: {entries}\n"));
+            payload.push_str(&format!("ima_log_blake3: {}\n", blake3::hash(&log).to_hex()));
+            // Stated in the payload itself, so a verifier cannot mistake this for a TPM quote.
+            payload.push_str("tpm_quote: none (no TPM on this machine)\n");
+
+            match parse_flag(&args, "--key") {
+                Some(key_path) => match key_from_file(Path::new(&key_path)) {
+                    Ok(key) => {
+                        let signature = morph_attest::sign_payload(&key, payload.as_bytes());
+                        let doc = serde_json::json!({
+                            "payload": payload,
+                            "signature": signature,
+                            "key": morph_attest::hex(key.verifying_key().as_bytes()),
+                        });
+                        println!("{}", serde_json::to_string_pretty(&doc).expect("serialises"));
+                        ExitCode::SUCCESS
+                    }
+                    Err(why) => {
+                        eprintln!("morph-attest: {why}");
+                        ExitCode::from(1)
+                    }
+                },
+                // No key: print the claim, clearly unsigned. The tool must never look like it signed.
+                None => {
+                    println!("{payload}");
+                    eprintln!("morph-attest: unsigned (no --key); this claim has no author");
+                    ExitCode::SUCCESS
+                }
+            }
+        }
         "keygen" => {
             let out = match parse_flag(&args, "--out").map(PathBuf::from) {
                 Some(p) => p,
@@ -307,7 +358,7 @@ fn main() -> ExitCode {
             }
         }
         other => {
-            eprintln!("morph-attest: unknown command '{other}' (show|sign|verify|keygen)");
+            eprintln!("morph-attest: unknown command '{other}' (show|sign|verify|boot|keygen)");
             ExitCode::from(2)
         }
     }
