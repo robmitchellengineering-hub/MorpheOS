@@ -32,8 +32,6 @@ for f in config.common "config.$ARCH_KERNEL"; do
 done
 KVER=${KVER:-6.8}
 KURL="https://cdn.kernel.org/pub/linux/kernel/v${KVER%%.*}.x/linux-${KVER}.tar.xz"
-WORK=${1:-/tmp/morpheos-kernel}
-JOBS=${2:-$(nproc 2>/dev/null || echo 4)}
 
 mkdir -p "$WORK"
 cd "$WORK"
