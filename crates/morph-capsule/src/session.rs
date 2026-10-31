@@ -274,8 +274,10 @@ mod tests {
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].record, record, "the same record must verify");
 
-        // Now edit the stored record the way an attacker editing history would: one field.
-        let path = s.transitions_dir().join(format!("{}.json", record.at));
+        // Now edit the stored record the way an attacker editing history would: one field. The file is named by
+        // the transition's own moment, not by the state it returns to (that naming collision is a bug this
+        // suite already caught once).
+        let path = s.transitions_dir().join(format!("{}.json", record.sealed_at));
         let text = std::fs::read_to_string(&path).unwrap();
         let mut value: serde_json::Value = serde_json::from_str(&text).unwrap();
         value["record"]["restored"] = serde_json::json!(999);
