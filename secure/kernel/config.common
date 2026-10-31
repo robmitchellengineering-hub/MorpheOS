@@ -1,0 +1,62 @@
+# MorpheOS kernel — the decision list that holds for EVERY architecture.
+#
+# Rob, 2026-10-31: "make sure its legit from pi zero to enterprise servers". A kernel that only builds for
+# x86_64 is a proof of concept; this file is what makes the same promises (our name, our hardening, our
+# flight recorder, our userland's needs) true of every machine we build for:
+#
+#   x86_64  the 2012 laptop, and enterprise servers
+#   arm64   Raspberry Pi 3/4/5, arm64 servers, QEMU virt
+#   arm     Raspberry Pi Zero (armv6, 32-bit) — the smallest thing we claim to support
+#
+# The per-architecture files add the hardware each one actually has. Nothing here is guessed: every line
+# was needed by something we ran.
+
+CONFIG_LOCALVERSION="-morpheos"
+CONFIG_DEFAULT_HOSTNAME="morpheos"
+
+# --- our name: the only place `uname -s` can change, and it is architecture-neutral ---
+# (the define itself is edited in include/linux/uts.h by build.sh; see branding.patch for why)
+
+# --- what our own userland needs, on any machine ---
+CONFIG_IO_URING=y
+CONFIG_USERFAULTFD=y
+CONFIG_CHECKPOINT_RESTORE=y
+CONFIG_SECCOMP=y
+CONFIG_SECCOMP_FILTER=y
+CONFIG_BPF_SYSCALL=y
+CONFIG_BPF_JIT=y
+CONFIG_BPF_LSM=y
+CONFIG_CGROUP_BPF=y
+
+# --- hardening (KSPP), on any machine ---
+CONFIG_STRICT_KERNEL_RWX=y
+CONFIG_STRICT_MODULE_RWX=y
+CONFIG_SLAB_FREELIST_RANDOM=y
+CONFIG_SLAB_FREELIST_HARDENED=y
+CONFIG_HARDENED_USERCOPY=y
+CONFIG_FORTIFY_SOURCE=y
+CONFIG_INIT_ON_ALLOC_DEFAULT_ON=y
+CONFIG_INIT_STACK_ALL_ZERO=y
+CONFIG_STACKPROTECTOR_STRONG=y
+CONFIG_SECURITY=y
+CONFIG_SECURITY_LOCKDOWN_LSM=y
+CONFIG_LSM="lockdown,bpf,yama,landlock,integrity"
+
+# --- the flight recorder: a crash must leave evidence, on any machine ---
+CONFIG_PSTORE=y
+CONFIG_PSTORE_EFI_VARS=y
+CONFIG_PSTORE_CONSOLE=y
+CONFIG_PSTORE_RAM=y
+CONFIG_PSTORE_DEFLATE_COMPRESS=y
+CONFIG_EFI_VARS_PSTORE=y
+CONFIG_EFI_VARS_PSTORE_DEFAULT_DISABLE=n
+CONFIG_MAGIC_SYSRQ=y
+CONFIG_MAGIC_SYSRQ_DEFAULT_ENABLE=0x1
+
+# --- modules signed by us (Secure edition) ---
+CONFIG_MODULE_SIG=y
+CONFIG_MODULE_SIG_FORCE=y
+CONFIG_MODULE_SIG_SHA256=y
+
+# --- no BTF in Phase 0/1 (it would add a pahole dependency for no security gain yet) ---
+CONFIG_DEBUG_INFO_BTF=n

@@ -17,9 +17,25 @@ on:
   workflow_dispatch:
 
 jobs:
+  # One job per architecture we claim. Rob, 2026-10-31: "make sure its legit from pi zero to enterprise
+  # servers" — a kernel that only builds for x86_64 is a proof of concept, so the matrix IS the claim.
   build-and-boot:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            boot: true
+            extra: ""
+          - arch: arm64
+            boot: true
+            extra: gcc-aarch64-linux-gnu qemu-system-arm
+          - arch: arm
+            boot: false      # builds for the Pi Zero; a Zero cannot be emulated faithfully in CI
+            extra: gcc-arm-linux-gnueabihf
+    name: ${{ matrix.arch }}
     steps:
       - uses: actions/checkout@v4
 
@@ -27,7 +43,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq build-essential bison flex libelf-dev libssl-dev bc \
-            busybox-static qemu-system-x86 cpio
+            busybox-static qemu-system-x86 qemu-system-arm cpio ${{ matrix.extra }}
 
       - name: Fetch the pinned kernel source
         uses: actions/cache@v4
@@ -38,9 +54,10 @@ jobs:
       - name: Build the kernel from secure/kernel
         run: |
           # The recipe in the repo is used directly, so the workflow cannot drift from what a person builds.
-          ./secure/kernel/build.sh "$RUNNER_TEMP/kbuild" "$(nproc)" || {
+          ./secure/kernel/build.sh "${{ matrix.arch }}" "$RUNNER_TEMP/kbuild" "$(nproc)" || {
             echo "the build script failed"; exit 1; }
           ls -l "$RUNNER_TEMP/kbuild/out/"
+          cat "$RUNNER_TEMP/kbuild/out/build-report.txt"
 
       - name: A tiny initramfs whose only job is to say what the kernel calls itself
         run: |
@@ -58,15 +75,33 @@ jobs:
           chmod +x "$D/init"
           (cd "$D" && find . | cpio -o -H newc 2>/dev/null | gzip -9) > "$RUNNER_TEMP/initrd.gz"
 
+      - name: Build only (this architecture has no faithful emulator here)
+        if: ${{ !matrix.boot }}
+        run: |
+          echo "\${{ matrix.arch }} built:"
+          ls -l "$RUNNER_TEMP/kbuild/out/vmlinuz-morpheos"
+          grep -a "arch" "$RUNNER_TEMP/kbuild/out/build-report.txt"
+
       - name: Boot it and read what it says
+        if: ${{ matrix.boot }}
         run: |
           set -e
           LOG="$RUNNER_TEMP/serial.log"
-          timeout 180 qemu-system-x86_64 \
-            -kernel "$RUNNER_TEMP/kbuild/out/vmlinuz-morpheos" \
-            -initrd "$RUNNER_TEMP/initrd.gz" \
-            -append "console=ttyS0 panic=1" \
-            -nographic -no-reboot -m 1024 > "$LOG" 2>&1 || true
+          if [ "${{ matrix.arch }}" = "x86_64" ]; then
+            timeout 180 qemu-system-x86_64 \
+              -kernel "$RUNNER_TEMP/kbuild/out/vmlinuz-morpheos" \
+              -initrd "$RUNNER_TEMP/initrd.gz" \
+              -append "console=ttyS0 panic=1" \
+              -nographic -no-reboot -m 1024 > "$LOG" 2>&1 || true
+          else
+            # arm64: the virt machine is the closest thing to a Pi 5 or an arm64 server for a boot test.
+            timeout 240 qemu-system-aarch64 \
+              -machine virt -cpu cortex-a57 -m 1024 -smp 2 \
+              -kernel "$RUNNER_TEMP/kbuild/out/vmlinuz-morpheos" \
+              -initrd "$RUNNER_TEMP/initrd.gz" \
+              -append "console=ttyAMA0 panic=1" \
+              -nographic -no-reboot > "$LOG" 2>&1 || true
+          fi
           echo "=== the kernel said ==="
           grep -a "MORPHEOS-GATE" "$LOG" || true
           echo "=== version line ==="

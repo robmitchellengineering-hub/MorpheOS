@@ -6,7 +6,9 @@
 # kernel, built from a configuration we hold, with the branding patch that makes the machine report
 # MorpheOS, and the hardening set that the Secure edition is supposed to be able to claim.
 #
-#   secure/kernel/build.sh [workdir] [jobs]
+#   secure/kernel/build.sh [arch] [workdir] [jobs]
+#
+#   arch   x86_64 (default) | arm64 | arm      arm = armv6, the Pi Zero floor
 #
 # Output: <workdir>/out/vmlinuz-morpheos, <workdir>/out/modules.tar.xz, <workdir>/out/build-report.txt
 #
@@ -15,14 +17,38 @@
 # with a command behind it rather than a patch we believe applied.
 set -euo pipefail
 
+ARCH_KERNEL=${1:-x86_64}
+WORK=${2:-/tmp/morpheos-kernel/$ARCH_KERNEL}
+JOBS=${3:-$(nproc 2>/dev/null || echo 4)}
+case "$ARCH_KERNEL" in
+    x86_64) KARCH=x86_64 ; CROSS= ;;
+    arm64)  KARCH=arm64  ; CROSS=aarch64-linux-gnu- ;;
+    arm)    KARCH=arm    ; CROSS=arm-linux-gnueabihf- ;;
+    *) echo "unsupported arch '$ARCH_KERNEL' (x86_64|arm64|arm)" >&2; exit 2 ;;
+esac
+HERE=$(cd "$(dirname "$0")" && pwd)
+for f in config.common "config.$ARCH_KERNEL"; do
+    [ -f "$HERE/$f" ] || { echo "missing $f next to build.sh" >&2; exit 2; }
+done
 KVER=${KVER:-6.8}
 KURL="https://cdn.kernel.org/pub/linux/kernel/v${KVER%%.*}.x/linux-${KVER}.tar.xz"
-HERE=$(cd "$(dirname "$0")" && pwd)
 WORK=${1:-/tmp/morpheos-kernel}
 JOBS=${2:-$(nproc 2>/dev/null || echo 4)}
 
 mkdir -p "$WORK"
 cd "$WORK"
+
+# Cross compilers are named, not guessed: a build that silently falls back to the host compiler produces a
+# binary for the wrong machine and fails much later, at boot.
+if [ -n "$CROSS" ]; then
+    command -v "${CROSS}gcc" >/dev/null 2>&1 || {
+        echo "no ${CROSS}gcc: install the cross toolchain to build for $ARCH_KERNEL" >&2
+        exit 2
+    }
+    export ARCH=$KARCH CROSS_COMPILE=$CROSS
+else
+    export ARCH=$KARCH
+fi
 
 # 1. The source, pinned. A kernel we cannot re-download byte-identically is not a kernel we own.
 if [ ! -d "linux-$KVER" ]; then
@@ -49,23 +75,32 @@ echo "branding: UTS_SYSNAME is MorpheOS"
 # 3. Our configuration, merged on top of a small base so the result is a decision list rather than a
 #    vendor defconfig with everything enabled.
 if [ ! -f .config ]; then
-    make ARCH=x86_64 tinyconfig
+    # defconfig, not tinyconfig: tinyconfig sets CONFIG_BLOCK=n, which makes every filesystem impossible
+    # and silently drops the fragment's lines. Learned by watching them vanish.
+    make ARCH="$KARCH" defconfig
 fi
-scripts/kconfig/merge_config.sh -m -O . .config "$HERE/config.fragment" >/dev/null
-make ARCH=x86_64 olddefconfig
+# Common promises first, then what this architecture actually has.
+scripts/kconfig/merge_config.sh -m -O . .config "$HERE/config.common" "$HERE/config.$ARCH_KERNEL" >/dev/null
+make ARCH="$KARCH" olddefconfig
 
 # 4. Build.
 echo "building with -j$JOBS"
-make ARCH=x86_64 -j"$JOBS" bzImage modules
+make ARCH="$KARCH" -j"$JOBS" bzImage modules
 
 # 5. Package, and write the report.
 OUT="$WORK/out"
 mkdir -p "$OUT"
-cp arch/x86/boot/bzImage "$OUT/vmlinuz-morpheos"
-INSTALL_MOD_PATH="$WORK/modules" make ARCH=x86_64 modules_install >/dev/null
+# The image path differs per architecture; the artefact name does not, so callers stay the same.
+case "$KARCH" in
+    x86_64) cp arch/x86/boot/bzImage "$OUT/vmlinuz-morpheos" ;;
+    arm64)  cp arch/arm64/boot/Image "$OUT/vmlinuz-morpheos" ;;
+    arm)    cp arch/arm/boot/zImage "$OUT/vmlinuz-morpheos" ;;
+esac
+INSTALL_MOD_PATH="$WORK/modules" make ARCH="$KARCH" modules_install >/dev/null
 tar -C "$WORK/modules" -cJf "$OUT/modules.tar.xz" lib/modules
 
 {
+    echo "arch          : $ARCH_KERNEL"
     echo "kernel        : $KVER"
     echo "built with    : $(nproc 2>/dev/null) cores"
     echo "uname -s will : $(grep -m1 'define UTS_SYSNAME' include/linux/uts.h | sed 's/.*"\(.*\)"/\1/')"
