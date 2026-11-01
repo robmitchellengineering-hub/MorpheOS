@@ -4,23 +4,12 @@ This is the image a person boots: no self-test driver, nothing that powers itsel
 Flow shell with Firefox and a Wi-Fi picker on the screen, a root console one key away, and the
 tools to drive an A/B update by hand.
 
-> **It has been booted on real hardware — once, on one machine, from an older layout.**
-> On 2026-10-31 a 2012 MacBook Pro (`MacBookPro9,1`) booted this image **from the USB stick**:
-> read-only root, hostname `morpheos-a`, `/persist` mounted, root ssh answering. The evidence is
-> the mesh's own record — `nodes/morpheos-2012.json`, written by a probe that ran as root *inside*
-> that machine, and `runs/morpheos-2012/2026-10-31T0254Z-morpheos-2012-ssh-dispatch`.
->
-> What that does **not** prove:
-> - **not this build.** That stick's slots were 1800 MiB; `main` now builds 2400 MiB slots.
-> - **not a tablet.** No touch screen, no tablet Wi-Fi chip and no tablet firmware has been tried.
-> - **not a general claim.** One machine is one machine, and that one is currently switched off.
->
-> Every x86 *test* still runs in QEMU, which presents virtio devices and a firmware that is not the
-> one in your machine. The image asserts at build time that the drivers it needs are present (USB
-> storage, xHCI, AHCI, ext4, VFAT, and the laptop graphics, Wi-Fi, touchscreen and wired-network
-> drivers: AGENTS.md H18) and CI boots it and reaches a login, but "boots in QEMU" is not "boots on
-> your machine". The first power-on of *your* machine is still the experiment, and this file says
-> what to send back from it.
+> ⚠️ **It has never been booted on real hardware.** Every x86 test so far has run in QEMU, which
+> presents virtio devices and a UEFI firmware that is not the one in your laptop. The image
+> asserts at build time that the drivers it needs are present (USB storage, xHCI, AHCI, ext4,
+> VFAT, and the laptop graphics, Wi-Fi, touchscreen and wired-network drivers: AGENTS.md H18)
+> and CI boots it and reaches a login, but "boots in QEMU" is not "boots on your machine".
+> The first power-on is the experiment, and this file says what to send back from it.
 
 ## What you need
 
