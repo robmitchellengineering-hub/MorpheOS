@@ -147,7 +147,16 @@ TAILSCALE_KEY_URL=https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg
 # gcc + binutils + libc6-dev + make is ~200 MB, which is why it goes in the person-facing images rather
 # than every test scenario.
 DEV_PKGS=build-essential,pkg-config
-BROWSER_PKGS="$BASE_PKGS,$DEV_PKGS,firefox,fonts-dejavu-core,network-manager,wpasupplicant,systemd-resolved,libgl1-mesa-dri,libegl-mesa0,libgbm1,libglx-mesa0,pipewire,pipewire-pulse,wireplumber,alsa-ucm-conf,tailscale"
+# THE DEVELOPMENT LIBRARIES A WORKSPACE BUILD NEEDS. Measured on 2026-11-01: `cargo build --workspace` on a
+# person-facing image stopped at libudev-sys because the image had build-essential and pkg-config and NOT ONE of
+# the libraries the compositor stack links. A machine that can compile a toy crate and not its own OS is not a
+# build node, and calling it one was wrong.
+#
+# The names are the pkg-config names the crates ask for; the assertion below checks each one is IN the image, so
+# a package rename or a silently dropped dependency fails the build instead of failing a person's compile.
+BUILD_LIBS="libudev-dev libwayland-dev libxkbcommon-dev libinput-dev libseat-dev libpixman-1-dev libgbm-dev libdrm-dev libx11-dev libxkbcommon-x11-dev"
+BUILD_LIB_CHECK="libudev wayland-client xkbcommon libinput libseat pixman-1 gbm libdrm x11"
+BROWSER_PKGS="$BASE_PKGS,$DEV_PKGS,${BUILD_LIBS// /,},firefox,fonts-dejavu-core,network-manager,wpasupplicant,systemd-resolved,libgl1-mesa-dri,libegl-mesa0,libgbm1,libglx-mesa0,pipewire,pipewire-pulse,wireplumber,alsa-ucm-conf,tailscale"
 BROWSER_KEY="$BROWSER_PKGS,(linux-modules-extra)"
 # The person-facing images are the ones that carry DEV_PKGS (see the compiler assertion below).
 INSTALLS_DEV_PKGS=0
@@ -390,6 +399,19 @@ make_root() {
     if [ "${INSTALLS_DEV_PKGS:-0}" = 1 ]; then
         for tool in /usr/bin/gcc /usr/bin/ld /usr/bin/make; do
             [ -x "$dir$tool" ] || { echo "missing $tool: the machine could not build on itself" >&2; exit 1; }
+        done
+        # And the libraries the workspace links against. Present as .pc files, which is what pkg-config and the
+        # crates' build scripts actually look for — a package that installed only a runtime library would pass a
+        # `dpkg -l` check and still fail the build.
+        for lib in $BUILD_LIB_CHECK; do
+            found=0
+            for pc in "$dir"/usr/lib/*/pkgconfig/"$lib".pc "$dir"/usr/share/pkgconfig/"$lib".pc; do
+                [ -f "$pc" ] && found=1
+            done
+            [ "$found" = 1 ] || {
+                echo "missing $lib.pc: a workspace build would stop at this library" >&2
+                exit 1
+            }
         done
     fi
     # SSH in, so the mesh can drive this machine over the network (E6: no stick, no console
