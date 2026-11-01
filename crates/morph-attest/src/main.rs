@@ -308,13 +308,13 @@ fn main() -> ExitCode {
             let boot_id = std::fs::read_to_string("/proc/sys/kernel/random/boot_id")
                 .map(|s| s.trim().to_string())
                 .unwrap_or_else(|_| "unknown".into());
-            let entries = log.iter().filter(|b| **b == b'\n').count() as u64;
-            let mut payload = String::from("morpheos-measured-boot v1\n");
-            payload.push_str(&format!("boot_id: {boot_id}\n"));
-            payload.push_str(&format!("ima_entries: {entries}\n"));
-            payload.push_str(&format!("ima_log_blake3: {}\n", blake3::hash(&log).to_hex()));
-            // Stated in the payload itself, so a verifier cannot mistake this for a TPM quote.
-            payload.push_str("tpm_quote: none (no TPM on this machine)\n");
+            // PCR 10 is IMA's PCR. Reading it gives a hardware-backed value; it is a READ, not a quote, and the
+            // payload says so. The library builds the text so the shape can be tested.
+            let pcr10 = std::fs::read_to_string("/sys/class/tpm/tpm0/pcr-sha256/10")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            let payload = morph_attest::boot_payload(&log, &boot_id, pcr10.as_deref());
 
             match parse_flag(&args, "--key") {
                 Some(key_path) => match key_from_file(Path::new(&key_path)) {
