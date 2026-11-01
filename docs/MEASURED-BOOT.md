@@ -11,11 +11,24 @@ what people assume.
 | Does our kernel have IMA? | **yes** — `CONFIG_IMA=y`, `CONFIG_INTEGRITY=y`, `CONFIG_INTEGRITY_SIGNATURE=y` | the built kernel's `.config` on the build host |
 | Is IMA live in the running image? | **yes** — `/sys/kernel/security/ima/` with `ascii_runtime_measurements`, `policy`, `violations` | listed inside the VM |
 | Is it measuring anything? | **almost nothing** — 1 entry, an all-zero boot aggregate | `wc -l` → 1; first entry hashes zeros |
-| Is there a TPM? | **no** — `swtpm` is not installed on the VM host, so no emulated TPM either | `command -v swtpm` → not found |
+| Is there a TPM? | **yes, since 2026-10-31** — `swtpm` 0.7.3 installed on the VM host, and `VM_TPM=1` attaches `tpm-tis` | `swtpm --version`; the guest kernel logs `tpm_tis MSFT0101:00: 2.0 TPM (device-id 0x1, rev-id 1)` |
 
 The one measurement is the kernel's boot aggregate with a zero digest: **IMA is present but no policy is
 loaded**, so it has not measured the kernel, the initramfs or any file. That is not a defect in MorpheOS; it is
 the default state of the feature on this kernel.
+
+**The TPM arrived during this phase.** `swtpm` 0.7.3 is installed on the VM host and `images/x86-qemu/run-vm.sh`
+attaches it when `VM_TPM=1` is set, with the state directory beside the disk (a TPM's identity lasts exactly as
+long as its disk). A boot with it produced, in the guest's own kernel log:
+
+```
+ACPI: TPM2 0x000000007FB76000 00004C (v04 BOCHS  BXPC     00000001 BXPC 00000001)
+tpm_tis MSFT0101:00: 2.0 TPM (device-id 0x1, rev-id 1)
+```
+
+So the machine now has a **TPM 2.0** to extend measurements into. What is still missing for a quote is the
+policy that makes IMA measure anything, and a stable forwarded port on the TPM VM so PCRs can be read and
+recorded from inside it — both are work, not unknowns.
 
 ## What is delivered, and is real
 
