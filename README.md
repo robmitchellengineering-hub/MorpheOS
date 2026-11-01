@@ -48,6 +48,8 @@ needs, then gets out of the way.
 21. [The Intent Engine](docs/21-intent-engine.md): words to a safe action; the catalogue, the tiers, what may run alone, and the evaluation that decides which tiers earn their place (tasks I1–I10)
 22. [Diagnosis](docs/22-diagnosis.md): from a symptom to a verified cause; probes, playbooks that can be checked, where AI helps, and the fault harness that tests it (tasks F1–F10)
 23. [The Slate Line](docs/23-tablet-line.md): MorpheOS on a tablet — the same x86 image on a touch device, the hardware it needs, and why an iPad can never be one (task E21)
+24. [The Phone Arm](docs/24-phone-arm.md): a third line — MorpheOS on handsets that must make calls; ModemManager over QMI, call audio through UCM, the Flow phone profile, and VoLTE as M0 before anything else
+25. [Linux Phone Builds](docs/25-linux-phone-builds.md): what the field gives us — Mobian as the Debian-native device layer, postmarketOS as the reference, Droidian as the fallback
 
 ## The big reframe
 
