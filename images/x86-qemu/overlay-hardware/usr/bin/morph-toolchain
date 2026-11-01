@@ -1,0 +1,46 @@
+#!/bin/sh
+# What this machine can build with, in one line a script or a person can read.
+#
+# The mesh dispatches non-interactive commands, which do not read profile.d, so the answer cannot only live there.
+# This prints the environment those commands need, and says plainly when a tool is missing rather than printing
+# nothing and letting the caller infer success.
+set -u
+
+rust_ok=0
+if [ -x /persist/cargo/bin/cargo ]; then
+    RUSTUP_HOME=/persist/rust
+    CARGO_HOME=/persist/cargo
+    export RUSTUP_HOME CARGO_HOME
+    rustc=$(/persist/cargo/bin/rustc -V 2>/dev/null || echo missing)
+    cargo=$(/persist/cargo/bin/cargo -V 2>/dev/null || echo missing)
+    rust_ok=1
+else
+    rustc="absent (/persist/cargo/bin/cargo not found)"
+    cargo="absent"
+fi
+
+cc=$(command -v gcc 2>/dev/null || echo absent)
+ld=$(command -v ld 2>/dev/null || echo absent)
+make=$(command -v make 2>/dev/null || echo absent)
+
+printf 'MorpheOS toolchain on %s\n' "$(hostname 2>/dev/null || echo this machine)"
+printf '  rustc:  %s\n' "$rustc"
+printf '  cargo:  %s\n' "$cargo"
+printf '  gcc:    %s\n' "$cc"
+printf '  ld:     %s\n' "$ld"
+printf '  make:   %s\n' "$make"
+
+if [ "$rust_ok" = 1 ]; then
+    printf '  env:    RUSTUP_HOME=/persist/rust CARGO_HOME=/persist/cargo PATH=/persist/cargo/bin:$PATH\n'
+    printf '  build:  cargo build --release -p <crate>   (from a checkout on /persist)\n'
+else
+    printf '  build:  no Rust toolchain yet. Install it into /persist (the root is read-only):\n'
+    printf '          RUSTUP_HOME=/persist/rust CARGO_HOME=/persist/cargo sh /tmp/rustup.sh -y \\\n'
+    printf '            --profile minimal --default-toolchain 1.99.0 --no-modify-path\n'
+fi
+
+# A Rust crate that links C stops at the link step without these, and the failure is easy to misread as a code
+# error, so it is said here rather than discovered later.
+if [ "$cc" = absent ] || [ "$make" = absent ]; then
+    printf '  note:   without gcc and make, a crate that links C will stop at the link\n'
+fi
