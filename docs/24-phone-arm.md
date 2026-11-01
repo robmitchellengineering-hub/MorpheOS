@@ -24,6 +24,11 @@ the project.
 - **The shell**: MorpheOS's Flow compositor gains a **phone profile** — dialer, in-call screen, SMS,
   contacts, and an overlay that can take the screen for an incoming call. That is real work, but it is
   work we control.
+- **VoLTE**: `81voltd`, packaged in Debian trixie and maintained by the DebianOnMobile team — *"service
+  managing VoLTE calls on Qualcomm modem ... implements the necessary IMS Data service for VoLTE calls
+  on Qualcomm modem using the QMI/QRTR protocol"*. It depends only on ModemManager's `libmm-glib` and
+  `libqrtr`, and has an arm64 build. That is the missing piece for M0, and it is Debian-native, so it
+  drops into our build rather than needing a port.
 - **Emergency calls**: must work with no SIM and without the UI being up. It is a correctness
   requirement, not a feature.
 
