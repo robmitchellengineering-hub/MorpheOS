@@ -134,7 +134,18 @@ flow-compositor: splash done
 flow-browser.service started        ->  1 window(s) on screen
 ```
 
+**The data partition, and the race it exposed (2026-11-01).** The first build had `esp` and a single
+`root`, so Firefox wrote its profile into the root — the one place the layout exists to avoid. Adding
+a `data` partition labelled `data` and an fstab entry (`PARTLABEL=data /persist ext4`) was not
+enough: the browser started while the partition was still coming up, so the profile *still* landed on
+the root. The unit now carries `RequiresMountsFor=/persist`, and the proof is that
+`/persist/browser/profile` exists **on the data partition** after a boot — a directory appearing on the
+root would have been the silent failure this layout is supposed to prevent.
+
 **Not verified, and not claimed:** that Firefox *paints* on arm64. Under TCG the window attaches but
 the captured frame stays background plus the probe window's colour. The x86 browser test runs on KVM
-and never on TCG, and the same limit applies here: this needs **native arm64** — the iPad through
-UTM once the lock opens, or any arm64 board with UEFI firmware, which can boot this exact disk.
+and never on TCG, and the same limit applies here: this needs **native arm64**, i.e. real hardware.
+
+**One root slot only.** The x86 image carries `root-a` and `root-b` plus the trial-and-commit boot;
+the arm64 image has one root, because the arm64 loader here is GRUB and `morph-boot`'s sd-boot path
+is x86. Making A/B real on arm64 is a bootloader decision, not a detail, and it is not built.
