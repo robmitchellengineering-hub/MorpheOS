@@ -23,6 +23,7 @@ after it's accepted. A later ADR supersedes it instead.
 | [0018](0018-backup-replica.md) | Backups are Strata's store replicated, each object encrypted with `age`; the machine holds only the public half (P1) | **Proposed**: waiting on Rob |
 | [0019](0019-release-signing-key.md) | Releases signed offline by Rob, two keys in every image, dated release numbers (S2, S3) | **Proposed**: waiting on Rob |
 | [0020](0020-account-model.md) | One owner with a password chosen at first boot, on `/persist`; root locked (S5) | **Proposed**: waiting on Rob |
+| [0021](0021-slate-line.md) | A Slate line: the existing `plain` x86 image on an x86_64 UEFI tablet; iOS hardware is permanently out, an iPad is a client through Morph Link (E21) | Accepted |
 
 A **Proposed** record is a draft for a decision that is Rob's. It may be edited until he
 answers its "What Rob decides" questions. It is then marked Accepted with his answers and the

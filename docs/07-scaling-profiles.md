@@ -18,6 +18,13 @@ presets of which components are enabled and how they're tuned. They're not forks
 > sub-profile (a headless sensor or mesh-relay agent) rather than a full OS
 > experience. The Zero 2 W (ARMv8, 64-bit) is the real minimum.
 
+**The Slate (a tablet)** is the Desk profile in another shape: the same x86 image, the same Flow
+shell, a touch screen instead of a pointer and a battery instead of a wall socket. It is a line
+of its own — [23](23-tablet-line.md), [ADR 0021](adr/0021-slate-line.md) — because touch, an
+on-screen keyboard and suspend are questions the Desk profile has never had to answer; it adds
+no tier, no kernel and no second image. It is **not** reachable on iPad or any other iOS
+hardware — doc 23 §3 gives the reasons with sources.
+
 ## How one design scales down
 
 - Every core service is **modular, with features chosen at compile time and at runtime**
