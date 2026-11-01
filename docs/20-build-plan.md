@@ -694,6 +694,28 @@ passwords live); and that the reference laptop is not `win`.
    - (3) Disk identity by PARTUUID, with the boot that has the stick still attached (M).
    - (4) HARDWARE.md, "Install to this machine's disk" (S).
 
+### E21 · A tablet slate: the image on a touch device · proposed · needs E6
+
+**What:** the `plain` x86 image booted on an x86_64 UEFI tablet and driven by its touch screen —
+the Flow shell, Firefox and the Wi-Fi picker on a device with no keyboard. [Doc 23](23-tablet-line.md)
+is the line and [ADR 0021](adr/0021-slate-line.md) the decision. **There is no tablet image**, and
+this task must not grow one.
+
+**Done when:** a person boots the stick on a slate and every one of these is written into the
+hardware report on the ESP, not asserted in a note:
+- (1) the device's own `lspci` output names an **Intel** Wi-Fi adapter, and NetworkManager joins a
+  WPA2 network through the picker, as `test-wifi.sh` does in the VM;
+- (2) `libinput list-devices` names a touchscreen, and a tap on the shell moves a window, with the
+  event node recorded;
+- (3) Firefox opens a local page read off the screen — E4's `test-browser.sh` read, done on the
+  device;
+- (4) the slot commits, and a plain reboot comes back to the committed slot.
+
+**Waiting on Rob:** which device (doc 23 §2 is the criteria list; the first must be returnable),
+and whether it runs from the stick or installs to internal storage once E7 exists. **The
+on-screen keyboard is deliberately not in this task** — if a Slate cannot be used without one,
+that is a new task, because it is compositor work rather than a device.
+
 ### E13 · The shell on the screen a person is looking at · proposed · needs E12
 
 **What:** the compositor shows the shell on the first connected output only. On a laptop
