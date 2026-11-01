@@ -50,6 +50,10 @@ fi
 # is 10.0.2.2 and DHCP hands out 10.0.2.15. Otherwise the VM has no network at all.
 NET_ARGS=(-nic none)
 [ "${VM_NET:-0}" = 1 ] && NET_ARGS=(-nic user,model=virtio-net-pci)
+# VM_SSH=1 forwards a host port to the guest's 22, so the mesh can drive the machine. Without this the guest
+# has no network at all, which is the right default and the wrong surprise: a VM booted for a test with no way
+# in is a black box, and I lost an hour to exactly that (the flag existed on another branch, not this one).
+[ "${VM_SSH:-0}" = 1 ] && NET_ARGS=(-nic "user,model=virtio-net-pci,hostfwd=tcp::${VM_SSH_PORT:-2222}-:22")
 
 ACCEL=tcg
 [ -w /dev/kvm ] && ACCEL=kvm
