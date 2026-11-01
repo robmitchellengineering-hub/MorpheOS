@@ -65,12 +65,18 @@ ACCEL=tcg
 RTC_ARGS=()
 [ -n "${VM_RTC:-}" ] && RTC_ARGS=(-rtc "base=$VM_RTC")
 
+# VM_EXTRA_DISK=<file> attaches a second raw disk. A full workspace build needs several GB of target output, and
+# the image's data partition is sized for a person, not a builder: measured 2026-11-01, a workspace build put
+# 1.4G of target/ into it and took /persist to 98%. The builder disk is where that goes instead.
+EXTRA_ARGS=()
+[ -n "${VM_EXTRA_DISK:-}" ] && EXTRA_ARGS=(-drive "file=$VM_EXTRA_DISK,format=raw,if=virtio")
+
 exec timeout --foreground "$TIMEOUT" qemu-system-x86_64 \
     -machine q35,accel="$ACCEL" -cpu max -smp 2 -m "${VM_MEM:-1024}" \
     -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
     -drive if=pflash,format=raw,file="$VARS" \
     -drive file="$DISK",format=raw,if=virtio \
-    "${PAYLOAD_ARGS[@]}" "${USB_ARGS[@]}" \
+    "${PAYLOAD_ARGS[@]}" "${USB_ARGS[@]}" "${EXTRA_ARGS[@]}" \
     -device i6300esb -action watchdog=reset \
     "${DISPLAY_ARGS[@]}" "${MONITOR_ARGS[@]}" \
     "${RTC_ARGS[@]}" "${NET_ARGS[@]}" -display none \
