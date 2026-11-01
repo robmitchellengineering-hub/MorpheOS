@@ -201,10 +201,16 @@ pub fn verify_payload(key_hex: &str, payload: &[u8], signature_hex: &str) -> Res
 /// The claimed facts about a boot: what the kernel measured, and — stated in the payload itself — whether a TPM
 /// was involved. A signed log without a hardware root is not a quote, and the text says so where a verifier
 /// reads it rather than in a footnote elsewhere.
-pub fn boot_payload(ima_log: &[u8], boot_id: &str) -> String {
+pub fn boot_payload(ima_log: &[u8], boot_id: &str, pcr10: Option<&str>) -> String {
     let entries = ima_log.iter().filter(|b| **b == b'\n').count() as u64;
+    // With a TPM the claim carries a hardware value; without one it says so. Neither case is a QUOTE: a quote is
+    // the TPM signing the PCR with a key sealed to it, which needs tpm2_quote and an attestation key in the TPM.
+    let tpm = match pcr10 {
+        Some(pcr) => format!("tpm_pcr10: {pcr}\ntpm_quote: none (PCR read, not signed by the TPM)\n"),
+        None => "tpm_quote: none (no TPM on this machine)\n".to_string(),
+    };
     format!(
-        "morpheos-measured-boot v1\nboot_id: {boot_id}\nima_entries: {entries}\nima_log_blake3: {}\ntpm_quote: none (no TPM on this machine)\n",
+        "morpheos-measured-boot v1\nboot_id: {boot_id}\nima_entries: {entries}\nima_log_blake3: {}\n{tpm}",
         blake3::hash(ima_log).to_hex()
     )
 }
@@ -265,12 +271,12 @@ mod tests {
     #[test]
     fn the_boot_payload_changes_only_when_the_measurements_do() {
         let log = b"10 abc ima-ng sha256:... boot_aggregate\n";
-        let a = boot_payload(log, "boot-1");
-        let b = boot_payload(log, "boot-1");
+        let a = boot_payload(log, "boot-1", None);
+        let b = boot_payload(log, "boot-1", None);
         assert_eq!(a, b, "the same log and boot must produce the same payload");
-        let changed = boot_payload(b"10 def ima-ng sha256:... other\n", "boot-1");
+        let changed = boot_payload(b"10 def ima-ng sha256:... other\n", "boot-1", None);
         assert_ne!(a, changed, "a different measurement log must produce a different payload");
-        let other_boot = boot_payload(log, "boot-2");
+        let other_boot = boot_payload(log, "boot-2", None);
         assert_ne!(a, other_boot, "the payload must be bound to the boot it describes");
         assert!(a.contains("ima_entries: 1"));
         assert!(
