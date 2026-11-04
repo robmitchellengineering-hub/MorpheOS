@@ -71,8 +71,35 @@ print_key() {
         "$REPO" "$(cat "$M/host-id" 2>/dev/null || hostname)"
 }
 
+# A STICK CAN CARRY ITS OWN CLAIM. A file written to the ESP when the stick is prepared
+# (/efi/morpheos-node.conf) says which queue the machine should own and where the bus is. That turns "install
+# MorpheOS, then follow five steps on a forum post" into "boot the stick". MESH_STICK_CONF overrides the path so
+# the logic can be tested without a stick.
+from_esp() {
+    local conf="${MESH_STICK_CONF:-/efi/morpheos-node.conf}"
+    [ -f "$conf" ] || { say "no stick claim file at $conf"; return 1; }
+    say "reading $conf"
+    local want_host="" want_bus=""
+    while IFS='=' read -r k v; do
+        case "$k" in
+            host) want_host="$v" ;;
+            bus) want_bus="$v" ;;
+            ""|\#*) ;;
+        esac
+    done < "$conf"
+    [ -n "$want_host" ] || { say "the claim file has no host= line"; return 1; }
+    if [ -n "$want_bus" ]; then MESH_BUS="$want_bus"; export MESH_BUS; fi
+    if [ -f "$M/host-id" ] && [ "$(cat "$M/host-id")" != "$want_host" ]; then
+        say "this machine is already $((cat "$M/host-id" 2>/dev/null)) - refusing to adopt $want_host"
+        return 1
+    fi
+    MESH_HOST="$want_host" ensure || return 1
+    say "claimed as $want_host from the stick"
+}
+
 case "${1:---both}" in
     --ensure) ensure ;;
+    --from-esp) from_esp ;;
     --print-key) print_key ;;
     --both|"") ensure && print_key ;;
     *) echo "usage: mesh-node-setup [--ensure|--print-key]" >&2; exit 2 ;;

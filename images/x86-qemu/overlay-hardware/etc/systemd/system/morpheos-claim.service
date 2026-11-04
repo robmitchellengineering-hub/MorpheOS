@@ -1,0 +1,24 @@
+# MorpheOS: a stick can claim the machine it boots, with nobody at the keyboard.
+#
+# WHY. Everything that makes a machine a node is on /persist, and the operator steps are: add a deploy key to the
+# repo, claim the identity, join the tailnet. For a stick you are preparing for a fleet, those steps belong in the
+# preparation, not in the install: a file on the ESP (/efi/morpheos-node.conf, written when the stick is made) says
+# which queue the machine owns, and this runs the claim from it at first boot.
+#
+# It is oneshot and conditional: no claim file, no effect. It runs BEFORE the node agent so the agent has an
+# identity when it starts, and it never overwrites a machine that is already claimed as something else.
+[Unit]
+Description=MorpheOS claim this machine as a robmesh node from the stick
+Documentation=https://github.com/robmitchellengineering-hub/MorpheOS/blob/main/docs/26-robmesh-node.md
+ConditionPathExists=/efi/morpheos-node.conf
+Before=morpheos-mesh-node.service
+After=efi.mount persist.mount
+RequiresMountsFor=/persist
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/morpheos/mesh-node-setup --from-esp
+# A claim that fails must not stop the boot or hold the agent: the machine still boots as a desktop, and
+# `morph-node status` says what is missing.
+SuccessExitStatus=1
