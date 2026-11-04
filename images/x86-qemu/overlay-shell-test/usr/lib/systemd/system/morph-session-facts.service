@@ -1,0 +1,21 @@
+# TEST ONLY — shell image only, never `plain` (E11).
+#
+# The question E11 answers is "is the compositor running as an ordinary user?" and the only honest way to answer it
+# is to read it off the disk from the running system: the compositor's real uid, the owner of its Wayland socket,
+# and what the unit *asked for*. A test that trusts the unit file can pass while the process runs as root.
+#
+# It writes to the ESP because that is what the harness can read from outside the VM (`mtype`), and because the
+# root filesystem is read-only.
+[Unit]
+Description=MorpheOS record the session's real ownership, for the shell test (E11)
+After=flow-shell.service
+ConditionPathExists=/usr/bin/flow-compositor
+
+[Service]
+Type=oneshot
+# The compositor may take a moment to appear after first frame; poll briefly rather than guessing a fixed sleep.
+ExecStart=/usr/lib/morpheos/morph-session-facts
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

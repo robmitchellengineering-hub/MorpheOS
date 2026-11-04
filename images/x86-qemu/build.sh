@@ -539,6 +539,13 @@ EOF
     fi
     if [ "$SHELL_UI" = 1 ]; then
         cp -a "$HERE/overlay-shell/." "$dir/"
+        # E11's verification, in the SHELL image only and never in `plain`: a unit that records the compositor's real
+        # uid, the Wayland socket's owner and what the unit asked for, onto the ESP where the harness can read it.
+        # The task says to write this while the compositor still runs as root and watch it go red - which is what it
+        # does today: today's answer is uid 0, and the check reports it rather than pretending otherwise.
+        cp -a "$HERE/overlay-shell-test/." "$dir/"
+        ln -sf /usr/lib/systemd/system/morph-session-facts.service \
+            "$dir/etc/systemd/system/multi-user.target.wants/morph-session-facts.service"
         # WHAT THE MACHINE CALLS ITSELF, installed with the shell because this is the image a person
         # boots. Ubuntu's os-release made every tool report "Ubuntu 24.04.5 LTS", so MorpheOS was
         # indistinguishable from its base (Rob, 2026-10-31). ID_LIKE keeps apt working: this IS a
