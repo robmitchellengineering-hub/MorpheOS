@@ -90,7 +90,7 @@ from_esp() {
     [ -n "$want_host" ] || { say "the claim file has no host= line"; return 1; }
     if [ -n "$want_bus" ]; then MESH_BUS="$want_bus"; export MESH_BUS; fi
     if [ -f "$M/host-id" ] && [ "$(cat "$M/host-id")" != "$want_host" ]; then
-        say "this machine is already $((cat "$M/host-id" 2>/dev/null)) - refusing to adopt $want_host"
+        say "this machine is already $(cat "$M/host-id" 2>/dev/null) - refusing to adopt $want_host"
         return 1
     fi
     MESH_HOST="$want_host" ensure || return 1
