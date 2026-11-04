@@ -113,3 +113,26 @@ Also fixed, in the test itself: `history=$(mtype … )` ran under `set -e`, so a
 with **no message** — the run ended after the console check, exit 1, and the failing assertion was never named.
 That is how two of the three reds were reported as "the image is broken" with nothing to act on. It now reads
 tolerantly and prints `FAIL the ESP has no /morph-boot/history.jsonl` instead.
+
+## The last two, and why they hid
+
+1. **The boot history defaulted to a tmpfs.** `boot-check` reads `HISTORY=${MORPH_BOOT_HISTORY:-/var/lib/morph-boot/history.jsonl}`
+   and on this image `/var` is volatile, so the record of every boot went into space that empties — while the
+   file's own comment promises "on storage that survives reboots". The path was arriving from whichever overlay
+   happened to set it (the Pi5 sets it; the reference laptop had it; the CI test image's ESP had no `/morph-boot`
+   at all). The image now sets `MORPH_BOOT_HISTORY=/efi/morph-boot/history.jsonl` itself.
+2. **`systemctl is-system-running --wait` with a 300 s default, inside a boot unit.** The CI boot test kills the VM
+   at 300 s, so a boot that had not settled produced *no record at all* and read as "the image recorded no boot
+   history". The hardware only escaped because its boot was `degraded`, which returns immediately. Capped at 120 s:
+   an unsettled boot is `timeout`, which the script already knows how to write down.
+
+Both were invisible until the boot test was changed to **print what the ESP holds and every `boot-check` line**
+instead of only saying "missing". A failure that names an absence sends the next person guessing; a failure that
+names the contents ends the guessing in one run.
+
+## Where this stands
+
+Eleven defects, all found by making the machine do the job rather than by reading the design. The node runs
+unattended for hours, takes jobs from the bus, commits its results and publishes them. What is **not** proven is the
+one thing the whole exercise is for: that a **reboot** brings it back with nobody logged in. That needs the stick
+flashed and one reboot at the machine.
