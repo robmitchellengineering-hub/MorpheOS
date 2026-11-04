@@ -53,6 +53,7 @@ needs, then gets out of the way.
 26. [The Secure Arm](docs/26-secure-arm.md): the hardened build beside the everyday one — its own image, its own kernel, its own attack suite; the controls X1–X8 and K1–K3, the order they are built in, and the proof each one owes
 27. [As a robmesh node](docs/27-robmesh-node.md): one command to become a node, what each part is for, the seven failures that cost a day, and what is not done yet
 28. [Accounts](docs/28-accounts.md): who the shell runs as, what root cost on the reference machine (audio, history, keys, apt), and the three options with what each buys — awaiting a decision
+29. [The install stick](docs/29-install-stick.md): flash, boot, it is a build node — the pieces that are measured, the flow that is not, and the four things that must be true before the name is earned
 
 ## The big reframe
 
