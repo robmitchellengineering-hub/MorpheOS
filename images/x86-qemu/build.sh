@@ -156,7 +156,11 @@ DEV_PKGS=build-essential,pkg-config
 # a package rename or a silently dropped dependency fails the build instead of failing a person's compile.
 BUILD_LIBS="libudev-dev libwayland-dev libxkbcommon-dev libinput-dev libseat-dev libpixman-1-dev libgbm-dev libdrm-dev libx11-dev libxkbcommon-x11-dev"
 BUILD_LIB_CHECK="libudev wayland-client xkbcommon libinput libseat pixman-1 gbm libdrm x11"
-BROWSER_PKGS="$BASE_PKGS,$DEV_PKGS,${BUILD_LIBS// /,},firefox,fonts-dejavu-core,network-manager,wpasupplicant,systemd-resolved,libgl1-mesa-dri,libegl-mesa0,libgbm1,libglx-mesa0,pipewire,pipewire-pulse,wireplumber,alsa-ucm-conf,tailscale"
+# NODE, BECAUSE THE MESH AGENT CANNOT PARSE A JOB WITHOUT IT. scripts/node.sh reads every job with
+# `node -e`; on 2026-11-04 the node came up, pulled its queue, and reported "no command and no task" for every
+# job because the image had no Node at all - a machine that looks like a node and can never run anything.
+NODE_PKGS=nodejs
+BROWSER_PKGS="$BASE_PKGS,$DEV_PKGS,${BUILD_LIBS// /,},$NODE_PKGS,firefox,fonts-dejavu-core,network-manager,wpasupplicant,systemd-resolved,libgl1-mesa-dri,libegl-mesa0,libgbm1,libglx-mesa0,pipewire,pipewire-pulse,wireplumber,alsa-ucm-conf,tailscale"
 BROWSER_KEY="$BROWSER_PKGS,(linux-modules-extra)"
 # The person-facing images are the ones that carry DEV_PKGS (see the compiler assertion below).
 INSTALLS_DEV_PKGS=0
@@ -400,6 +404,12 @@ make_root() {
         for tool in /usr/bin/gcc /usr/bin/ld /usr/bin/make; do
             [ -x "$dir$tool" ] || { echo "missing $tool: the machine could not build on itself" >&2; exit 1; }
         done
+        # The mesh agent's job parser is `node -e`. Without it every job reads as empty and the node answers
+        # "no command and no task" while looking perfectly healthy — measured on the reference laptop.
+        [ -x "$dir/usr/bin/node" ] || {
+            echo "missing /usr/bin/node: the robmesh agent cannot parse a job without it" >&2
+            exit 1
+        }
         # And the libraries the workspace links against. Present as .pc files, which is what pkg-config and the
         # crates' build scripts actually look for — a package that installed only a runtime library would pass a
         # `dpkg -l` check and still fail the build.
