@@ -54,6 +54,11 @@ CONFIG_USB_UAS=m
 CONFIG_WLAN=y
 CONFIG_CFG80211=m
 CONFIG_MAC80211=m
+# THE SIMULATED RADIO THE SUITE TESTS WI-FI WITH. `images/x86-qemu/test-wifi.sh` joins a WPA2 network through
+# mac80211_hwsim, which Ubuntu's kernel ships in `linux-modules-extra`. With our kernel in slot A the module has
+# to come from us, and it did not: measured 2026-11-04, `flow-wifi: unavailable: no Wi-Fi device`, because the
+# scenario was asking a kernel without hwsim to invent a radio. It is a real kernel feature, not a test hack.
+CONFIG_MAC80211_HWSIM=m
 CONFIG_IWLWIFI=m
 CONFIG_IWLMVM=m
 CONFIG_MT76_CORE=m

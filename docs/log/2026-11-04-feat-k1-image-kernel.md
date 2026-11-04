@@ -190,3 +190,20 @@ hand `ExecStart=/bin/sh -c '... "$(uname -s)"'` to a shell the way a shell would
 **Not claimed:** the Wi-Fi scenario on our kernel is still running in that same run, and nothing has touched
 hardware. The VM proves the image; only the machine proves the machine.
 
+## Round 12: two verdicts, both mine
+
+The other two jobs in that run came back, and they are worth separating from the kernel's own behaviour:
+
+- **`arm64` passed** — the three-arch gate is now green on all three (x86_64, arm64, arm) with the corrected
+  fragment. That gate had never passed arm64.
+- **`image/wifi` failed** — and its serial log shows our kernel booted (`Linux version 6.8.0-morpheos`) and then
+  `flow-wifi: unavailable: no Wi-Fi device`. The scenario joins a WPA2 network through `mac80211_hwsim`, which
+  Ubuntu's kernel ships in `linux-modules-extra`; our kernel did not build it, so the test asked a kernel
+  without a simulated radio to invent one. Added to `config.x86_64`, with a comment saying it is a real kernel
+  feature the suite depends on rather than a test hack.
+- Both image legs failed the **sysname** assertion for the same reason (the unit's inline shell), which is fixed
+  by the script above.
+
+So the honest summary of that run: our kernel booted the image, drew the screen, found a keyboard and pointers,
+and the three-arch gate is green; the two remaining reds were a broken test of mine and a missing test module.
+
