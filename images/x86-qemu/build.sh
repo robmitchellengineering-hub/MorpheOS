@@ -27,6 +27,10 @@
 # systemd-boot-efi, and built morph-boot and strata binaries
 # (cargo build --release -p morph-boot -p strata).
 set -euo pipefail
+# NAME THE LINE THAT FAILED. With `set -e`, a command that fails without printing anything ends the build with a
+# bare exit code, and that is what a whole CI job was spent on on 2026-11-04: six seconds of silence after the
+# base finished, and no way to tell which command did it. The trap costs one line and points at the answer.
+trap 'rc=$?; printf "build.sh: FAILED at line %s (exit %s): %s\n" "$LINENO" "$rc" "$BASH_COMMAND" >&2' ERR
 
 WORK=${1:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
 SCENARIO=${2:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
@@ -372,6 +376,12 @@ make_root() {
             echo "could not install $src into $dir" >&2; exit 1; }
     done
     ln -sf ../etc/os-release "$dir/usr/lib/os-release" 2>/dev/null || true
+    # THE KERNEL THIS SLOT WILL BOOT, installed before anything asserts or builds an initrd from it. Slot A
+    # carries ours when asked; slot B keeps Ubuntu's on purpose (the comparison Phase 0 falls back to). The
+    # initrd is left to the image's own `update-initramfs` below, so our kernel walks the same boot path.
+    if [ "$KERNEL" = ours ] && [ "$slot" = a ]; then
+        SKIP_INITRAMFS=1 install_our_kernel "$dir"
+    fi
     # The base's /etc/pam.d/login prints the Ubuntu legal notice TWICE at login. It carries
     # two motd lines: `pam_motd.so motd=/run/motd.dynamic` (the welcome + help + legal notice,
     # kept) and `pam_motd.so noupdate` (the DEFAULT motd). Because /etc/motd was never created
@@ -754,9 +764,18 @@ EOF
         # kernel's modules — otherwise Ubuntu's modules (still installed for slot B) satisfy it and the check
         # reports a Wi-Fi driver for a kernel that does not have one. A claim about our kernel is read from
         # our kernel's module tree, and from nowhere else.
-        moddirs="$dir/usr/lib/modules"
-        if [ "$KERNEL" = ours ] && [ "$1" = a ] && [ -n "$KREL" ]; then moddirs="$dir/usr/lib/modules/$KREL"; fi
-        builtin=$(cat "$moddirs"/modules.builtin 2>/dev/null || true)
+        #
+        # ⚠️ `modules.builtin` lives INSIDE a version directory, not beside them. The lookup is a glob when the
+        # question is "this image" and one file when the question is "this kernel"; a single path in the first
+        # case reads nothing, and then every built-in driver (xhci-hcd, sd_mod, ext4, vfat) reads as missing.
+        # That regression failed the everyday image on 2026-11-04, which is D26's falsifier doing its job.
+        if [ "$KERNEL" = ours ] && [ "$1" = a ] && [ -n "$KREL" ]; then
+            moddirs="$dir/usr/lib/modules/$KREL"
+            builtin=$(cat "$moddirs/modules.builtin" 2>/dev/null || true)
+        else
+            moddirs="$dir/usr/lib/modules"
+            builtin=$(cat "$moddirs"/*/modules.builtin 2>/dev/null || true)
+        fi
         missing=""
         # And what a laptop needs once booted: its graphics, its Wi-Fi (and the stack under
         # it), its touchscreen, its wired network. Each of these was missing until the extra
@@ -842,15 +861,13 @@ EOF
     fi
     # The overlay (recovery hook + bootctl) must be inside the initrd the ESP ships.
     regenerate_initrd "$dir"
-    # Slot A carries the kernel we built when asked for; slot B keeps Ubuntu's (the comparison).
-    if [ "$KERNEL" = ours ] && [ "$1" = a ]; then
-        install_our_kernel "$dir"
-        # AND THE MACHINE SAYS ITS OWN NAME. The boot log proves a release string reached the kernel; it cannot
-        # prove what the running system reports, because the banner is a kernel constant, not the sysname. This
-        # one-shot unit prints `uname -s` to the console at every boot of a test image whose kernel is ours, so
-        # "the machine calls itself MorpheOS" is read off the running machine rather than off a build artefact.
-        # Test images only: KERNEL=ours is how the suite asks for it, and a shipping image must not carry a unit
-        # whose whole job is to talk to a serial port.
+    # AND THE MACHINE SAYS ITS OWN NAME — test images with our kernel, slot A only. The boot log proves a
+    # release string reached the kernel; it cannot prove what the running system reports, because the banner is
+    # a kernel constant, not the sysname. This one-shot unit prints `uname -s` to the console at every boot, so
+    # "the machine calls itself MorpheOS" is read off the running machine rather than off a build artefact. A
+    # shipping image must not carry a unit whose whole job is to talk to a serial port, which is why it is here
+    # and not in the overlay.
+    if [ "$KERNEL" = ours ] && [ "$slot" = a ]; then
         cat > "$dir/etc/systemd/system/morph-kernel-identity.service" <<'UNIT'
 [Unit]
 Description=MorpheOS kernel identity (test images with our kernel only)
