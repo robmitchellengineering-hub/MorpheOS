@@ -86,3 +86,30 @@ runs/morpheos-2012/2026-11-04T0717Z-…/stdout.txt  (on the hub):
   v22.11.0
   active
 ```
+
+## The boot test was telling the truth, and it took three more fixes to hear it
+
+`test-boot.sh` counts the failure colour in the boot status line, and it went red three times. Each red was a
+real defect, and the machine's own `/efi/morph-boot/history.jsonl` named the culprit:
+
+```
+{"state":"degraded","status":{"booted":"a",...,"phase":"committed"},"decision":{"action":"none"}}
+boot-check: failed unit: tailscaled.service
+```
+
+1. **`RequiresMountsFor=/persist/tailscale`** — a mount requirement on a path that `ExecStartPre` is supposed to
+   create. The unit failed before anything ran. Removed; `After=persist.mount` is the honest dependency.
+2. **`CacheDirectoryMode=` with an empty value** — systemd logs `Failed to parse mode value, ignoring:` and then
+   **rejects the whole drop-in**, so the stock unit ran on a read-only root again and tailscaled failed exactly as
+   before. Only the empty-valued keys that genuinely reset a setting are set now.
+3. **`Environment=GIT_SSH_COMMAND=ssh -F /persist/…`, unquoted** — systemd splits it on spaces, so the variable
+   became `ssh` and `-F`/the path were rejected as invalid assignments. The agent used plain ssh, wrote
+   `/root/.ssh/known_hosts` on a read-only root, and none of its ssh config applied. Quoted.
+
+Found by running `systemd-analyze verify` against the **running machine** rather than waiting for a job to fail:
+the tool systemd ships for exactly this had not been used once in this project.
+
+Also fixed, in the test itself: `history=$(mtype … )` ran under `set -e`, so a failing `mtype` killed the script
+with **no message** — the run ended after the console check, exit 1, and the failing assertion was never named.
+That is how two of the three reds were reported as "the image is broken" with nothing to act on. It now reads
+tolerantly and prints `FAIL the ESP has no /morph-boot/history.jsonl` instead.
