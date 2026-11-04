@@ -1,6 +1,7 @@
 # 28 · Accounts, and who the shell runs as (S5)
 
-**Status: awaiting Rob's decision.** E11 is blocked on exactly one question and this document exists so the answer
+**Status: decided — Rob chose A on 2026-11-04** (*"Do a"*). The shell now runs as `morph`; B remains the answer for
+a shipped OS and its questions stay open. E11 is blocked on exactly one question and this document exists so the answer
 can be made with the consequences in front of it, rather than as a guess. Nothing here is decided.
 
 ## The situation, measured

@@ -169,7 +169,7 @@ the client gets `button 272` and `key 30`, and Ctrl+Alt+F2 never reaches it).
 **Notes:** `plain` keeps its text console until E4: a shell with nothing to run in it serves
 a person on the laptop worse than the root console it opens on.
 
-### E11 · The shell as an ordinary user, and a broken shell falls back · blocked · needs E3
+### E11 · The shell as an ordinary user, and a broken shell falls back · in progress · needs E3
 
 **What:** start the compositor in a seat session (`libseat` with `seatd` or logind) as the
 ordinary user (A9; Rob decides the account model in S5), not root. Add an image scenario
@@ -182,8 +182,16 @@ compositor's `Uid:` line from `/proc/<pid>/status`, and the owner of `/run/flow/
 to the ESP. `test-shell.sh` reads them with `mtype` and requires a non-zero uid that is the
 same as the one in the image's `/etc/passwd`.
 
-**Blocked on:** Rob's account model (S5), or his yes to the placeholder user in note 6 below.
-The status goes back to `open` in the `plan/` pull request that records his answer.
+**Rob decided, 2026-11-04:** *"Do a"* — option A of [doc 28](../docs/28-accounts.md). One ordinary
+user `morph`, uid 1000, no password, with the shell running as it and the Wi-Fi picker staying root. The status
+is `in progress` until the shell scenario passes with that in the image.
+
+**What the answer changed:** `flow-shell.service` sets `User=morph` and the build **refuses to ship** if that line
+ever disappears; `/persist/home/morph` belongs to uid 1000 (and a `tmpfiles.d` line fixes it on an updated stick,
+whose data partition predates the user); `morph` is in `video`, because seatd's socket is group `video` and that is
+how a non-root compositor opens DRM and input; and the Wi-Fi picker moved to `flow-wifi.service`, root, started
+alongside — a child of the compositor would inherit the user, and joining a network needs NetworkManager's polkit
+check. The compositor still activates the picker by app id when its window appears.
 
 **Progress:** the second half is done. `test-fallback.sh broken-shell hung-shell` trials an
 update whose shell cannot start, and one whose shell starts and never draws; each is

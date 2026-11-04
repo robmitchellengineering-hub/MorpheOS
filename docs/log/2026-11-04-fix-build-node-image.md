@@ -61,3 +61,25 @@ apt-daily-upgrade.service: Failed with result 'exit-code'
 
 — which is the diagnosis that took a journal read by hand this morning. `scripts/verify-hwreport.sh` still passes
 (it names missing firmware, and says `none` when there is none).
+
+## Option A, chosen mid-session ("Do a")
+
+Rob decided E11's account model: one ordinary user `morph` (uid 1000, no password), the shell running as it, the
+Wi-Fi picker staying root. Implemented in this branch, and the plan's E11 now records the decision and reads
+`in progress` until the shell scenario passes with it.
+
+Why it matters beyond tidiness: **the session running as root was the root cause of four separate problems** found
+today — audio that could never work (`pipewire` refuses root), a boot history written into a tmpfs, `/root` being
+unusable for keys, and `apt-daily*` failing on an immutable root so every boot said `degraded`. Option A removes the
+cause instead of working around each symptom.
+
+Two parts could not simply follow the user:
+- the **Wi-Fi picker** — a child of the compositor inherits its user, and joining a network needs NetworkManager's
+  polkit check, which is root-only here (polkit is not in the image). It is `flow-wifi.service`, root, started
+  alongside; the compositor still activates it by app id when its window appears.
+- the **uid** — written straight into `/etc/passwd`, because that file lives in the read-only slot and every future
+  image must agree with the one a stick already carries. `useradd` is not installed; a fixed line is deterministic.
+
+The risk taken knowingly: the shell test asserts the picker is *on the screen, in front*, and a picker started by
+its own unit may map without being activated. If that assertion goes red, the fix is activation — not a return to
+root.
