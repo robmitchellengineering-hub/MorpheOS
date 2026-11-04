@@ -626,6 +626,30 @@ EOF
             done
             [ -n "$ts_unit" ] || { echo "tailscaled.service is missing from the image: the tailscale package did not install it" >&2; exit 1; }
             ln -sf "$ts_unit" "$dir/etc/systemd/system/multi-user.target.wants/tailscaled.service"
+
+            # THE NODE AGENT. A robmesh node is a loop that pulls work, not a machine someone can ssh into.
+            # These three files are what make that true after a reboot: the unit, the drop-in that keeps the
+            # tailnet identity on /persist instead of a tmpfs /var, and the setup script that puts HOME, the
+            # clone, the key and the identity marker on /persist (the root is read-only).
+            #
+            # Asserted, not assumed: if the overlay did not land, the machine boots as a desktop that looks
+            # fine and never pulls a job — the exact silent failure this costs.
+            for node_file in \
+                usr/lib/morpheos/mesh-node-setup \
+                etc/systemd/system/morpheos-mesh-node.service \
+                etc/systemd/system/tailscaled.service.d/persist.conf
+            do
+                [ -f "$dir/$node_file" ] || {
+                    echo "$node_file is missing from the image: the machine would boot as a desktop, not a node" >&2
+                    exit 1
+                }
+            done
+            [ -x "$dir/usr/lib/morpheos/mesh-node-setup" ] || {
+                echo "mesh-node-setup is not executable: systemd would fail to start the node agent" >&2
+                exit 1
+            }
+            ln -sf /etc/systemd/system/morpheos-mesh-node.service \
+                "$dir/etc/systemd/system/multi-user.target.wants/morpheos-mesh-node.service"
         fi
         # The root console lives on VT2 while the shell has VT1 (Ctrl+Alt+F2 reaches it).
         # Started at boot under its own name, so its drop-in applies (logind's on-demand

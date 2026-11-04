@@ -1,0 +1,32 @@
+# MorpheOS: be a robmesh node without anyone logging in.
+#
+# WHY THIS UNIT EXISTS. A node is a loop that pulls work, not a machine someone can ssh into. On 2026-11-04 this
+# machine was made into one by hand — a keypair, a clone and `node.sh run` under setsid — and every part of it
+# died with the next reboot. The loop has to start at boot or the machine is not a node.
+#
+# EVERYTHING WRITABLE IS ON /persist. The root is read-only, so HOME cannot be /root, git cannot cache under
+# /var, and the key cannot live in /etc. mesh-node-setup --ensure creates all of it idempotently; this unit runs
+# it first, so a fresh stick with no state becomes a node the moment it has a network and a credential.
+[Unit]
+Description=MorpheOS robmesh node agent
+Documentation=https://github.com/robmitchellengineering-hub/harness-mesh/blob/main/NETWORK.md
+After=network-online.target persist.mount tailscaled.service
+Wants=network-online.target
+RequiresMountsFor=/persist
+
+[Service]
+Type=simple
+Environment=HOME=/persist/mesh/home
+Environment=NODE_REPOS_DIR=/persist/mesh/code
+Environment=GIT_SSH_COMMAND=ssh -F /persist/mesh/ssh_config
+Environment=GIT_TERMINAL_PROMPT=0
+Environment=GIT_CONFIG_NOSYSTEM=1
+ExecStartPre=/usr/lib/morpheos/mesh-node-setup --ensure
+ExecStart=/persist/mesh/harness-mesh/scripts/node.sh run
+# on-failure, not always: if the credential is missing the setup exits with a message and this unit waits
+# instead of spinning against GitHub forever. A human step is not an error to retry.
+Restart=on-failure
+RestartSec=60
+# The agent is a shell loop that must survive its own jobs being killed; no memory ceiling here, but never
+# let it take the whole machine's OOM score.
+OOMScoreAdjust=200

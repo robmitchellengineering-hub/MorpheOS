@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# mesh-node-setup — make this MorpheOS machine able to be a robmesh node, idempotently.
+#
+# WHY. The root is read-only, so every part of being a node has to live on /persist: HOME, the clone, the key,
+# the ssh config, the identity marker. Doing that by hand is what was done on 2026-11-04 and it did not survive
+# a reboot; this is the same thing as a script that the boot unit runs.
+#
+#   mesh-node-setup --ensure      create everything that is missing (safe to run at every boot)
+#   mesh-node-setup --print-key   print the deploy-key line an operator adds to the repo
+#   mesh-node-setup               both, in that order
+#
+# It NEVER adds the key to the repo itself: that is a credential grant, which belongs to a person.
+set -uo pipefail
+
+REPO=robmitchellengineering-hub/harness-mesh
+M=/persist/mesh
+KEY="$M/keys/deploy"
+
+say() { printf 'mesh-node-setup: %s\n' "$*"; }
+
+ensure() {
+    mkdir -p "$M/home" "$M/code" "$M/keys" "$M/state" "$(dirname "$KEY")" || return 1
+    chmod 0700 "$M/keys" 2>/dev/null
+    if [ ! -f "$KEY" ]; then
+        ssh-keygen -t ed25519 -N '' -C "morpheos-a@harness-mesh-deploy" -f "$KEY" >/dev/null 2>&1 || return 1
+        say "generated a deploy key at $KEY"
+    fi
+    chmod 0600 "$KEY" 2>/dev/null
+    cat > "$M/ssh_config" <<'CFG'
+Host github.com
+  IdentityFile /persist/mesh/keys/deploy
+  IdentitiesOnly yes
+  StrictHostKeyChecking accept-new
+CFG
+    # The identity marker: which queue this machine owns. Weaker than the repo's own rule (it refuses to run as
+    # a different machine) because that rule is the thing that stops a node adopting another machine's work.
+    if [ ! -f "$M/host-id" ]; then
+        printf '%s\n' "${MESH_HOST:-morpheos-2012}" > "$M/host-id"
+    fi
+    if [ ! -d "$M/harness-mesh/.git" ]; then
+        say "cloning $REPO (needs the deploy key to be on the repo already)"
+        if ! GIT_SSH_COMMAND='ssh -F /persist/mesh/ssh_config' GIT_TERMINAL_PROMPT=0 \
+             git clone -q "git@github.com:$REPO.git" "$M/harness-mesh"; then
+            say "clone FAILED — add the key first:  mesh-node-setup --print-key"
+            return 1
+        fi
+    fi
+    mkdir -p "$M/harness-mesh/local"
+    cp -f "$M/host-id" "$M/harness-mesh/local/host-id" 2>/dev/null
+    say "ready: host $(cat "$M/host-id" 2>/dev/null)"
+}
+
+print_key() {
+    [ -f "$KEY.pub" ] || { say "no key yet — run --ensure first"; return 1; }
+    printf '\nAdd this key to the repository (operator action, once):\n\n'
+    printf '  %s\n\n' "$(cat "$KEY.pub")"
+    printf '  gh repo deploy-key add <file-with-that-line> -R %s --title "%s (MorpheOS)" --allow-write\n\n' \
+        "$REPO" "$(cat "$M/host-id" 2>/dev/null || hostname)"
+}
+
+case "${1:---both}" in
+    --ensure) ensure ;;
+    --print-key) print_key ;;
+    --both|"") ensure && print_key ;;
+    *) echo "usage: mesh-node-setup [--ensure|--print-key]" >&2; exit 2 ;;
+esac
