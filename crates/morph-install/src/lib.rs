@@ -39,34 +39,34 @@ const GIB: u64 = 1024 * MIB;
 /// The slots are 8 GiB, far larger than the 1600 MiB stick image, because a slot must hold the kernel plus the root
 /// filesystem of a *future* release and an A/B update needs room for both. Apps go on `/persist`, not in a slot.
 pub fn plan(disk_bytes: u64) -> Vec<Partition> {
-    let data = disk_bytes.saturating_sub(1 * MIB + 1 * GIB + 8 * GIB + 8 * GIB);
+    let data = disk_bytes.saturating_sub(MIB + GIB + 8 * GIB + 8 * GIB);
     vec![
         Partition {
             index: 1,
             name: "esp",
             type_guid: TYPE_ESP,
-            start_bytes: 1 * MIB,
-            size_bytes: 1 * GIB,
+            start_bytes: MIB,
+            size_bytes: GIB,
         },
         Partition {
             index: 2,
             name: "root-a",
             type_guid: TYPE_ROOT,
-            start_bytes: 1 * MIB + 1 * GIB,
+            start_bytes: MIB + GIB,
             size_bytes: 8 * GIB,
         },
         Partition {
             index: 3,
             name: "root-b",
             type_guid: TYPE_ROOT,
-            start_bytes: 1 * MIB + 9 * GIB,
+            start_bytes: MIB + 9 * GIB,
             size_bytes: 8 * GIB,
         },
         Partition {
             index: 4,
             name: "data",
             type_guid: TYPE_DATA,
-            start_bytes: 1 * MIB + 17 * GIB,
+            start_bytes: MIB + 17 * GIB,
             size_bytes: data,
         },
     ]
