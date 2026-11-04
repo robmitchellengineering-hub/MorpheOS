@@ -2555,6 +2555,14 @@ a shell warning": the fault is injected into the disk device model, so the real 
 
 Approved direction, not yet ordered. Each becomes `open` when Rob orders it.
 
+**Progress (2026-11-04): the facts exist and are one command away; the warning a person sees does not.**
+`morph-health` reports the system state, the failed units by name, `/persist`'s free space, whether an audio sink
+exists, the last boot decision, and — if the machine is a node — its id, agent state and tailnet address, with
+`--json` for the shell and an exit code of 0 healthy / 1 wrong / 2 unknown. Measured on the reference machine: it
+named `apt-daily-upgrade.service` and `apt-daily.service` as the reason the boot was `degraded`, which is exactly
+the diagnosis that took a journal read to reach by hand. What P4 still needs is the *warning*: something in the
+shell that says "this machine has a problem" without someone thinking to ask.
+
 ### W1 · Windows programs (Wine/Proton capsule) · proposed
 **What:** one Windows program runs on the shell through Wine, as a Wayland client (no X server:
 A5), with its prefix on `/persist`. It is the first rung-3 capsule of doc 05.
