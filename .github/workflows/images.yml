@@ -28,6 +28,14 @@ on:
   # unnoticed breakage.
   pull_request:
   workflow_dispatch:
+    # A FAST PATH. The whole suite is ~90 minutes, and most image changes only need to know "does it build and
+    # boot". quick=true stops after the boot check and the artefact upload; leave it false for a real run.
+    # Added 2026-11-04 after a day of 90-minute feedback loops on image work.
+    inputs:
+      quick:
+        description: "Only build, boot and publish the image (skip the long scenarios)"
+        type: boolean
+        default: false
 
 jobs:
   x86-ab-fallback:
@@ -101,16 +109,19 @@ jobs:
       # ransomware test, and `main` grew the `heal` scenario. Kept both — a merge that
       # drops one of them is the quiet way to lose a test.
       - name: Good, unhealthy, crashing, updating and healing
+        if: ${{ !inputs.quick }}
         run: sudo images/x86-qemu/test-fallback.sh "$RUNNER_TEMP/img" good unhealthy crash update heal
       # Doc 20, S3: the autoupdate image's timer checks the CI host's update server over HTTPS
       # and installs a signed payload with no input from the harness after boot. Verdicts read
       # off the disk (boot history, slot B's root) and the server's request log.
       - name: An update arrives by itself over HTTPS (S3 — good, bad, tampered)
+        if: ${{ !inputs.quick }}
         run: |
           sudo images/x86-qemu/test-autoupdate.sh "$RUNNER_TEMP/img" good
           sudo images/x86-qemu/test-autoupdate.sh "$RUNNER_TEMP/img" bad
           sudo images/x86-qemu/test-autoupdate.sh "$RUNNER_TEMP/img" tampered
       - name: Ransomware against Strata
+        if: ${{ !inputs.quick }}
         run: sudo images/x86-qemu/test-ransomware.sh "$RUNNER_TEMP/img"
       # Doc 20, S4: the recovery image. Arm the recovery entry by hand (recovery-boot), then
       # zero both slot partitions from the harness (wipe) — each time the machine must rebuild
@@ -118,6 +129,7 @@ jobs:
       # by the retention policy and the shell warns. Verdicts read off the disk: boot history,
       # the copied store (the host's own `strata`), dumpe2fs free space, and a screendump.
       - name: A full disk does not break the machine (S7)
+        if: ${{ !inputs.quick }}
         run: sudo images/x86-qemu/test-full-disk.sh "$RUNNER_TEMP/img"
       # both slots and boot slot A committed. Verdicts read off the disk: boot history,
       # recovery record, /etc/hostname on both slots, and /home checksums on the data partition.
