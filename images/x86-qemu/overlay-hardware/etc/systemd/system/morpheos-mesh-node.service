@@ -26,6 +26,12 @@ Environment=NODE_REPOS_DIR=/persist/mesh/code
 Environment=GIT_SSH_COMMAND=ssh -F /persist/mesh/ssh_config
 Environment=GIT_TERMINAL_PROMPT=0
 Environment=GIT_CONFIG_NOSYSTEM=1
+# Without an identity, `git commit` fails, the result stays staged and the job never publishes - measured
+# 2026-11-04. mesh-node-setup writes ~/.gitconfig; these are the belt to that braces.
+Environment=GIT_AUTHOR_NAME=morpheos-a
+Environment=GIT_AUTHOR_EMAIL=node@morpheos
+Environment=GIT_COMMITTER_NAME=morpheos-a
+Environment=GIT_COMMITTER_EMAIL=node@morpheos
 # Node is in the image at /usr/bin/node; /persist/node/bin is kept first because a machine may have had Node
 # installed there before the package arrived (the reference laptop did), and the agent must not depend on which.
 Environment=PATH=/persist/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
