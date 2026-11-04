@@ -1,0 +1,95 @@
+name: secure-image
+
+# THE IMAGE FOR THE HARDWARE FALSIFIER, AND WHY IT IS A WORKFLOW OF ITS OWN.
+#
+# Phase 0's falsifier is a machine, not a test: morpheos-a-1 must boot OUR kernel with its Wi-Fi (b43), its
+# audio (snd-hda-intel) and its panel (i915) working. That needs the person-facing `plain` image built with
+# KERNEL=ours — slot A carrying the kernel we build, slot B keeping Ubuntu's as the comparison — and it needs
+# to exist as a file somebody can flash.
+#
+# It is dispatch-only on purpose: one run is a ~3.7 GiB image, and building it on every push would spend
+# runner time on an artefact nobody asked for. The VM proof (`kernel.yml`) is what runs on every change; this
+# is the thing you press when a machine is waiting.
+
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: 'Architecture to build the kernel for'
+        required: false
+        default: x86_64
+
+jobs:
+  usb-image-with-our-kernel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The images suite's own setup, so CI and a person run the same thing
+        run: bash scripts/setup-linux.sh --images
+
+      - name: The kernel's own build tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential bison flex libelf-dev libssl-dev bc
+
+      - name: Build our kernel
+        run: |
+          ./secure/kernel/build.sh "${{ inputs.arch || 'x86_64' }}" "$RUNNER_TEMP/kbuild" "$(nproc)"
+          cat "$RUNNER_TEMP/kbuild/out/build-report.txt"
+
+      # `plain` is the image a person boots, so it installs the shell, the browser and the Wi-Fi picker: their
+      # binaries must exist before the image build, exactly as in the images workflow.
+      - name: Build the binaries the image installs
+        run: cargo build --release -p flow-compositor -p flow-wifi -p flow-files -p flow-timeline -p flow-notice
+
+      - name: Build the person-facing image with our kernel in slot A
+        run: |
+          sudo KERNEL=ours KERNEL_OUT="$RUNNER_TEMP/kbuild/out" \
+            bash images/x86-qemu/build.sh "$RUNNER_TEMP/img" plain
+          ls -l "$RUNNER_TEMP/img/disk-plain.img"
+
+      # The image's own build already asserted the drivers against OUR module tree (KERNEL=ours scopes it), so
+      # this step is the second pair of eyes on the two things the hardware falsifier will be judged on: the
+      # ESP's slot A carries our release string, and the kernel that the OS will call itself is in it.
+      - name: What is actually in the ESP's slot A
+        run: |
+          set -e
+          img="$RUNNER_TEMP/img/disk-plain.img"
+          # Read it off the finished disk, not off the build log: the question is what a person would flash.
+          loop=$(sudo losetup -Pf --show "$img")
+          trap 'sudo losetup -d "$loop" 2>/dev/null || true' EXIT
+          echo "=== slot A's loader entry ==="
+          sudo mtype -i "${loop}p1" ::/loader/entries/morpheos-a.conf
+          sudo mcopy -i "${loop}p1" ::/morpheos/a/vmlinuz "$RUNNER_TEMP/vmlinuz"
+          sudo mcopy -i "${loop}p1" ::/morpheos/b/vmlinuz "$RUNNER_TEMP/vmlinuz-b"
+          echo "=== slot A's kernel release string ==="
+          strings "$RUNNER_TEMP/vmlinuz" | grep -m2 -E "^6\.8\." || true
+          if ! strings "$RUNNER_TEMP/vmlinuz" | grep -qx "6.8.0-morpheos"; then
+            echo "::error::slot A's kernel does not carry the -morpheos release string"
+            exit 1
+          fi
+          # Slot B must NOT be ours: it is the comparison the hardware falsifier falls back to.
+          if strings "$RUNNER_TEMP/vmlinuz-b" | grep -qx "6.8.0-morpheos"; then
+            echo "::error::slot B also carries our kernel - the comparison is gone"
+            exit 1
+          fi
+          echo "slot A carries the kernel we built; slot B still carries Ubuntu's"
+
+      - name: Compress it, and drop the raw disk
+        if: always()
+        run: |
+          xz -T0 -3 -k -f "$RUNNER_TEMP/img/disk-plain.img"
+          rm -f "$RUNNER_TEMP/img/disk-plain.img" "$RUNNER_TEMP/img/disk-plain.vars.fd"
+
+      - name: Keep the image, and the kernel report that says what is in it
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: morpheos-x86-usb-ours-kernel
+          path: |
+            ${{ runner.temp }}/img/disk-plain.img.xz
+            ${{ runner.temp }}/kbuild/out/build-report.txt
+          if-no-files-found: ignore
+          retention-days: 30
