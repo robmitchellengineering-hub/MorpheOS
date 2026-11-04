@@ -21,6 +21,9 @@ Environment=NODE_REPOS_DIR=/persist/mesh/code
 Environment=GIT_SSH_COMMAND=ssh -F /persist/mesh/ssh_config
 Environment=GIT_TERMINAL_PROMPT=0
 Environment=GIT_CONFIG_NOSYSTEM=1
+# Node is in the image at /usr/bin/node; /persist/node/bin is kept first because a machine may have had Node
+# installed there before the package arrived (the reference laptop did), and the agent must not depend on which.
+Environment=PATH=/persist/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # A full clone of the mesh over a slow link exceeds systemd's 90 s default and gets SIGTERM mid-fetch, which
 # looks exactly like a broken credential. Measured 2026-11-04 on the reference laptop.
 TimeoutStartSec=900
