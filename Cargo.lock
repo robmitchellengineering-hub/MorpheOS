@@ -1154,6 +1154,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "morph-attest"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ed25519-dalek",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "morph-autoupdate"
 version = "0.1.0"
 dependencies = [
@@ -1169,6 +1179,17 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "morph-capsule"
+version = "0.1.0"
+dependencies = [
+ "ed25519-dalek",
+ "morph-attest",
+ "serde",
+ "serde_json",
+ "strata",
 ]
 
 [[package]]

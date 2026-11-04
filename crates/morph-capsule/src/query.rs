@@ -95,10 +95,10 @@ impl StrataQuery {
             if version.kind == strata::index::Kind::Deleted {
                 continue;
             }
-            if let Some(since) = self.since {
-                if version.ts <= since {
-                    continue;
-                }
+            if let Some(since) = self.since
+                && version.ts <= since
+            {
+                continue;
             }
             out.push(ResolvedFile {
                 path: version.path.clone(),

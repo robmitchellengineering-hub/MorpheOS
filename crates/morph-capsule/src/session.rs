@@ -201,7 +201,7 @@ impl SessionLayer {
         let strata = self.strata()?;
         let mut query = self.query.clone();
         // The query's root is relative to the session, so `under=.` means the session directory.
-        if query.under == PathBuf::from(".") {
+        if query.under == *"." {
             query.under = self.session_dir.clone();
         }
         query.resolve(&strata)
@@ -444,7 +444,7 @@ mod tests {
         assert!(files.iter().all(|f| f.path.starts_with(s.session_dir())));
 
         // A query the machine cannot answer is refused where the session is opened, not silently empty.
-        let refused = SessionLayer::open(&scratch("q2"), "report", "strata://query?project=q3");
+        let refused = SessionLayer::open(scratch("q2"), "report", "strata://query?project=q3");
         assert!(refused.is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }

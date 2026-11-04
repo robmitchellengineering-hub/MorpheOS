@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 
-use flow_session::{Openable, Session};
+use flow_session::Openable;
 use flow_shell::Shell;
 
 fn shell() -> Shell {

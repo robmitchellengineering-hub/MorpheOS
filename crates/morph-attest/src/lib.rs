@@ -108,14 +108,14 @@ pub fn verify_signature(signed: &SignedStatement, trusted: Option<&VerifyingKey>
         Ok(vk) => vk,
         Err(_) => return Verdict::Refused("the key is not an ed25519 public key".into()),
     };
-    if let Some(expected) = trusted {
-        if expected != &vk {
-            return Verdict::Refused(format!(
-                "signed by {} but this verifier trusts {}",
-                signed.key,
-                hex(expected.as_bytes())
-            ));
-        }
+    if let Some(expected) = trusted
+        && expected != &vk
+    {
+        return Verdict::Refused(format!(
+            "signed by {} but this verifier trusts {}",
+            signed.key,
+            hex(expected.as_bytes())
+        ));
     }
     let sig_bytes = match unhex(&signed.signature) {
         Some(s) if s.len() == 64 => s,
