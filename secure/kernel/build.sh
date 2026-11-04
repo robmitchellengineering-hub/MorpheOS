@@ -49,10 +49,18 @@ else
 fi
 
 # 1. The source, pinned. A kernel we cannot re-download byte-identically is not a kernel we own.
-if [ ! -d "linux-$KVER" ]; then
+#
+# A DIRECTORY IS NOT AN EXTRACTION, and treating one as the other cost an hour on 2026-11-04: two builds shared a
+# work directory, the second found the first's half-extracted tree, skipped the fetch, and failed at the branding
+# step with "include/linux/uts.h: No such file or directory" in zero seconds. The check is for files the tree
+# cannot be usable without, and a tree that fails it is thrown away rather than built on.
+if [ ! -f "linux-$KVER/Makefile" ] || [ ! -f "linux-$KVER/include/linux/uts.h" ]; then
+    rm -rf "linux-$KVER"
     [ -f "linux-$KVER.tar.xz" ] || { echo "fetching $KURL"; curl -fsSL --retry 3 -o "linux-$KVER.tar.xz" "$KURL"; }
     echo "extracting"
     tar -xf "linux-$KVER.tar.xz"
+    [ -f "linux-$KVER/Makefile" ] && [ -f "linux-$KVER/include/linux/uts.h" ] \
+        || { echo "extraction of linux-$KVER.tar.xz is incomplete" >&2; exit 2; }
 fi
 cd "linux-$KVER"
 
