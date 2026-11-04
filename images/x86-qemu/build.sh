@@ -354,9 +354,12 @@ install_our_kernel() {
         [ -s "$dir/boot/initrd.img-$KREL" ] || { echo "no initrd.img-$KREL after update-initramfs" >&2; exit 1; }
     fi
     for m in $mounted; do umount "$m" 2>/dev/null || true; done
-    # The claim, asserted from the artefact rather than from the log: the release string is in the image file.
-    strings "$dir/boot/vmlinuz-$KREL" | grep -qx "$KREL" \
-        || { echo "$dir/boot/vmlinuz-$KREL does not carry $KREL: it is not the kernel we built" >&2; exit 1; }
+    # The claim, asserted by BYTES rather than by string archaeology: a bzImage is compressed, so `strings` on it
+    # shows the decompressor's stub and not the kernel's own release string — an earlier version of this line
+    # failed a perfectly good build for exactly that reason. What matters is that the file in the image is the
+    # file we built, and that is a comparison.
+    cmp -s "$KERNEL_OUT/vmlinuz-morpheos" "$dir/boot/vmlinuz-$KREL" \
+        || { echo "$dir/boot/vmlinuz-$KREL is not the kernel we built (bytes differ from $KERNEL_OUT/vmlinuz-morpheos)" >&2; exit 1; }
 }
 
 make_root() {
@@ -934,8 +937,8 @@ for slot in a b; do
         # with two kernels in one root that is a coin toss between ours and Ubuntu's.
         cp "$root/boot/vmlinuz-$KREL" "$ESPDIR/morpheos/$slot/vmlinuz"
         cp "$root/boot/initrd.img-$KREL" "$ESPDIR/morpheos/$slot/initrd.img"
-        strings "$ESPDIR/morpheos/$slot/vmlinuz" | grep -qx "$KREL" \
-            || { echo "the ESP's slot $slot kernel is not $KREL" >&2; exit 1; }
+        cmp -s "$KERNEL_OUT/vmlinuz-morpheos" "$ESPDIR/morpheos/$slot/vmlinuz" \
+            || { echo "the ESP's slot $slot kernel is not the one we built" >&2; exit 1; }
     else
         cp "$(ls "$root"/boot/vmlinuz-* | sort | tail -1)" "$ESPDIR/morpheos/$slot/vmlinuz"
         cp "$(ls "$root"/boot/initrd.img-* | sort | tail -1)" "$ESPDIR/morpheos/$slot/initrd.img"

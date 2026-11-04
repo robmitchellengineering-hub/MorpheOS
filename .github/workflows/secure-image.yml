@@ -66,12 +66,13 @@ jobs:
           mcopy -i "$img@@1M" ::/morpheos/b/vmlinuz "$RUNNER_TEMP/vmlinuz-b"
           echo "=== slot A's kernel release string ==="
           strings "$RUNNER_TEMP/vmlinuz" | grep -m2 -E "^6\.8\." || true
-          if ! strings "$RUNNER_TEMP/vmlinuz" | grep -qx "6.8.0-morpheos"; then
-            echo "::error::slot A's kernel does not carry the -morpheos release string"
+          # BYTES, not strings: a bzImage is compressed, so `strings` cannot see the kernel's own release
+          # string and once failed a good build for it. Slot A must be the artefact we built; slot B must not.
+          if ! cmp -s "$RUNNER_TEMP/vmlinuz" "$RUNNER_TEMP/kbuild/out/vmlinuz-morpheos"; then
+            echo "::error::slot A's kernel is not the one we built (bytes differ)"
             exit 1
           fi
-          # Slot B must NOT be ours: it is the comparison the hardware falsifier falls back to.
-          if strings "$RUNNER_TEMP/vmlinuz-b" | grep -qx "6.8.0-morpheos"; then
+          if cmp -s "$RUNNER_TEMP/vmlinuz-b" "$RUNNER_TEMP/kbuild/out/vmlinuz-morpheos"; then
             echo "::error::slot B also carries our kernel - the comparison is gone"
             exit 1
           fi
