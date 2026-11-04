@@ -1,0 +1,31 @@
+#!/bin/sh
+# morph-build — compile MorpheOS on this machine, with no network.
+#
+# WHY THIS FILE IS ON /persist AND NOT IN /etc: the root is read-only, so a shell hook cannot live there on a
+# running machine; /persist is the only writable place. The durable version is an image overlay
+# (images/x86-qemu/overlay-hardware/etc/profile.d/), which only takes effect after a flash — this is what works
+# now, and it is one command either way.
+#
+#   morph-build              whole workspace, release
+#   morph-build <crate>      one crate, release
+#
+# It uses the standalone toolchain installed from the tarball (rustc/cargo/rust-std only, because the docs
+# components are gigabytes of nothing) and the vendored crate sources, so it never touches the network.
+set -u
+P=/persist
+TOOL="$P/rust-install/bin"
+[ -x "$TOOL/cargo" ] || { echo "morph-build: no toolchain at $TOOL (was /persist wiped?)" >&2; exit 1; }
+[ -d "$P/vendor" ] || { echo "morph-build: no vendored crates at $P/vendor" >&2; exit 1; }
+[ -d "$P/morpheos" ] || { echo "morph-build: no source at $P/morpheos" >&2; exit 1; }
+
+export PATH="$TOOL:$PATH"
+export LD_LIBRARY_PATH="$P/rust-install/lib"
+export CARGO_HOME="$P/cargo-home"
+export CARGO_TARGET_DIR="$P/target"
+export CARGO_NET_OFFLINE=true
+
+cd "$P/morpheos" || exit 1
+if [ "$#" -gt 0 ]; then
+    exec "$TOOL/cargo" build --release -p "$1"
+fi
+exec "$TOOL/cargo" build --release --workspace
