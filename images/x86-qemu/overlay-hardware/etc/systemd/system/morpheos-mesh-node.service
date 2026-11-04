@@ -23,7 +23,11 @@ RequiresMountsFor=/persist
 Type=simple
 Environment=HOME=/persist/mesh/home
 Environment=NODE_REPOS_DIR=/persist/mesh/code
-Environment=GIT_SSH_COMMAND=ssh -F /persist/mesh/ssh_config
+# QUOTED, because systemd splits an unquoted value on spaces: `GIT_SSH_COMMAND=ssh -F /persist/...` sets the
+# variable to "ssh" and then rejects "-F" and the path as invalid assignments - so the agent used plain ssh, tried
+# to write /root/.ssh/known_hosts on a read-only root, and none of its ssh_config applied. Caught by
+# `systemd-analyze verify` on the reference laptop, 2026-11-04.
+Environment="GIT_SSH_COMMAND=ssh -F /persist/mesh/ssh_config"
 Environment=GIT_TERMINAL_PROMPT=0
 Environment=GIT_CONFIG_NOSYSTEM=1
 # Without an identity, `git commit` fails, the result stays staged and the job never publishes - measured
