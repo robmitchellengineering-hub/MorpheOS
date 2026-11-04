@@ -1325,21 +1325,29 @@ it (note 5). Neither blocks the VM proof.
    3. The initramfs hook and the harness-side wipe scenario.
    4. The in-machine wipe and the corrupt-recovery refusal.
 
-### S5 · Accounts and admin (A9) · proposed
+### S5 · Accounts and admin (A9) · open · parallel
 
 **What:** an ordinary account a person logs in as, a locked root, and admin actions only
-through `morphd` transactions with the `.rob` mark (A9, ADRs 0011 and 0012). Rob chooses the
-model first. Three are laid out below, and drafted for his answer as
-[ADR 0020](adr/0020-account-model.md) (Proposed).
+through `morphd` transactions with the `.rob` mark (A9, ADRs 0011 and 0012). The model is
+decided — **model 2 of [ADR 0020](adr/0020-account-model.md), accepted 2026-11-04** — so this
+task builds it rather than choosing it. It runs beside the express road because it is the one
+control the "secure" line and the everyday build both need: today the console is root with no
+password.
 
-**Done when:** Rob has decided the account model, and a VM scenario
+**Done when:** a VM scenario
 (`images/x86-qemu/test-accounts.sh`) logs in as the user with the model's credentials, typed on
 the VM's keyboard. As that user it cannot write the slots: writing `/dev/vda2`, `/dev/vda3` or
 `/efi/loader/loader.conf` fails. Read off the disk afterwards, slot B and `loader.conf` are
-byte-identical to before (a control taken before boot), and root's password is locked.
+byte-identical to before (a control taken before boot), and root's password is locked. In
+`plain`, Ctrl+Alt+F2 no longer reaches a root shell; on a hardware test stick it still does,
+and the banner says which stick it is.
 
-**Ask Rob to open:** E11's first half (the shell not as root) waits on the account model,
-drafted for his answer as [ADR 0020](adr/0020-account-model.md).
+**Decided 2026-11-04 (Rob):** model 2; VT2 kept on the hardware test sticks only, with a
+visible "root console: test stick" banner, and removed from `plain`; a forgotten password is
+reset by the recovery system (S4) after a confirmation typed on the machine, which is physical
+presence — the threat model the stick already uses. His words are in
+`docs/log/2026-11-04-plan-secure-kernel.md`. E11's first half (the shell not as root) is
+unblocked by it and follows from the same account.
 
 **Notes:**
 
@@ -1356,32 +1364,19 @@ drafted for his answer as [ADR 0020](adr/0020-account-model.md).
      account from it**. `/users` is listed in `unenforced_settings()` (#67); it leaves the
      list only when something creates the account from it.
 
-2. **Three models.**
-   - **(1) One person, no password: an appliance.**
-     - One account `morph` (uid 1000) is baked into the image, and it autologins into the
-       shell.
-     - Admin is physical presence plus the `.rob` mark. Root is locked, and there is no
-       `sudo`.
-     - Smallest, because the account database can stay in the read-only root.
-     - Against it: whoever holds the laptop is its owner. It also cannot fit doc 09's
-       "keys unlocked by user auth", so it would have to be replaced before disk encryption.
-   - **(2) One owner, with a password chosen at first boot. Recommended.**
-     - The account lives in a writable database on `/persist`, through `libnss-extrausers`
-       (`/var/lib/extrausers/{passwd,shadow,group}`, bind-mounted from `/persist`). Ubuntu
-       Core uses this for exactly this reason: a read-only root.
-     - First boot shows one window in the shell: a name and a password. The Manifest's
-       `[[users]]` records the name and admin flag (tier 4, `.rob`), never the password.
-     - Login is the shell's own lock and login screen.
-     - Admin actions go through `morphd`, which asks for the same password and writes the
-       `.rob` mark with the user's name.
-     - Root is locked. No `sudo`. No root console on VT2 in `plain`.
-     - Grows into (3) without a rewrite.
-   - **(3) Several people, an owner who is admin.**
-     - As (2), with a user list at login and per-user sessions (`flow-session`).
-     - Possibly `systemd-homed`, with per-user encrypted homes on `/persist/home`. Verify that
-       noble ships it, and its PAM module.
-     - Strata history per user.
-     - Right for a family machine, and a week or more on top of (2). Not needed for N1–N5.
+2. **The model, as decided** (the alternatives are recorded in ADR 0020's options table; they
+   are not revisited here).
+   - The account lives in a writable database on `/persist`, through `libnss-extrausers`
+     (`/var/lib/extrausers/{passwd,shadow,group}`, bind-mounted from `/persist`). Ubuntu
+     Core uses this for exactly this reason: a read-only root.
+   - First boot shows one window in the shell: a name and a password. The Manifest's
+     `[[users]]` records the name and admin flag (tier 4, `.rob`), never the password.
+   - Login is the shell's own lock and login screen.
+   - Admin actions go through `morphd`, which asks for the same password and writes the
+     `.rob` mark with the user's name.
+   - Root is locked. No `sudo`. No root console on VT2 in `plain`.
+   - Several people later is model 3: as this, with a user list at login and per-user
+     sessions (`flow-session`), possibly `systemd-homed`. It is not part of this task.
 
 3. **Files** (model 2).
    - `build.sh`: add `libnss-extrausers` to the base, and set `passwd: files extrausers` in
@@ -1405,8 +1400,10 @@ drafted for his answer as [ADR 0020](adr/0020-account-model.md).
    - **`/etc` is read-only.** `useradd`, `passwd` and `chpasswd` lock and rename files in
      `/etc` and fail. This is why extrausers, and not a bind mount over `/etc/shadow`.
    - **Root autologin on VT2 is a root shell for anyone at the keyboard.** HARDWARE.md tells
-     people about it. Removing it from `plain` takes Rob's real-hardware debugging console,
-     so ask him (model 2 recommends a recovery console in S4's recovery system instead).
+     people about it. Rob's answer keeps it on the *hardware test sticks* (`overlay-hardware`)
+     with a banner, and removes it from `plain`; the eventual debugging console is S4's
+     recovery system. Do not "simplify" by removing it everywhere — that deletes the console
+     Rob debugs hardware with.
    - **The block devices are `root:disk 0660`** and the ESP is mounted `umask=0077`. Keep
      the user out of the `disk` group. Assert this in the test, not by reading
      `/etc/group`.
@@ -1416,11 +1413,12 @@ drafted for his answer as [ADR 0020](adr/0020-account-model.md).
    - **Strata's store stays root-only (0700) by design** (doc 09). S6's timeline needs a
      privileged path once the shell is not root.
 
-6. **Rob's decision: the model.** Recommendation: **(2)**. Also: whether `plain` keeps any root
-   console. And whether the password also unlocks disk encryption later (doc 09; out of
-   scope here).
+6. **Rob's answers (2026-11-04).** Model 2; VT2 on the hardware test sticks only, with a
+   banner; a forgotten password is reset by the recovery system (S4) after a confirmation
+   typed on the machine. Open and technical from here: whether the same password also unlocks
+   disk encryption later (doc 09, S12; out of scope here).
 
-7. **Size: M** once decided. Two PRs:
+7. **Size: M**, now that it is decided. Two PRs:
    1. The account, locked root and `test-accounts.sh`.
    2. The first-boot window and the shell's login screen.
 
@@ -1753,6 +1751,97 @@ its own rather than a part of S8.
    1. `crates/morphd` with the hostname applier and tests.
    2. Retention, Strata's policy file and the `unenforced_settings()` change.
    3. The service, the seeded generation and `test-manifest.sh`.
+
+### S12 · Data at rest: `/persist` is encrypted (finding F2) · proposed
+
+**What:** LUKS2 on the data partition, unlocked at boot by the owner's password (ADR 0020
+model 2) or a recovery key kept off the machine. Today the stick is an unencrypted ext4
+partition, so anyone who picks it up mounts it and reads the Wi-Fi PSK in clear
+(`conf.d/30-saved-networks-on-persist.conf`, red team finding F2). This is the control that
+makes the "lost or stolen laptop" claim true instead of aspirational.
+
+**Done when:** `images/x86-qemu/attack-disk.sh` runs **live** against the booted image in the
+`images` workflow and is green: it copies `p3` off the disk, greps for `psk=`/`password=` and
+finds nothing readable; a boot with the right password reaches the shell with `/persist`
+mounted; a boot without it does not reach the shell, and says why on the serial console; and
+the trial-boot/A/B path is unchanged (the `images` suite's good, unhealthy and crash scenarios
+still pass).
+
+**Notes:** the control is S2 of the secure-edition plan, and the only one on that list marked
+"everyday: yes" that is not already done. Traps: the seed of the manifest and the Strata store
+live on `/persist`, so the boot path must not need them before it is unlocked; the key must be
+sealed to something (on the 2012 laptop there is **no TPM 2.0**, so a password or a keyfile on
+the ESP, and the ESP is not encrypted — say which, and why, in the log); `morph-heal` and
+`morph-update` write to slots, never to `/persist`, so they are unaffected — verify, do not
+assume.
+
+### S13 · Default-deny network (plan S5) · proposed
+
+**What:** nftables rules in the image with a default-drop policy and exactly the ports the
+machine needs, no discovery daemons, no mDNS. Today's surface already passes the scan (A1: 1
+of 25 ports), but it passes because little is installed, not because something denies.
+
+**Done when:** `images/x86-qemu/attack-network.sh` scans the booted VM from a second host and
+any open port beyond the allowed set fails the job; the allowed set is written in the script
+and in the image's own `HARDWARE.md` report; and a fresh install with the default deny still
+browses, because the rules allow established traffic and the browser's own connections.
+
+**Notes:** the rule must be in the image, not in a unit someone can disable. The Wi-Fi picker
+uses NetworkManager's D-Bus, not a network listener — verify that nothing the shell needs
+listens.
+
+### S14 · One identity per machine (finding F3) · proposed
+
+**What:** an SSH CA with short-lived per-machine certificates, replacing the single baked
+admin key whose public half is in a public repository. It is also the repair for A3: the key
+the image carries does not authenticate (fixed in #162), and a per-machine cert makes "which
+machine is this" answerable.
+
+**Done when:** two images built at the same commit carry different identities; a certificate
+from one is refused by the other; an expired certificate is refused; and the admin path works
+from Rob's machine to a hardware stick, with the refusal that says why when it does not.
+
+**Notes:** one-way flow (D17): this is cheap enough for the everyday build too. The CA key
+never lands in an image; where it lives is a Rob decision when the task is opened.
+
+### S15 · Measured boot and attestation (TPM 2.0) · proposed
+
+**What:** IMA appraisal plus a PCR quote the machine can hand to a verifier, so a machine can
+*prove* what it booted rather than assert it. This is the control the 2012 laptop cannot host
+(no TPM 2.0); `win-2`'s fTPM and any PC since ~2016 can.
+
+**Done when:** a machine running our kernel produces a quote that a verifier accepts, and a
+machine booted with a tampered kernel or initrd produces one that is refused — with the
+verifier's refusal quoted in the log. A machine without a TPM reports UNKNOWN, never "passed".
+
+**Notes:** research before build: this is the one item that is VVS-relevant across the estate
+(a machine that proves its own state). It needs K3 for a root to measure.
+
+### S16 · A disposable browsing context · proposed
+
+**What:** Firefox in a per-session sandbox whose profile does not persist, so a hostile page
+cannot reach `/persist` or the machine's keys. Today the browser is the widest-open surface in
+the image and the immutable root makes the usual "update it away" answer unavailable.
+
+**Done when:** a page that tries to write outside its sandbox fails, the profile is gone after
+the session, and a download still lands where the person asked for it. The attack is a fixture
+in the `images` suite, not a manual test.
+
+**Notes:** research first (Flathub's Firefox, or a bubblewrap wrapper around the `.deb` already
+in the image); do not break the browser the express road depends on (E4).
+
+### S17 · Anti-rollback on updates · proposed
+
+**What:** a refusal to install a *signed but older* release. Signed updates exist (S2, done);
+the missing half is the counter that makes "roll me back to the version with the known bug"
+impossible without physical presence.
+
+**Done when:** `attack-update.sh` grows a third payload — a correctly signed, older release —
+and the installer refuses it with a logged reason; the refusal does not brick the machine, and
+a legitimate newer release still installs.
+
+**Notes:** the counter must live somewhere rollback cannot defeat (the ESP's own store, or
+TPM NV where there is one). Adding a payload to an existing attack is the whole check.
 
 ## M3 · Daily driver
 
@@ -2992,3 +3081,84 @@ vs staying in pacland / harness-mesh — is part of what opening it would decide
   active; ~3.4 tok/s int4, 20 GB) and Qwen3.8-Flash-Next (vision + tools, 24–32 GB).
 
 Test all four on the Legion Go and compare, rather than committing to one.
+
+## M6 · Own the kernel
+
+Rob's decision, 2026-11-04: the custom kernel means **the Linux kernel built and patched by
+us**, not a kernel written from scratch. Why that ordering, what it buys and what it costs is
+[ADR 0022](adr/0022-own-the-kernel-build.md); the short version is that every claim we make
+("heals itself", "an app cannot exfiltrate", "the machine explains itself") is enforced today by
+userland processes that can be bypassed, on a kernel somebody else builds, with drivers we
+cannot patch.
+
+Three tasks, in the ADR's order: **K1 own the build → K2 own the failure path → K3 own the
+policy.** The fourth phase (the model: no systemd, the app as a kernel object, versioning at
+the VFS) is deliberately **not** planned here, and neither is doc 03's Rust microkernel —
+which stays where doc 03 puts it, after the model is proven.
+
+**Rob decides before K3:** how far the policy goes into the everyday image (D17's one-way
+flow says evidence moves Secure → Everyday, never the reverse; a kernel-side denial that costs
+a daily user a step stays in the Secure line).
+
+### K1 · Own the kernel build · open · parallel
+
+**What:** build the Linux 6.8 stable tree ourselves — our configuration fragment (only the
+subsystems this machine uses: `b43`, `i915`, `snd-hda-intel`, `xhci`, ext4, the EFI stub, and
+virtio for the VM matrix), KSPP hardening options on, modules signed by our key, and the
+machine's own name in the kernel: `uname -s` says **MorpheOS** and `uname -r` ends in
+`-morpheos`. Boot it in the VM matrix and on the reference laptop, with Ubuntu's kernel kept
+in the other slot as the comparison.
+
+**Done when:** inside a booted image, `uname -s` is `MorpheOS` and `uname -r` ends `-morpheos`,
+read from the machine and written to the ESP by the scenario; the `images` suite's good,
+unhealthy and crash scenarios all still pass with our kernel; on `MacBookPro9,1` the machine
+boots our kernel with **Wi-Fi, audio and the panel working**, and Ubuntu's kernel still boots
+from the other slot; and a module not signed by our key is refused while one signed by us
+loads.
+
+**Notes:**
+
+- **Verify `UTS_SYSNAME` before assuming it.** If 6.8's tree has no configuration for it, patch
+  `include/linux/uts.h` — we own the tree, and that is the point. Do not fake it with a
+  wrapper: the syscall is the check.
+- **A config that is too small dies on the laptop, not in QEMU.** Keep `CONFIG_DEVTMPFS_MOUNT`,
+  the EFI stub, the firmware blobs the 2012 laptop asks for, and the virtio drivers the
+  scenario needs. The falsifier is the hardware, not the VM.
+- **The Ubuntu kernel stays the other slot for the first release**, so a regression is a
+  measurable comparison boot by boot. A custom kernel is not yet a rollback path.
+- **Kernel work does not run on the orchestrator.** It is a Linux-node build (`build:c` in
+  the mesh); a compile on the Mac is refused by the same rule that refuses the workspace tests
+  (AGENTS.md H16).
+- **The CVE stream is now ours.** Rebuild against `stable` weekly in CI from day one; a kernel
+  we patch is a kernel we must track.
+
+### K2 · Own the failure path · proposed · needs K1
+
+**What:** the machine heals without a working userspace. `kexec` into the known-good slot in
+seconds, a `pstore`/ramoops flight recorder that survives a hard lockup, and slot health decided
+**in the kernel** rather than by a userspace health check that a broken boot never reaches. Also
+the boot-to-compositor path with no initramfs.
+
+**Done when:** a deliberately hard-locked machine leaves a flight recorder readable after the
+next boot, naming the kernel's last events; a slot the kernel marked unhealthy is not chosen
+again and the good slot is `kexec`'d in seconds with userspace never having started; and the
+machine reaches the compositor without an initramfs.
+
+**Notes:** this is where "never breaks, and heals itself" stops being a feature and becomes a
+property. The 2026-10-30 night is the motivating evidence: a machine that could not report its
+own state cost five image builds.
+
+### K3 · Own the policy · proposed · needs K2
+
+**What:** enforcement moves into the kernel — eBPF LSM policy per service (replacing the
+seccomp/landlock profiles systemd applies today), IMA appraisal with TPM measured boot,
+`verity` on the root, and no module loading from disk at all. This is where the Secure edition's
+certificates come from.
+
+**Done when:** an attack the suite runs is **denied by the kernel** and the log names the policy
+that denied it (D20's falsifier — a denial in userspace does not count); a module not signed by
+us cannot load; and a machine booted with a tampered root fails appraisal and reports that it
+did, rather than reporting that it booted.
+
+**Notes:** this needs a machine with TPM 2.0 (`win-2`'s fTPM; the 2012 laptop has none). S15
+is the attestation half and is where the verifier lives.

@@ -1,9 +1,10 @@
 # 0020 · One owner with a password chosen at first boot, in a user database on `/persist`; root is locked
 
-Status: **Proposed**. Waiting on Rob (task S5 in [doc 20](../20-build-plan.md), which is
-`proposed`: only Rob opens it). E11's first half (the shell not running as root) waits on this.
-Rob accepts it by answering "What Rob decides" below. The builder records the answers, sets
-the status and date, adds the row to [README.md](README.md), and Rob opens S5.
+Status: **Accepted** — 2026-11-04. Rob answered all three questions in "What Rob decides"
+below (his words are recorded in `docs/log/2026-11-04-plan-secure-kernel.md`), and S5 in
+[doc 20](../20-build-plan.md) is open and marked `parallel`, so the account work may start
+beside the express road. E11's first half (the shell not running as root) is unblocked by it.
+From here this record is not edited; a change to the model is a new ADR that supersedes it.
 
 ## Context
 
@@ -48,17 +49,17 @@ database elsewhere.
 6. **The shell runs as that user** (E11): in the `video` group for `seatd` (**verify:** that
    Ubuntu's `seatd.service` uses `-g video`), with a logind session (`PAMName=login`).
 
-## What Rob decides
+## What Rob decided (2026-11-04)
 
-1. **The model:** 1, 2 (recommended) or 3.
-2. **The root console on VT2:** removed from `plain` now, or kept on the *hardware test* sticks
-   only (`overlay-hardware`) until S4's recovery console exists. Recommended: kept on the
-   hardware sticks with a visible "root console: test stick" banner, and removed from `plain`.
-3. **A forgotten password:** what recovers it.
-   - (i) The recovery system (S4) resets it after a confirmation typed on the machine.
-     Recommended: physical presence, which is the threat model already used for the stick.
-   - (ii) The Manifest's `recovery_key`.
-   - (iii) Nothing: reinstall and restore from the backup (ADR 0018).
+1. **The model: 2.** One owner, a password chosen at first boot, in the database on `/persist`.
+   The accounts, the locked root and the shell's login screen all follow from it.
+2. **The root console on VT2: kept on the hardware test sticks only** (`overlay-hardware`),
+   with a visible "root console: test stick" banner, and **removed from `plain`**. Rob's own
+   debugging console therefore survives until S4's recovery console replaces it, and the
+   shipping image stops being a passwordless root shell for anyone who reads HARDWARE.md.
+3. **A forgotten password: the recovery system (S4) resets it** after a confirmation typed on
+   the machine — physical presence, the same threat model the stick already uses. Not the
+   Manifest's `recovery_key`, and not "nothing".
 
 ## Consequences
 
