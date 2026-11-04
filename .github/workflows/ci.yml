@@ -96,7 +96,9 @@ jobs:
             # next step's merge-base finds no common ancestor (#76, 2026-10-14).
             git fetch -q origin "$GITHUB_BASE_REF"
             git show "origin/$GITHUB_BASE_REF:docs/20-build-plan.md" > "$RUNNER_TEMP/base-plan.md"
-            node scripts/verify-plan.mjs --branch "$GITHUB_HEAD_REF" --base "$RUNNER_TEMP/base-plan.md"
+            # The Secure arm's task list as it was in the base; empty before the arm is on main.
+            git show "origin/$GITHUB_BASE_REF:docs/26-secure-arm.md" > "$RUNNER_TEMP/base-arm.md" 2>/dev/null || : > "$RUNNER_TEMP/base-arm.md"
+            node scripts/verify-plan.mjs --branch "$GITHUB_HEAD_REF" --base "$RUNNER_TEMP/base-plan.md" --base-arm "$RUNNER_TEMP/base-arm.md"
           else
             node scripts/verify-plan.mjs
           fi

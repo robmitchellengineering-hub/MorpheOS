@@ -73,7 +73,9 @@ if [ "$branch" = main ]; then
     node scripts/verify-plan.mjs
 else
     git show origin/main:docs/20-build-plan.md > "${TMPDIR:-/tmp}/base-plan.md"
-    node scripts/verify-plan.mjs --branch "$branch" --base "${TMPDIR:-/tmp}/base-plan.md"
+    # The Secure arm's task list as it was in main; empty before the arm first landed there.
+    git show origin/main:docs/26-secure-arm.md > "${TMPDIR:-/tmp}/base-arm.md" 2>/dev/null || : > "${TMPDIR:-/tmp}/base-arm.md"
+    node scripts/verify-plan.mjs --branch "$branch" --base "${TMPDIR:-/tmp}/base-plan.md" --base-arm "${TMPDIR:-/tmp}/base-arm.md"
 fi
 step "pull request carries its log; scenarios are wired"
 bash scripts/verify-pr.sh --self-test

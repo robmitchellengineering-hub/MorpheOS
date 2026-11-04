@@ -32,6 +32,10 @@ import { fileURLToPath } from 'node:url';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PLAN = 'docs/20-build-plan.md';
+// The Secure arm's task list (doc 26). The arm is its own line on main, so its tasks are
+// checked by the same rules but kept in its own document: a branch may name a task from
+// either list, and doc 20 never gains the arm's work.
+const ARM = 'docs/26-secure-arm.md';
 const STATUSES = new Set(['proposed', 'open', 'in progress', 'blocked', 'done']);
 const HEADING = /^### ([A-Z]\d+) · (.+)$/;
 
@@ -64,13 +68,13 @@ export function parse(text) {
 }
 
 /** Every rule violation in the plan, as messages. */
-export function check(text, exists = (p) => existsSync(join(REPO, p))) {
+export function check(text, exists = (p) => existsSync(join(REPO, p)), label = PLAN) {
   const tasks = parse(text);
   const out = [];
   const ids = new Map();
   if (tasks.length === 0) out.push('no tasks found');
   for (const t of tasks) {
-    const at = `${PLAN}:${t.line} ${t.id}`;
+    const at = `${label}:${t.line} ${t.id}`;
     if (ids.has(t.id)) out.push(`${at}: duplicate ID (also line ${ids.get(t.id)})`);
     ids.set(t.id, t.line);
     if (!STATUSES.has(t.status)) out.push(`${at}: status "${t.status}" is not one of ${[...STATUSES].join(', ')}`);
@@ -90,7 +94,7 @@ export function check(text, exists = (p) => existsSync(join(REPO, p))) {
   }
   for (const t of tasks) {
     for (const n of t.needs) {
-      if (!ids.has(n)) out.push(`${PLAN}:${t.line} ${t.id}: needs ${n}, which is not a task`);
+      if (!ids.has(n)) out.push(`${label}:${t.line} ${t.id}: needs ${n}, which is not a task`);
     }
   }
   return out;
@@ -328,11 +332,14 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     selfTest();
   } else {
     const text = readFileSync(join(REPO, PLAN), 'utf8');
+    const arm = existsSync(join(REPO, ARM)) ? readFileSync(join(REPO, ARM), 'utf8') : '';
     const problems = check(text);
-    const known = new Set(['--branch', '--base']);
+    // The arm's tasks obey the same rules, in the arm's own document (doc 26).
+    if (arm) problems.push(...check(arm, undefined, ARM));
+    const known = new Set(['--branch', '--base', '--base-arm']);
     for (let i = 0; i < args.length; i += 2) {
       if (!known.has(args[i]) || !args[i + 1]) {
-        console.error('usage: node scripts/verify-plan.mjs [--branch NAME [--base FILE]] | --self-test');
+        console.error('usage: node scripts/verify-plan.mjs [--branch NAME [--base FILE] [--base-arm FILE]] | --self-test');
         process.exit(2);
       }
     }
@@ -341,13 +348,23 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       const branch = args[bi + 1];
       const ba = args.indexOf('--base');
       const base = ba >= 0 ? readFileSync(args[ba + 1], 'utf8') : text;
+      // The arm's tasks as they were in the base, so a branch cannot name a task it introduced.
+      const baa = args.indexOf('--base-arm');
+      // No --base at all means the branch is judged against its own copy (as before). A --base
+      // with no --base-arm means the arm's document did not exist in the base: every arm task
+      // is then new, and a branch may not name one.
+      const baseArm = ba < 0 ? arm : (baa >= 0 && existsSync(args[baa + 1]) ? readFileSync(args[baa + 1], 'utf8') : '');
+      // One namespace for branch naming: doc 20's tasks and the arm's, with the arm's in a
+      // later milestone so they need `parallel` to start beside the express road.
+      const suite = arm ? `${text}\n## M90 · The Secure arm (doc 26)\n${arm}` : text;
+      const baseSuite = baseArm ? `${base}\n## M90 · The Secure arm (doc 26)\n${baseArm}` : base;
       // Decisions and Rob's words, from this branch's own log file (docs/log/<date>-<branch>.md).
       const slug = branch.replaceAll('/', '-');
       const logDir = join(REPO, 'docs/log');
       const logs = existsSync(logDir) ? readdirSync(logDir).filter((f) => new RegExp(`^\\d{4}-\\d{2}-\\d{2}-${slug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.md$`).test(f)) : [];
       const decisions = new Set(logs.flatMap((f) => [...decisionWords(readFileSync(join(logDir, f), 'utf8'))]));
       const rob = new Set(logs.flatMap((f) => [...robWords(readFileSync(join(logDir, f), 'utf8'))]));
-      const why = checkBranch(branch, text, base, decisions, rob);
+      const why = checkBranch(branch, suite, baseSuite, decisions, rob);
       if (why) problems.push(why);
     }
     if (problems.length) {
@@ -355,7 +372,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       process.exit(1);
     }
     const tasks = parse(text);
-    const count = (s) => tasks.filter((t) => t.status === s).length;
-    console.log(`plan verified: ${tasks.length} tasks (${count('done')} done, ${count('in progress')} in progress, ${count('open')} open, ${count('proposed')} proposed)`);
+    const count = (list, s) => list.filter((t) => t.status === s).length;
+    console.log(`plan verified: ${tasks.length} tasks (${count(tasks, 'done')} done, ${count(tasks, 'in progress')} in progress, ${count(tasks, 'open')} open, ${count(tasks, 'proposed')} proposed)`);
+    if (arm) {
+      const at = parse(arm);
+      console.log(`arm verified: ${at.length} tasks in ${ARM} (${count(at, 'done')} done, ${count(at, 'in progress')} in progress, ${count(at, 'open')} open, ${count(at, 'proposed')} proposed)`);
+    }
   }
 }
