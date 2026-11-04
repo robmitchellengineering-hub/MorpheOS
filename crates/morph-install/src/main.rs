@@ -15,7 +15,9 @@ fn main() -> ExitCode {
     args.retain(|a| a != "--yes");
     let Some(disk) = args.first() else {
         eprintln!("usage: morph-install [--yes] DISK");
-        eprintln!("  prints the layout it would make and every reason it would refuse; it writes nothing (E7)");
+        eprintln!(
+            "  prints the layout it would make and every reason it would refuse; it writes nothing (E7)"
+        );
         return ExitCode::from(2);
     };
 
@@ -116,17 +118,29 @@ fn running_disks() -> Vec<String> {
     let mut out = Vec::new();
     if let Ok(mountinfo) = std::fs::read_to_string("/proc/self/mountinfo") {
         for line in mountinfo.lines() {
-            let Some((point, src)) = mountinfo_parts(line) else { continue };
+            let Some((point, src)) = mountinfo_parts(line) else {
+                continue;
+            };
             if point != "/" && point != "/efi" {
                 continue;
             }
-            let Some(part) = src.rsplit('/').next() else { continue };
-            if !part.starts_with('v') && !part.starts_with('s') && !part.starts_with("nvme") && !part.starts_with("mmcblk") {
+            let Some(part) = src.rsplit('/').next() else {
+                continue;
+            };
+            if !part.starts_with('v')
+                && !part.starts_with('s')
+                && !part.starts_with("nvme")
+                && !part.starts_with("mmcblk")
+            {
                 continue;
             }
             // vda1 -> vda, nvme0n1p2 -> nvme0n1, mmcblk0p3 -> mmcblk0
             let disk = if let Some(rest) = part.split_once('p') {
-                if part.starts_with("nvme") || part.starts_with("mmcblk") { rest.0 } else { part.trim_end_matches(|c: char| c.is_ascii_digit()) }
+                if part.starts_with("nvme") || part.starts_with("mmcblk") {
+                    rest.0
+                } else {
+                    part.trim_end_matches(|c: char| c.is_ascii_digit())
+                }
             } else {
                 part.trim_end_matches(|c: char| c.is_ascii_digit())
             };

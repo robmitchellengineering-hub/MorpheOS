@@ -41,8 +41,20 @@ const GIB: u64 = 1024 * MIB;
 pub fn plan(disk_bytes: u64) -> Vec<Partition> {
     let data = disk_bytes.saturating_sub(1 * MIB + 1 * GIB + 8 * GIB + 8 * GIB);
     vec![
-        Partition { index: 1, name: "esp", type_guid: TYPE_ESP, start_bytes: 1 * MIB, size_bytes: 1 * GIB },
-        Partition { index: 2, name: "root-a", type_guid: TYPE_ROOT, start_bytes: 1 * MIB + 1 * GIB, size_bytes: 8 * GIB },
+        Partition {
+            index: 1,
+            name: "esp",
+            type_guid: TYPE_ESP,
+            start_bytes: 1 * MIB,
+            size_bytes: 1 * GIB,
+        },
+        Partition {
+            index: 2,
+            name: "root-a",
+            type_guid: TYPE_ROOT,
+            start_bytes: 1 * MIB + 1 * GIB,
+            size_bytes: 8 * GIB,
+        },
         Partition {
             index: 3,
             name: "root-b",
@@ -80,7 +92,11 @@ pub fn partition_device(disk: &str, index: u32) -> Option<String> {
         .rfind(|c: char| c.is_ascii_digit())
         .map(|i| i == base.len() - 1)
         .unwrap_or(false);
-    Some(if needs_p { format!("{disk}p{index}") } else { format!("{disk}{index}") })
+    Some(if needs_p {
+        format!("{disk}p{index}")
+    } else {
+        format!("{disk}{index}")
+    })
 }
 
 /// Why an install will not run. Each variant is a refusal with its own test, because each one protects something
@@ -102,7 +118,8 @@ impl Refusal {
     pub fn reason(&self) -> String {
         match self {
             Refusal::HoldsRunningSystem => {
-                "that disk holds the system this machine booted from; install onto a different disk".to_string()
+                "that disk holds the system this machine booted from; install onto a different disk"
+                    .to_string()
             }
             Refusal::MountedPartition(p) => {
                 format!("{p} is mounted; unmount it, or choose another disk")
@@ -113,7 +130,8 @@ impl Refusal {
                 need / GIB
             ),
             Refusal::RemovableNeedsConfirmation => {
-                "that is removable media; name it with --yes /dev/disk/by-id/... if you mean it".to_string()
+                "that is removable media; name it with --yes /dev/disk/by-id/... if you mean it"
+                    .to_string()
             }
         }
     }
@@ -140,7 +158,8 @@ fn parent_disk(path: &str) -> String {
     // vda1 -> vda, sdb4 -> sdb
     let trimmed = base.trim_end_matches(|c: char| c.is_ascii_digit());
     // nvme0n1p2 -> nvme0n1, mmcblk0p3 -> mmcblk0 (the `p` before the partition number is the kernel's)
-    let disk = if (base.starts_with("nvme") || base.starts_with("mmcblk")) && trimmed.ends_with('p') {
+    let disk = if (base.starts_with("nvme") || base.starts_with("mmcblk")) && trimmed.ends_with('p')
+    {
         trimmed.trim_end_matches('p')
     } else {
         trimmed
@@ -182,7 +201,12 @@ mod tests {
         assert_eq!(p[0].start_bytes, MIB);
         // each partition begins exactly where the previous one ends
         for w in p.windows(2) {
-            assert_eq!(w[0].start_bytes + w[0].size_bytes, w[1].start_bytes, "{:?}", w);
+            assert_eq!(
+                w[0].start_bytes + w[0].size_bytes,
+                w[1].start_bytes,
+                "{:?}",
+                w
+            );
         }
         let last = p.last().unwrap();
         assert_eq!(last.start_bytes + last.size_bytes, disk);
@@ -194,8 +218,14 @@ mod tests {
     fn partition_names_follow_the_kernels_rules() {
         assert_eq!(partition_device("/dev/vda", 1).unwrap(), "/dev/vda1");
         assert_eq!(partition_device("/dev/sdb", 4).unwrap(), "/dev/sdb4");
-        assert_eq!(partition_device("/dev/nvme0n1", 2).unwrap(), "/dev/nvme0n1p2");
-        assert_eq!(partition_device("/dev/mmcblk0", 3).unwrap(), "/dev/mmcblk0p3");
+        assert_eq!(
+            partition_device("/dev/nvme0n1", 2).unwrap(),
+            "/dev/nvme0n1p2"
+        );
+        assert_eq!(
+            partition_device("/dev/mmcblk0", 3).unwrap(),
+            "/dev/mmcblk0p3"
+        );
         assert_eq!(partition_device("/dev/loop0", 1).unwrap(), "/dev/loop0p1");
         assert_eq!(partition_device("", 1), None);
         assert_eq!(partition_device("/dev/vda", 0), None);
@@ -211,7 +241,10 @@ mod tests {
         };
         assert_eq!(refusals(&t), vec![Refusal::HoldsRunningSystem]);
         // a partition path for the same disk is the same refusal, not a different one
-        let t2 = Target { disk: "/dev/vda2".into(), ..t.clone() };
+        let t2 = Target {
+            disk: "/dev/vda2".into(),
+            ..t.clone()
+        };
         assert!(refusals(&t2).contains(&Refusal::HoldsRunningSystem));
     }
 
@@ -250,7 +283,10 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(refusals(&t), vec![Refusal::RemovableNeedsConfirmation]);
-        let named = Target { named_explicitly: true, ..t };
+        let named = Target {
+            named_explicitly: true,
+            ..t
+        };
         assert!(refusals(&named).is_empty());
     }
 
@@ -269,7 +305,10 @@ mod tests {
         for r in [
             Refusal::HoldsRunningSystem,
             Refusal::MountedPartition("/dev/vdb1".into()),
-            Refusal::TooSmall { bytes: 1, need: MIN_DISK_BYTES },
+            Refusal::TooSmall {
+                bytes: 1,
+                need: MIN_DISK_BYTES,
+            },
             Refusal::RemovableNeedsConfirmation,
         ] {
             let s = r.reason();
