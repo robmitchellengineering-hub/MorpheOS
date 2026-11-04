@@ -58,12 +58,12 @@ jobs:
           set -e
           img="$RUNNER_TEMP/img/disk-plain.img"
           # Read it off the finished disk, not off the build log: the question is what a person would flash.
-          loop=$(sudo losetup -Pf --show "$img")
-          trap 'sudo losetup -d "$loop" 2>/dev/null || true' EXIT
+          # `@@1M` is mtools' offset into the raw image and the ESP is the first partition at 1 MiB — the same
+          # idiom images/x86-qemu/test-boot.sh uses, with no loop device and no root.
           echo "=== slot A's loader entry ==="
-          sudo mtype -i "${loop}p1" ::/loader/entries/morpheos-a.conf
-          sudo mcopy -i "${loop}p1" ::/morpheos/a/vmlinuz "$RUNNER_TEMP/vmlinuz"
-          sudo mcopy -i "${loop}p1" ::/morpheos/b/vmlinuz "$RUNNER_TEMP/vmlinuz-b"
+          mtype -i "$img@@1M" ::/loader/entries/morpheos-a.conf
+          mcopy -i "$img@@1M" ::/morpheos/a/vmlinuz "$RUNNER_TEMP/vmlinuz"
+          mcopy -i "$img@@1M" ::/morpheos/b/vmlinuz "$RUNNER_TEMP/vmlinuz-b"
           echo "=== slot A's kernel release string ==="
           strings "$RUNNER_TEMP/vmlinuz" | grep -m2 -E "^6\.8\." || true
           if ! strings "$RUNNER_TEMP/vmlinuz" | grep -qx "6.8.0-morpheos"; then
