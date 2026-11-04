@@ -1,0 +1,51 @@
+#!/bin/sh
+# morph-node-tailnet — join the tailnet from the stick's claim file, if it carries a one-time key.
+#
+# THE TRADE, STATED. Joining the tailnet needs a login, and a login is a grant: by default this project hands the
+# URL to a person and waits for one tap. That is right for a machine you are sitting at and wrong for a stick you
+# are preparing for a fleet, where the tap is the only thing standing between "boot" and "it is a node".
+#
+# The middle path: /efi/morpheos-node.conf may name a file holding a TAILSCALE AUTH KEY. If it does, this joins
+# unattended. The key is then a SECRET ON THE STICK, which is a real risk and is why it is:
+#   - off unless the line is present (no line, no key, no change),
+#   - expected to be a single-use, expiring key (tailscale auth keys can be made ephemeral and time-limited),
+#   - used once and then REMOVED from the stick by this script, so a stolen stick is not a stolen key,
+#   - recorded in the node's status so an operator can see which machines joined unattended.
+#
+#   morph-node-tailnet            join using the stick's claim file
+#   morph-node-tailnet --check    report what the claim file says, change nothing
+set -u
+CONF=${MESH_STICK_CONF:-/efi/morpheos-node.conf}
+say() { printf 'morph-node-tailnet: %s\n' "$*"; }
+
+[ -f "$CONF" ] || { say "no claim file at $CONF"; exit 1; }
+KEYFILE=$(sed -n 's/^tailnet_authkey_file=//p' "$CONF" | head -1)
+HOSTNAME_WANT=$(sed -n 's/^host=//p' "$CONF" | head -1)
+
+if [ -z "$KEYFILE" ]; then
+    say "the claim file names no tailnet_authkey_file - this machine needs one login tap by hand"
+    exit 0
+fi
+if [ "${1:-}" = "--check" ]; then
+    say "would join as ${HOSTNAME_WANT:-$(hostname)} with the key in $KEYFILE"
+    exit 0
+fi
+[ -f "$KEYFILE" ] || { say "the claim file names $KEYFILE, which is not there"; exit 1; }
+KEY=$(tr -d '\r\n' < "$KEYFILE")
+[ -n "$KEY" ] || { say "$KEYFILE is empty"; exit 1; }
+
+command -v tailscale >/dev/null 2>&1 || { say "tailscale is not in this image"; exit 1; }
+say "joining the tailnet as ${HOSTNAME_WANT:-$(hostname)} with a one-time key"
+if tailscale up --authkey "$KEY" --hostname "${HOSTNAME_WANT:-$(hostname)}" --accept-dns=false --ssh; then
+    # Remove the key from the stick: it is single-use, and leaving it there is how a lost stick becomes a way in.
+    if rm -f "$KEYFILE" 2>/dev/null; then
+        say "joined; the key file has been removed from the stick"
+        sed -i '/^tailnet_authkey_file=/d' "$CONF" 2>/dev/null || true
+    else
+        say "joined; WARNING: could not remove $KEYFILE - remove it by hand and revoke the key in Tailscale"
+    fi
+    tailscale ip -4 2>/dev/null | head -1
+else
+    say "tailscale up failed - the machine is still a node on the bus, just not on the tailnet"
+    exit 1
+fi

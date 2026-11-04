@@ -19,6 +19,9 @@ RequiresMountsFor=/persist
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/lib/morpheos/mesh-node-setup --from-esp
+# Then the tailnet, ONLY if the claim file names a one-time key - no line means no change and the machine waits
+# for a person to tap a login, which is the default this project prefers. See morph-node-tailnet for the trade.
+ExecStart=-/usr/lib/morpheos/morph-node-tailnet
 # A claim that fails must not stop the boot or hold the agent: the machine still boots as a desktop, and
 # `morph-node status` says what is missing.
 SuccessExitStatus=1
