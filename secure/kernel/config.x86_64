@@ -11,7 +11,7 @@ CONFIG_PAGE_TABLE_ISOLATION=y
 # --- boot: UEFI stub, no initramfs needed for the storage path ---
 CONFIG_EFI=y
 CONFIG_EFI_STUB=y
-CONFIG_EFI_VARS=y
+CONFIG_EFIVAR_FS=y
 
 # --- filesystems the machine has ---
 CONFIG_EXT4_FS=y
@@ -27,7 +27,7 @@ CONFIG_VIRTIO_BLK=y
 CONFIG_VIRTIO_NET=y
 CONFIG_SCSI=y
 CONFIG_SCSI_VIRTIO=y
-CONFIG_XHCI_HCD=y
+CONFIG_USB_XHCI_HCD=y
 CONFIG_USB=y
 CONFIG_USB_SUPPORT=y
 CONFIG_USB_STORAGE=y
@@ -35,7 +35,6 @@ CONFIG_EFI_PARTITION=y
 
 # --- the 2012 laptop's hardware (measured) ---
 CONFIG_B43=m
-CONFIG_B43_SSB=m
 CONFIG_SSB=m
 CONFIG_DRM=y
 CONFIG_DRM_I915=m
@@ -66,6 +65,8 @@ CONFIG_DRM_AMDGPU=m
 CONFIG_DRM_XE=m
 CONFIG_HID_MULTITOUCH=m
 CONFIG_INPUT_EVDEV=y
+CONFIG_FB=y
+CONFIG_DRM_FBDEV_EMULATION=y
 CONFIG_FRAMEBUFFER_CONSOLE=y
 
 # --- enterprise servers: scale, not a different operating system ---
