@@ -87,6 +87,7 @@ and constraints into execution across devices). See [doc 12](docs/12-radical-con
 | `crates/flow-timeline` | The rewind timeline: a window on the shell listing Strata's ransomware alerts and the moment to rewind each folder to, with a dry run whose counts the person confirms before the real rewind; its model unit-tested, its window driven on the compositor (doc 20, S6) |
 | `crates/morph-attest` | A signed statement of what this machine is — system, kernel, slot, posture — checkable offline by anyone with no vendor service and no TPM; it says what it proves and refuses to speak without a key ([ATTESTATION](docs/ATTESTATION.md)) |
 | `crates/morph-capsule` | A capsule: an application plus a Strata-versioned user layer, so what the application writes can be undone — the smallest real form of doc 05's capsule, and where "undo anything" stops having a hole |
+| `crates/morph-install` | Lays out ESP, slot A, slot B and data on an internal disk and refuses the disk it booted from, a mounted partition, one too small, or removable media unconfirmed — the plan and every refusal tested; the writing is E7's next half ([doc 29](docs/29-install-stick.md)) |
 | `manifest/` | Example machines and how to validate them ([README](manifest/README.md)) |
 | `images/x86-qemu` | A/B test disk for a UEFI VM, with Strata watching `/home`, and the "Try to Break It" update and ransomware tests ([README](images/README.md)) |
 | `images/pi5` | Raspberry Pi 5 immutable A/B image built with rpi-image-gen ([README](images/pi5/README.md)) |
