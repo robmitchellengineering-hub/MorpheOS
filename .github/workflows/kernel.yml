@@ -155,6 +155,14 @@ jobs:
   image-runs-our-kernel:
     runs-on: ubuntu-latest
     timeout-minutes: 150
+    # Both scenarios the goal can honestly name. There is no audio scenario in the suite (thirteen test-*.sh,
+    # none touches a sound card), so `test-audio` is not something this repository can pass or fail — audio is
+    # a hardware-report item, and claiming a VM test for it would be inventing evidence.
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [shell, wifi]
+    name: image/${{ matrix.scenario }}
     steps:
       - uses: actions/checkout@v4
 
@@ -180,16 +188,16 @@ jobs:
       - name: Build the shell and the picker the image installs
         run: cargo build --release -p flow-compositor -p flow-wifi -p flow-files -p flow-timeline -p flow-notice
 
-      - name: The shell scenario, with our kernel in slot A
+      - name: The ${{ matrix.scenario }} scenario, with our kernel in slot A
         id: scenario
         continue-on-error: true
         run: |
           sudo KERNEL=ours KERNEL_OUT="$RUNNER_TEMP/kbuild/out" \
-            bash images/x86-qemu/test-shell.sh "$RUNNER_TEMP/img"
+            bash images/x86-qemu/test-${{ matrix.scenario }}.sh "$RUNNER_TEMP/img"
 
       - name: Question 1 — did the image boot OUR kernel and call itself MorpheOS
         run: |
-          log="$RUNNER_TEMP/img/serial-shell.log"
+          log="$RUNNER_TEMP/img/serial-${{ matrix.scenario }}.log"
           ls -l "$log" || true
           echo "=== the kernel that booted ==="
           grep -a -m2 -E "Linux version" "$log" || true
@@ -207,17 +215,17 @@ jobs:
           fi
           echo "the image booted the kernel we built, and the running system calls itself MorpheOS"
 
-      - name: Question 2 — did the shell scenario pass on it
+      - name: Question 2 — did the ${{ matrix.scenario }} scenario pass on it
         if: steps.scenario.outcome != 'success'
         run: |
-          echo "::error::the shell scenario failed against our kernel (see the serial log artifact)"
-          tail -40 "$RUNNER_TEMP/img/serial-shell.log" 2>/dev/null || true
+          echo "::error::the ${{ matrix.scenario }} scenario failed against our kernel (see the serial log artifact)"
+          tail -40 "$RUNNER_TEMP/img/serial-${{ matrix.scenario }}.log" 2>/dev/null || true
           exit 1
 
       - name: Keep the serial log either way
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: image-our-kernel-shell-serial-log
-          path: ${{ runner.temp }}/img/serial-shell.log
+          name: image-our-kernel-${{ matrix.scenario }}-serial-log
+          path: ${{ runner.temp }}/img/serial-${{ matrix.scenario }}.log
           if-no-files-found: warn
