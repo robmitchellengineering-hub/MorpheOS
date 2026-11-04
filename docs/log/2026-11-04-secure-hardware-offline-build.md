@@ -56,3 +56,34 @@ It lives on `/persist` because the root is read-only; the *durable* PATH hook is
 joins when the machine is on a network that allows internet — a phone hotspot is enough. The card records the
 LAN address (`192.168.15.13`), the measured capabilities, and the reason the tailnet is absent, rather than
 implying a membership it does not have.
+
+## Persistence, as far as it can be shown without a reboot (2026-11-04, later)
+
+Everything the build needs lives on the **data partition**, not on the read-only root:
+
+```
+findmnt /persist      -> /dev/sdb4 ext4
+/persist/rust-install/bin/cargo   present
+/persist/vendor                   present
+/persist/morpheos/Cargo.toml      present
+/persist/morph-build              present
+```
+
+`/persist/morph-build morph-update` compiled on demand in 0.1 s (cached) and 35 s cold, so the one command
+works. What is **inferred, not tested**: that a reboot keeps it. It should — `/persist` is the stick's data
+partition and nothing here is on tmpfs — but "should" is not the standard this project holds itself to, and a
+reboot of a machine someone is using is not mine to do unasked.
+
+## Why a tunnel from the Mac cannot substitute for internet
+
+The obvious workaround is to route the machine through the Mac, which does have internet. It cannot work for
+Tailscale: `tailscaled` speaks its own protocol to the control plane and to DERP relays over TCP/UDP and does not
+honour an HTTP or SOCKS proxy. So the robmesh membership genuinely needs a network with outbound connectivity —
+a phone hotspot is the smallest one.
+
+## A limit worth knowing about the snapshot
+
+`/persist/morpheos` is a `git archive` of the branch that was current when it was made (`fix/build-node-image`).
+Crates that exist only on another branch (`morph-attest` on `secure`, for instance) are not in it, so
+`morph-build morph-attest` says "did not match any packages" — correct behaviour, and the reason the snapshot
+has to be refreshed when the branch of interest changes.
