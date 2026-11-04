@@ -1,0 +1,68 @@
+#!/bin/sh
+# morph-node — be a robmesh build node, in one verb.
+#
+# WHY THIS EXISTS. Making this machine a node took, on 2026-11-04: a keypair generated somewhere on /persist, an
+# ssh config, a clone of the mesh repo from the BUS rather than GitHub, a git identity (without it every result
+# stays staged and the job re-runs forever), an identity marker that decides whose queue this machine owns, and a
+# systemd unit. Each of those was learned by a failure. None of them are things a person installing MorpheOS
+# should have to know, and an install stick that requires them is not an install stick.
+#
+# It is deliberately thin: the mechanism lives in mesh-node-setup (provisioning) and the unit (the loop). This
+# adds the words a person would use.
+#
+#   morph-node status     what this machine is, and what it is missing
+#   morph-node claim      become a node (writes the marker, the key, the clone, the identity)
+#   morph-node key        print the deploy-key line an operator adds to the repository
+#   morph-node start      start the loop now
+#   morph-node stop       stop it
+#
+# Nothing here needs the network except `claim`, which clones the bus.
+set -u
+SETUP=/usr/lib/morpheos/mesh-node-setup
+UNIT=morpheos-mesh-node.service
+MARKER=/persist/mesh/host-id
+
+say() { printf '%s\n' "$*"; }
+
+status() {
+    say "machine:    $(hostname)"
+    say "os:         $(. /etc/os-release 2>/dev/null && printf '%s' "$PRETTY_NAME")"
+    if [ -f "$MARKER" ]; then
+        say "node id:    $(cat "$MARKER")"
+    else
+        say "node id:    (not claimed — this machine is not a node)"
+    fi
+    if [ -d /persist/mesh/harness-mesh/.git ]; then
+        say "mesh:       $(cd /persist/mesh/harness-mesh && git log --oneline -1 2>/dev/null)"
+    else
+        say "mesh:       no clone"
+    fi
+    say "agent:      $(systemctl is-active "$UNIT" 2>/dev/null) ($(systemctl is-enabled "$UNIT" 2>/dev/null))"
+    if command -v tailscale >/dev/null 2>&1; then
+        say "tailnet:    $(tailscale ip -4 2>/dev/null | head -1 || echo 'not joined')"
+    fi
+    if command -v morph-build >/dev/null 2>&1; then
+        say "builder:    morph-build $( [ -d /persist/vendor ] && echo '(vendored crates present)' || echo '(no vendored crates)')"
+    fi
+}
+
+case "${1:-status}" in
+    status) status ;;
+    claim)
+        "$SETUP" --ensure || exit 1
+        say ""
+        say "claiming this machine as $(cat "$MARKER" 2>/dev/null)"
+        say "add the key to the repository (an operator does this once):"
+        "$SETUP" --print-key
+        systemctl start "$UNIT" 2>/dev/null || true
+        sleep 2
+        say "agent: $(systemctl is-active "$UNIT")"
+        say ""
+        say "next: morph-node status"
+        ;;
+    key) "$SETUP" --print-key ;;
+    start) systemctl start "$UNIT" && say "started" ;;
+    stop) systemctl stop "$UNIT" && say "stopped" ;;
+    -h|--help|help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//' ;;
+    *) say "usage: morph-node [status|claim|key|start|stop]" >&2; exit 2 ;;
+esac
