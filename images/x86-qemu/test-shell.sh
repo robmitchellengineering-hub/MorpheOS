@@ -46,6 +46,47 @@ for _ in $(seq 1 600); do
 done
 
 fail=0
+
+# ── THE SESSION'S REAL OWNERSHIP (E11) ───────────────────────────────────────────────────────────────────────
+# Read off the disk, not off the unit file. `morph-session-facts` records the compositor's real uid from
+# /proc/<pid>/status and what the unit asked systemd for; a unit that says User=morph while the process runs as
+# root is exactly the failure this catches.
+#
+# WHILE E11 IS BLOCKED this reports rather than fails, and that is deliberate rather than a weakened gate: the
+# promise E11 makes is "the compositor does not run as root", and the image does not make that promise yet (it
+# runs as root on purpose, because the account model is undecided). The moment flow-shell.service sets User= to
+# anything but root, this check starts enforcing - so the flip cannot be made without the evidence following it.
+facts=$(mtype -i "$DISK@@1M" ::/morph-session-facts.txt 2>/dev/null || true)
+if [ -z "$facts" ]; then
+    echo "    note  no /morph-session-facts.txt on the ESP: the session recorder did not run (E11)"
+else
+    cuid=$(printf '%s\n' "$facts" | sed -n 's/^compositor_uid=//p')
+    sowner=$(printf '%s\n' "$facts" | sed -n 's/^socket_owner=//p')
+    uuser=$(printf '%s\n' "$facts" | sed -n 's/^unit_user=//p')
+    morphuid=$(printf '%s\n' "$facts" | sed -n 's/^passwd_morph=//p')
+    echo "    session: compositor uid ${cuid:-?}, socket owner ${sowner:-?}, unit asks for ${uuser:-?}, user morph ${morphuid:-none}"
+    case "${uuser:-root}" in
+        ""|root)
+            echo "    note  the compositor runs as root (E11 blocked on the account model); recorded, not failed"
+            ;;
+        *)
+            # The unit asked for an ordinary user: now the process must actually be that user.
+            if [ "${cuid:-0}" = "0" ]; then
+                echo "    FAIL  the unit asks for User=$uuser but the compositor runs as root"
+                fail=1
+            elif [ "${morphuid:-none}" != "none" ] && [ "${cuid:-}" != "$morphuid" ]; then
+                echo "    FAIL  the unit asks for User=$uuser (uid $morphuid) but the compositor runs as uid $cuid"
+                fail=1
+            else
+                echo "    ok    the compositor runs as uid $cuid, as the unit asks"
+            fi
+            if [ "${sowner:-0}" = "0" ]; then
+                echo "    FAIL  the Wayland socket is owned by root while the compositor is not"
+                fail=1
+            fi
+            ;;
+    esac
+fi
 # The service asks for `--drm auto`; it must have chosen a card and said which (the screen,
 # below, is what says it chose a working one).
 if grep -aq 'flow-compositor: --drm auto chose /dev/dri/card' "$log" 2>/dev/null; then
