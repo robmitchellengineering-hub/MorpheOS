@@ -42,6 +42,13 @@ case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell|browser|wifi|bro
 # carries Firefox, so the test can prove it comes online once the picker joins (E14).
 HARDWARE=0
 SHELL_UI=0
+# KERNEL=ours puts the kernel WE build into slot A, and leaves Ubuntu's in slot B on purpose: Phase 0's
+# comparison is ours against theirs on the same machine, and a kernel we cannot fall back from is not
+# shippable. KERNEL_OUT is that build's output directory (secure/kernel/build.sh prints it: it holds
+# vmlinuz-morpheos, modules.tar.xz and build-report.txt).
+KERNEL=${KERNEL:-ubuntu}
+KERNEL_OUT=${KERNEL_OUT:-}
+KREL=""
 # `broken-shell` and `hung-shell` are self-test images (the scripted A/B walk) WITH the shell:
 # slot B's update ships a shell that cannot start, or one that never draws (E11).
 case "$SCENARIO" in
@@ -301,6 +308,51 @@ regenerate_initrd() {
         exit 1
     fi
     for m in $mounted; do umount "$m" 2>/dev/null || true; done
+}
+
+# install_our_kernel — the kernel we built, inside one slot root, with an initrd made from it.
+#
+# WHY THIS IS SEPARATE FROM THE REST OF THE BUILD. Until this existed, "MorpheOS has its own kernel" was a
+# claim about a bzImage behind a busybox init in CI; the image a person boots still ran Ubuntu's. This is the
+# step that makes the claim about the IMAGE: our kernel, our modules, an initrd generated from those modules,
+# booting the same slots, the same systemd, the same drivers — so Wi-Fi, audio and the panel are tested
+# against it rather than assumed.
+install_our_kernel() {
+    local dir=$1 mounted="" tarball found
+    [ -n "$KERNEL_OUT" ] || { echo "KERNEL=ours needs KERNEL_OUT=<secure/kernel/build.sh out dir>" >&2; exit 2; }
+    tarball="$KERNEL_OUT/modules.tar.xz"
+    [ -s "$KERNEL_OUT/vmlinuz-morpheos" ] || { echo "missing $KERNEL_OUT/vmlinuz-morpheos" >&2; exit 2; }
+    [ -s "$tarball" ] || { echo "missing $tarball" >&2; exit 2; }
+    # One release, measured from the artefact itself: a second kernel version in that tarball means the
+    # build directory is stale, and guessing which one to install is how a machine boots the wrong kernel.
+    found=$(tar -tJf "$tarball" | sed -n 's|^lib/modules/\([^/]*\)/.*|\1|p' | sort -u)
+    [ -n "$found" ] || { echo "$tarball carries no lib/modules/<release>/" >&2; exit 2; }
+    [ "$(printf '%s\n' "$found" | wc -l)" -eq 1 ] || {
+        echo "$tarball carries more than one kernel release: $(printf '%s ' $found)" >&2; exit 2; }
+    KREL="$found"
+    echo "installing our kernel $KREL into $dir" >&2
+    install -D -m 0755 "$KERNEL_OUT/vmlinuz-morpheos" "$dir/boot/vmlinuz-$KREL"
+    tar -C "$dir" -xJf "$tarball"
+    [ -d "$dir/lib/modules/$KREL" ] || { echo "modules did not land at $dir/lib/modules/$KREL" >&2; exit 2; }
+    for m in proc sys dev; do
+        if mount --bind "/$m" "$dir/$m" 2>/dev/null; then mounted="$mounted $dir/$m"; fi
+    done
+    if ! chroot "$dir" depmod "$KREL"; then
+        echo "depmod failed for $KREL in $dir" >&2; for m in $mounted; do umount "$m" 2>/dev/null || true; done; exit 1
+    fi
+    # An initrd from OUR modules, through the image's own initramfs-tools — not a hand-made one, because the
+    # point is that our kernel boots the image's real boot path (the recovery hook, bootctl, the lot).
+    if [ "${SKIP_INITRAMFS:-0}" != 1 ]; then
+        if ! chroot "$dir" update-initramfs -c -k "$KREL"; then
+            echo "update-initramfs could not build an initrd for $KREL: the image would not boot it" >&2
+            for m in $mounted; do umount "$m" 2>/dev/null || true; done; exit 1
+        fi
+        [ -s "$dir/boot/initrd.img-$KREL" ] || { echo "no initrd.img-$KREL after update-initramfs" >&2; exit 1; }
+    fi
+    for m in $mounted; do umount "$m" 2>/dev/null || true; done
+    # The claim, asserted from the artefact rather than from the log: the release string is in the image file.
+    strings "$dir/boot/vmlinuz-$KREL" | grep -qx "$KREL" \
+        || { echo "$dir/boot/vmlinuz-$KREL does not carry $KREL: it is not the kernel we built" >&2; exit 1; }
 }
 
 make_root() {
@@ -784,6 +836,8 @@ EOF
     fi
     # The overlay (recovery hook + bootctl) must be inside the initrd the ESP ships.
     regenerate_initrd "$dir"
+    # Slot A carries the kernel we built when asked for; slot B keeps Ubuntu's (the comparison).
+    if [ "$KERNEL" = ours ] && [ "$1" = a ]; then install_our_kernel "$dir"; fi
 }
 make_root a
 make_root b
@@ -830,8 +884,17 @@ printf 'default morpheos-a.conf\ntimeout 0\nconsole-mode keep\n' > "$ESPDIR/load
 for slot in a b; do
     root="$WORK/root-$slot"
     mkdir -p "$ESPDIR/morpheos/$slot"
-    cp "$(ls "$root"/boot/vmlinuz-* | sort | tail -1)" "$ESPDIR/morpheos/$slot/vmlinuz"
-    cp "$(ls "$root"/boot/initrd.img-* | sort | tail -1)" "$ESPDIR/morpheos/$slot/initrd.img"
+    if [ "$KERNEL" = ours ] && [ "$slot" = a ] && [ -n "$KREL" ]; then
+        # Our kernel, named exactly — `ls | sort | tail -1` would pick whichever release sorts last, and
+        # with two kernels in one root that is a coin toss between ours and Ubuntu's.
+        cp "$root/boot/vmlinuz-$KREL" "$ESPDIR/morpheos/$slot/vmlinuz"
+        cp "$root/boot/initrd.img-$KREL" "$ESPDIR/morpheos/$slot/initrd.img"
+        strings "$ESPDIR/morpheos/$slot/vmlinuz" | grep -qx "$KREL" \
+            || { echo "the ESP's slot $slot kernel is not $KREL" >&2; exit 1; }
+    else
+        cp "$(ls "$root"/boot/vmlinuz-* | sort | tail -1)" "$ESPDIR/morpheos/$slot/vmlinuz"
+        cp "$(ls "$root"/boot/initrd.img-* | sort | tail -1)" "$ESPDIR/morpheos/$slot/initrd.img"
+    fi
     extra=""
     console="console=ttyS0"
     if [ "$HARDWARE" = 1 ]; then

@@ -36,10 +36,27 @@ its module doc.
   our kernel and modules, booted by `test-shell.sh`, `test-wifi.sh` and `test-audio.sh` in a VM, with
   the drivers intact. That is the next piece of work, and it is VM-only until `morpheos-a-1` is free.
 
+## The image now carries our kernel — the code, not yet the evidence
+
+`images/x86-qemu/build.sh` gains `KERNEL=ours` (+`KERNEL_OUT=<secure/kernel/build.sh out/>`):
+
+- **slot A gets our kernel and our modules**, an initrd generated from them by the image's own
+  `update-initramfs`, and the ESP's slot-A entry is asserted to carry our release string — not
+  `ls | sort | tail -1`, which with two kernels in one root is a coin toss between ours and Ubuntu's.
+- **slot B keeps Ubuntu's kernel** on purpose: Phase 0's comparison is ours against theirs on the same
+  machine, and a kernel we cannot fall back from is not shippable.
+- **the default path is untouched.** `KERNEL=ubuntu` builds exactly what it built before, so the
+  everyday image cannot become red because the arm exists.
+
+`.github/workflows/kernel.yml` gains `image-carries-our-kernel`: build the kernel, build the image with
+it, boot it, and fail unless the boot log carries `6.8.0-morpheos`. That job is the difference between
+"a kernel builds" and "the machine runs it", and it has not run yet — nothing is claimed until it does.
+
 ## Not claimed
 
-The hardware falsifier is untouched: nothing here boots our kernel on real hardware, so Phase 0 is
-not passed. `morpheos-a-1` takes that boot when Rob says it is free.
+- the job above has not run. Until it is green, the image carrying our kernel is code, not evidence;
+- the hardware falsifier is untouched — nothing boots our kernel on real hardware, so Phase 0 is not
+  passed. `morpheos-a-1` takes that boot when Rob says it is free.
 
 - DSH on K1: opened as `open · parallel` — its build is done and gated on the arm; the image running
   it is the remaining work, 2026-11-04.

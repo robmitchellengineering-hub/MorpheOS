@@ -10,10 +10,10 @@ name: kernel
 
 on:
   push:
-    branches: [secure]
-    paths: ['secure/kernel/**', '.github/workflows/kernel.yml']
+    branches: [secure, main]
+    paths: ['secure/kernel/**', 'images/x86-qemu/**', '.github/workflows/kernel.yml']
   pull_request:
-    paths: ['secure/kernel/**', '.github/workflows/kernel.yml']
+    paths: ['secure/kernel/**', 'images/x86-qemu/**', '.github/workflows/kernel.yml']
   workflow_dispatch:
 
 jobs:
@@ -139,4 +139,54 @@ jobs:
         with:
           name: kernel-serial-log-${{ matrix.arch }}
           path: ${{ runner.temp }}/serial.log
+          if-no-files-found: warn
+
+  # THE CLAIM THIS JOB MAKES, and why it is separate from the matrix above: the matrix proves a kernel
+  # builds and that a bare init calls itself MorpheOS. This proves the IMAGE a person boots runs that
+  # kernel — our kernel and our modules in slot A, an initrd generated from them by the image's own
+  # initramfs-tools, Ubuntu's kernel left in slot B as the comparison. Until this passes, "MorpheOS has
+  # its own kernel" is a fact about a build, not about the machine.
+  image-carries-our-kernel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The images suite's own setup, so CI and a person run the same thing
+        run: bash scripts/setup-linux.sh --images
+
+      - name: Build our kernel (x86_64)
+        run: |
+          ./secure/kernel/build.sh x86_64 "$RUNNER_TEMP/kbuild" "$(nproc)"
+          cat "$RUNNER_TEMP/kbuild/out/build-report.txt"
+
+      - name: Build the image with our kernel in slot A
+        run: |
+          set -e
+          sudo KERNEL=ours KERNEL_OUT="$RUNNER_TEMP/kbuild/out" \
+            bash images/x86-qemu/build.sh "$RUNNER_TEMP/img" shell
+          # The build asserts this too; asserted again here because it is the claim, and an assertion that
+          # only lives inside the thing it checks is the kind that quietly stops running.
+          ls -l "$RUNNER_TEMP/img"/*.img
+
+      - name: Boot it, and read which kernel the image actually booted
+        run: |
+          set +e
+          sudo bash images/x86-qemu/run-vm.sh "$RUNNER_TEMP/img/disk-shell.img" "$RUNNER_TEMP/img/ours.log" 420
+          echo "run-vm exit $? (a timeout is expected: the assertion is the boot log, not the exit code)"
+          set -e
+          echo "=== what the kernel said about itself ==="
+          grep -a -m3 -E "Linux version|Kernel command line" "$RUNNER_TEMP/img/ours.log" || true
+          if ! grep -aq "6.8.0-morpheos" "$RUNNER_TEMP/img/ours.log"; then
+            echo "::error::the image did not boot our kernel: no 6.8.0-morpheos in the boot log"
+            exit 1
+          fi
+          echo "the image booted the kernel we built"
+
+      - name: Keep the boot log either way
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-our-kernel-serial-log
+          path: ${{ runner.temp }}/img/ours.log
           if-no-files-found: warn
