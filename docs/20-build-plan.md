@@ -2054,6 +2054,15 @@ back; the report also gives the battery's charge, status and design capacity. Be
 7. **Size:** M for the builder (PRs: the report's sections and sleep hook; the VM scenario
    and the compositor's resume; the battery mark), then Rob's run.
 
+**Progress (2026-11-04): the battery is measured; suspend is not.** `morph-power` reports charge, charging state,
+mains, the time in the direction that actually applies (to full while charging, remaining while discharging — the
+first version printed "remaining 8.0 h" on a machine that was plugged in and charging), and **battery health as a
+share of design capacity**. On the reference machine it reads: `56% (Charging, plugged) · to full 0.1 h · health 57%
+of design capacity` — the 56% is not a nearly-flat battery, it is a **worn** one: 3.86 Ah of a 3.909 Ah full, where
+a new cell held roughly twice that. Worth saying because the same number reads as two very different problems.
+Suspend and resume remain unmeasured: testing them from an SSH session drops the connection, so they need a person
+at the machine.
+
 ### D4 · Apps from Flathub (A7) · open
 **What:** Flatpak in the image, with its system installation on the data partition, so an
 installed app is outside both slots and survives every A/B update. Flathub is the remote
