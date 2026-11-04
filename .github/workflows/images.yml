@@ -134,20 +134,24 @@ jobs:
       # both slots and boot slot A committed. Verdicts read off the disk: boot history,
       # recovery record, /etc/hostname on both slots, and /home checksums on the data partition.
       - name: The recovery image (S4)
+        if: ${{ !inputs.quick }}
         run: sudo images/x86-qemu/test-recovery.sh "$RUNNER_TEMP/img"
       # Doc 20, S11: morphd obeys the Manifest — a new generation changes the hostname and
       # Strata's retention (read off the machine), and a refused change is rolled back.
       - name: The Manifest is obeyed (S11)
+        if: ${{ !inputs.quick }}
         run: sudo images/x86-qemu/test-manifest.sh "$RUNNER_TEMP/img"
       # Doc 20, S8: a corrupt Manifest generation rolls back — morphd finds the corrupted file
       # at boot, rolls back to the newest good generation, and the shell names it. Verdicts read
       # off the disk: the store's `current` and heal.jsonl, and a screendump of the notice.
       - name: A corrupted setting rolls back (S8)
+        if: ${{ !inputs.quick }}
         run: sudo images/x86-qemu/test-config-rollback.sh "$RUNNER_TEMP/img"
       # Doc 20, E3 and E10: the compositor drives a real (virtio-gpu) display and the VM's
       # own keyboard and mouse, and every verdict is a screenshot's pixels. Its system
       # libraries came from setup-linux.sh above.
       - name: The Flow shell on a real display, with a keyboard and a mouse
+        if: ${{ !inputs.quick }}
         run: |
           cargo build --release -p flow-compositor -p flow-wifi -p flow-files -p flow-timeline -p flow-notice
           sudo images/x86-qemu/test-shell.sh "$RUNNER_TEMP/img"
@@ -155,21 +159,26 @@ jobs:
       # trialled once and falls back, like `unhealthy`. The second is why the shell is
       # Type=notify and ready only with a frame on the display.
       - name: A broken or hung shell update falls back
+        if: ${{ !inputs.quick }}
         run: sudo images/x86-qemu/test-fallback.sh "$RUNNER_TEMP/img" broken-shell hung-shell
       # Doc 20, E4: Firefox (Mozilla's own build, from packages.mozilla.org) on the shell,
       # showing a local page; the verdict is the page's colours in a screendump.
       - name: A browser on the Flow shell
+        if: ${{ !inputs.quick }}
         run: sudo images/x86-qemu/test-browser.sh "$RUNNER_TEMP/img"
       # Doc 20, E5: the Wi-Fi picker joins a WPA2 network (the kernel's simulated radios,
       # mac80211_hwsim) through NetworkManager: a wrong password, then the right one, typed
       # on the VM's keyboard; verdicts from screendumps and the network's own DHCP log.
       - name: Joining Wi-Fi with the picker
+        if: ${{ !inputs.quick }}
         run: sudo images/x86-qemu/test-wifi.sh "$RUNNER_TEMP/img"
       - name: A USB stick mounts itself (E18)
+        if: ${{ !inputs.quick }}
         run: sudo images/x86-qemu/test-usb.sh "$RUNNER_TEMP/img"
       # Doc 20, S6: the rewind timeline opens by itself on Strata's alert, the harness
       # confirms the rewind on the VM's keyboard, and the disk is read back after poweroff.
       - name: The rewind timeline opens and the person confirms it
+        if: ${{ !inputs.quick }}
         run: sudo images/x86-qemu/test-rewind.sh "$RUNNER_TEMP/img"
       - name: Keep serial logs
         if: always()
