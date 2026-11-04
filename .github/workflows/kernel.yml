@@ -155,6 +155,14 @@ jobs:
       - name: The images suite's own setup, so CI and a person run the same thing
         run: bash scripts/setup-linux.sh --images
 
+      # The kernel's build tools, the same list the matrix job installs. `setup-linux.sh --images` does not need
+      # them, so this job failed at objtool with "gelf.h: No such file or directory" — a second job with a
+      # different tool list is a job that fails for a different reason.
+      - name: The kernel's own build tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential bison flex libelf-dev libssl-dev bc
+
       - name: Build our kernel (x86_64)
         run: |
           ./secure/kernel/build.sh x86_64 "$RUNNER_TEMP/kbuild" "$(nproc)"
@@ -181,7 +189,14 @@ jobs:
             echo "::error::the image did not boot our kernel: no 6.8.0-morpheos in the boot log"
             exit 1
           fi
-          echo "the image booted the kernel we built"
+          # The banner proves our release reached the kernel. This proves what the RUNNING system calls itself —
+          # a one-shot unit in that image prints it to the console, so it is read off the machine, not a file.
+          if ! grep -aq "MORPHEOS-KERNEL uname-s: MorpheOS" "$RUNNER_TEMP/img/ours.log"; then
+            echo "::error::the image booted our kernel but the running system did not report the name MorpheOS"
+            grep -a "uname-s" "$RUNNER_TEMP/img/ours.log" | tail -3 || true
+            exit 1
+          fi
+          echo "the image booted the kernel we built, and the running system calls itself MorpheOS"
 
       - name: Keep the boot log either way
         if: always()

@@ -26,8 +26,16 @@ CONFIG_SECCOMP_FILTER=y
 CONFIG_BPF_SYSCALL=y
 CONFIG_BPF_JIT=y
 CONFIG_BPF_LSM=y
+# The chain BPF_LSM actually needs: BPF_EVENTS depends on KPROBE_EVENTS, which needs KPROBES and FTRACE, and on
+# PERF_EVENTS. Writing BPF_LSM=y alone produced a kernel without the LSM and a build that looked green.
+CONFIG_FTRACE=y
+CONFIG_KPROBES=y
+CONFIG_PERF_EVENTS=y
+CONFIG_KPROBE_EVENTS=y
 CONFIG_BPF_EVENTS=y
 CONFIG_CGROUP_BPF=y
+# SND is inside `if SOUND`: on arm the fragment's SND=y was dropped because SOUND was not set.
+CONFIG_SOUND=y
 
 # --- hardening (KSPP), on any machine ---
 CONFIG_STRICT_KERNEL_RWX=y

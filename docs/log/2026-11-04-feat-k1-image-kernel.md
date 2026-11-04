@@ -91,3 +91,34 @@ its own image asserts).
 
 Not claimed: none of this has been proven by a boot yet. The `image-carries-our-kernel` job is the evidence,
 and it is the next thing to read.
+
+## Round 1b: what the guard found, and the machine reporting its own name
+
+The applied-config guard failed the kernel job on **nine decisions that were never applied** — and each was a
+real one, checked against the 6.8 tree's own Kconfig files, not from memory:
+
+| what we asked for | what the tree says |
+|---|---|
+| `PSTORE_EFI_VARS`, `PSTORE_DEFLATE_COMPRESS` | no such symbols (`EFI_VARS_PSTORE`, `PSTORE_COMPRESS`) |
+| `EFI_VARS` | removed from the kernel; `EFIVAR_FS` is the mount |
+| `XHCI_HCD` | not a symbol — `USB_XHCI_HCD`, so **no USB 3 host controller at all** |
+| `B43_SSB`, `CPU_V6` | hidden bools (no prompt), selected by Kconfig; a fragment cannot set them |
+| `MMC_SDHOST` | a menu title, not a symbol |
+| `PAGE_SIZE_4KB` (arm64) | arm64 has `ARM64_4K_PAGES` |
+| `BPF_LSM` | depends on `BPF_EVENTS`, so **the LSM the arm exists for was off** |
+| `FRAMEBUFFER_CONSOLE` | needs `FB_CORE`, which only `FB` selects — **no console on the panel** |
+
+Every one of those would have shipped in a green build. That is the guard paying for itself on its first run.
+
+Also, the claim got sharper: the image's boot log proves our *release string* reached the kernel, but not what
+the running system calls itself. A test image with `KERNEL=ours` now installs one one-shot unit that prints
+`MORPHEOS-KERNEL uname-s: …` to the console at boot, and the job fails unless it reads `MorpheOS` there. The
+name is now read off the running machine instead of a build artefact — and the unit exists only on those test
+images, never on one a person flashes.
+
+## Not claimed
+
+- the kernel jobs have not passed yet. The fragment corrections are in; arm and arm64 still fail the config
+  step and the reason is not in the logs until the run completes (a run-level log only appears at the end);
+- nothing has booted our kernel in an image yet, and nothing has touched hardware.
+

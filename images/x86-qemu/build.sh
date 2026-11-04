@@ -843,7 +843,29 @@ EOF
     # The overlay (recovery hook + bootctl) must be inside the initrd the ESP ships.
     regenerate_initrd "$dir"
     # Slot A carries the kernel we built when asked for; slot B keeps Ubuntu's (the comparison).
-    if [ "$KERNEL" = ours ] && [ "$1" = a ]; then install_our_kernel "$dir"; fi
+    if [ "$KERNEL" = ours ] && [ "$1" = a ]; then
+        install_our_kernel "$dir"
+        # AND THE MACHINE SAYS ITS OWN NAME. The boot log proves a release string reached the kernel; it cannot
+        # prove what the running system reports, because the banner is a kernel constant, not the sysname. This
+        # one-shot unit prints `uname -s` to the console at every boot of a test image whose kernel is ours, so
+        # "the machine calls itself MorpheOS" is read off the running machine rather than off a build artefact.
+        # Test images only: KERNEL=ours is how the suite asks for it, and a shipping image must not carry a unit
+        # whose whole job is to talk to a serial port.
+        cat > "$dir/etc/systemd/system/morph-kernel-identity.service" <<'UNIT'
+[Unit]
+Description=MorpheOS kernel identity (test images with our kernel only)
+DefaultDependencies=no
+After=systemd-journald.service
+Before=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'printf "MORPHEOS-KERNEL uname-s: %s\n" "$(uname -s)" | tee /dev/console'
+UNIT
+        mkdir -p "$dir/etc/systemd/system/multi-user.target.wants"
+        ln -sf /etc/systemd/system/morph-kernel-identity.service \
+            "$dir/etc/systemd/system/multi-user.target.wants/morph-kernel-identity.service"
+    fi
 }
 make_root a
 make_root b
