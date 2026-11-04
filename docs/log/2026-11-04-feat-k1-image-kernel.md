@@ -141,3 +141,25 @@ until such a scenario exists, and inventing one now would be a second harness wi
 VM claim is shell + Wi-Fi once the second leg is added, and audio on real hardware through the hardware
 report.
 
+## Round 3: the race is proven fixed, not assumed fixed
+
+`ci` failed on the fixture race and the fix was plausible — which is not the same as proven. The arm's
+attestation tests were run **eight times on a clean clone of this branch on win-2** (Windows, the pinned
+1.99.0 toolchain), because the failure only appeared when the tests interleaved and one pass proves nothing:
+
+```
+passed 8 of 8
+```
+
+The dispatch itself took two attempts and the first is worth recording: the mesh's PowerShell job wrapper sets
+`$ErrorActionPreference = 'Stop'`, and `rustup` writing "syncing channel updates" to **stderr** was treated as a
+terminating error — the job died before running a test. A Windows shell job that runs a tool which writes to
+stderr must set `Continue` first.
+
+Also measured while trying to put these builds back on our own hardware: **`studio-linux2` has not pulled a job
+since 2026-11-02.** Both its VMs are running; the host-only network's ARP table shows `.128` and `.129` while the
+node card says `.130`, and neither address accepts the mesh key from win-2, so the guest could not be
+identified from here. Recorded as HM25 in the mesh's hazard ledger, with the rule that a node's address is
+measured at dispatch time and a queue that is not draining is a finding. Every build in this session therefore
+went to CI, at roughly 50 minutes an iteration.
+
