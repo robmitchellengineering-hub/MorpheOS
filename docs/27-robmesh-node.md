@@ -73,3 +73,40 @@ Each of these was measured on the reference machine, and each looked like "the m
   why a class of read-only-root friction exists. It is a login change, not an audio one — a plan, not a patch.
 - **The install stick itself.** Everything above is the mechanism; presenting it as "flash this, tap once, it is a
   node" is the product.
+
+## 6 · The stick that claims the machine it boots
+
+The operator steps belong in **preparing the stick**, not in installing the OS. Two files on the ESP make that
+work:
+
+```
+/efi/morpheos-node.conf
+  host=morpheos-2012
+  bus=git://100.90.120.32:9418/mesh-hub.git
+  tailnet_authkey_file=/efi/ts-key        # optional, see below
+```
+
+- `scripts/claim-stick.sh /dev/disk2 morpheos-2012` writes it.
+- `morpheos-claim.service` (oneshot, conditional on the file) claims the machine at first boot, **before** the
+  agent starts. A machine already claimed as a different node is **refused**, not adopted: a result attributed to
+  the wrong machine is worse than no result.
+- `morph-node-tailnet` runs next and does nothing unless the file names a key.
+
+**The tailnet trade, stated plainly.** A login is a grant, so the default is one tap by hand. For a stick prepared
+for a fleet, that tap is the only thing between "boot" and "it is a node" — so the claim file *may* name a
+**single-use, expiring** Tailscale auth key. That key is then a secret on the stick, which is a real risk; the script
+mitigates it by deleting the key file after joining and removing the line from the config, and `morph-node status`
+records that the machine joined unattended. If the key file cannot be removed, it says so and tells the operator to
+revoke the key.
+
+Verified on the reference machine: no key line → "needs one login tap by hand" and no change; `--check` reports
+without acting; a named-but-missing key file is refused.
+
+## 7 · Measured, on the reference machine
+
+| what | result |
+|---|---|
+| whole workspace, offline (vendored crates) | `BUILD-EXIT=0` in 3 m 56 s |
+| whole workspace, online | `BUILD-EXIT=0` in 6 m 33 s, `flow-compositor` 3,908,208 B, `morphd` 1,804,368 B |
+| jobs through the node's own loop | 5, all `pass`, results in `runs/morpheos-2012/` on the bus |
+| uptime at the fifth job | 19,335 s with the agent active throughout |
