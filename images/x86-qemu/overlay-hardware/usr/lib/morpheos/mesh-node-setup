@@ -19,7 +19,7 @@ KEY="$M/keys/deploy"
 say() { printf 'mesh-node-setup: %s\n' "$*"; }
 
 ensure() {
-    mkdir -p "$M/home" "$M/code" "$M/keys" "$M/state" "$(dirname "$KEY")" || return 1
+    mkdir -p "$M/home/.ssh" "$M/code" "$M/keys" "$M/state" "$(dirname "$KEY")" || return 1
     chmod 0700 "$M/keys" 2>/dev/null
     if [ ! -f "$KEY" ]; then
         ssh-keygen -t ed25519 -N '' -C "morpheos-a@harness-mesh-deploy" -f "$KEY" >/dev/null 2>&1 || return 1
@@ -31,6 +31,7 @@ Host github.com
   IdentityFile /persist/mesh/keys/deploy
   IdentitiesOnly yes
   StrictHostKeyChecking accept-new
+  UserKnownHostsFile /persist/mesh/known_hosts
 CFG
     # The identity marker: which queue this machine owns. Weaker than the repo's own rule (it refuses to run as
     # a different machine) because that rule is the thing that stops a node adopting another machine's work.
