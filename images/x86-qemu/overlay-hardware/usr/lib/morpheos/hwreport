@@ -61,6 +61,19 @@ lspci -nnk > "$dir/lspci.txt" 2>&1 || true
 lsusb > "$dir/lsusb.txt" 2>&1 || true
 dmesg > "$dir/dmesg.txt" 2>&1 || true
 journalctl -b -p err --no-pager > "$dir/journal-errors.txt" 2>&1 || true
+# WHY A BOOT WAS "DEGRADED", WHICH `-p err` DOES NOT SAY. On 2026-11-04 the reference machine reported degraded on
+# every boot and this report could not say why: the units that failed (apt's daily timers on a read-only root) did
+# not fail at error priority, so the filtered file was silent - the same trap AGENTS.md records for sshd
+# ("journalctl -b -p err is not a log of what happened"). Each failed unit gets its own context, at any priority.
+# Best effort throughout: a report must never fail a boot.
+{
+    systemctl --failed --no-legend --plain 2>/dev/null
+    for u in $(systemctl --failed --no-legend --plain 2>/dev/null | awk '{print $1}'); do
+        echo
+        echo "--- $u (last 20 lines this boot, any priority)"
+        journalctl -u "$u" -b -n 20 --no-pager 2>/dev/null
+    done
+} > "$dir/failed-units.txt" 2>&1 || true
 cat /proc/bus/input/devices > "$dir/input.txt" 2>&1 || true
 # Straight from sysfs, so it needs no tools: name, state, MAC, and the driver that took it.
 for i in /sys/class/net/*; do
@@ -140,6 +153,15 @@ done > "$dir/dmi.txt"
     fi
     echo
     echo "KERNEL AND SERVICE ERRORS THIS BOOT: $(grep -c . "$dir/journal-errors.txt" 2>/dev/null || echo 0) lines, in journal-errors.txt"
+    echo
+    echo "FAILED UNITS THIS BOOT"
+    failed_units=$(systemctl --failed --no-legend --plain 2>/dev/null | awk '{print $1}')
+    if [ -n "$failed_units" ]; then
+        printf '%s\n' "$failed_units" | sed 's/^/  /'
+        echo "  (why, per unit, in failed-units.txt)"
+    else
+        echo "  none"
+    fi
 } > "$dir/summary.txt" 2>&1
 
 # Keep the stick from filling up: the newest $KEEP reports stay.
