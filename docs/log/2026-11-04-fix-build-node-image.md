@@ -42,3 +42,22 @@ as a placeholder until S5? The session running as root is the root cause behind 
 **What is not proven, and is not claimed:** the **reboot**. Today's fixes live in the image, and on the running
 machine in `/run` and `/persist`, which a reboot clears. That a bare reboot brings the node back with nobody logged
 in needs the flashed image and one reboot at the machine.
+
+## Added while waiting for the reboot: the report now says *why* a boot failed
+
+`journalctl -b -p err` was the report's only error evidence, and on this machine it was silent about the thing that
+mattered: `apt-daily*` fails at **info**, not error, so a boot that said `degraded` had no explanation in the
+report. That is the same trap AGENTS.md records for sshd — *"`journalctl -b -p err` is not a log of what happened"* —
+and it cost a hand-reconstruction today.
+
+`hwreport` now writes `failed-units.txt` (each failed unit, plus its last 20 lines **at any priority**) and the
+summary names the units under `FAILED UNITS THIS BOOT` instead of only counting error lines. Measured on the
+reference machine, report `003`: it answers in one line —
+
+```
+apt.systemd.daily[27630]: cannot create /var/lib/apt//daily_lock: Read-only file system
+apt-daily-upgrade.service: Failed with result 'exit-code'
+```
+
+— which is the diagnosis that took a journal read by hand this morning. `scripts/verify-hwreport.sh` still passes
+(it names missing firmware, and says `none` when there is none).
