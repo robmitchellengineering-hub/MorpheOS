@@ -103,10 +103,13 @@ fn mounted_partitions(disk: &str) -> Vec<String> {
     let mut out = Vec::new();
     if let Ok(mountinfo) = std::fs::read_to_string("/proc/self/mountinfo") {
         for line in mountinfo.lines() {
-            if let Some((_point, src)) = mountinfo_parts(line) {
-                if src.starts_with("/dev/") && src.contains(base) {
-                    out.push(src.to_string());
-                }
+            // `let ... else` rather than a nested `if let`: clippy flags the nest, and the early continue says the
+            // same thing more plainly.
+            let Some((_point, src)) = mountinfo_parts(line) else {
+                continue;
+            };
+            if src.starts_with("/dev/") && src.contains(base) {
+                out.push(src.to_string());
             }
         }
     }
@@ -134,15 +137,12 @@ fn running_disks() -> Vec<String> {
             {
                 continue;
             }
-            // vda1 -> vda, nvme0n1p2 -> nvme0n1, mmcblk0p3 -> mmcblk0
-            let disk = if let Some(rest) = part.split_once('p') {
-                if part.starts_with("nvme") || part.starts_with("mmcblk") {
-                    rest.0
-                } else {
-                    part.trim_end_matches(|c: char| c.is_ascii_digit())
-                }
-            } else {
-                part.trim_end_matches(|c: char| c.is_ascii_digit())
+            // vda1 -> vda, nvme0n1p2 -> nvme0n1, mmcblk0p3 -> mmcblk0. Written as a match rather than a nested
+            // `if let` because clippy is right that the nest says nothing the pattern does not.
+            let trimmed = part.trim_end_matches(|c: char| c.is_ascii_digit());
+            let disk = match part.split_once('p') {
+                Some((head, _)) if part.starts_with("nvme") || part.starts_with("mmcblk") => head,
+                _ => trimmed,
             };
             if !disk.is_empty() {
                 out.push(format!("/dev/{disk}"));
