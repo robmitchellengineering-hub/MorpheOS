@@ -1,0 +1,142 @@
+name: kernel
+
+# Build OUR kernel and boot it. Rob, 2026-10-31: the kernel work had no guard — a change to
+# secure/kernel/config.fragment could break the boot and nothing would notice until a flash and a human.
+# This job builds the kernel from the recipe in the repo and boots it in QEMU to a userspace program that
+# prints `uname -s`. If the machine does not say MorpheOS, the job is red.
+#
+# It is deliberately small: no rootfs, no systemd. A busybox init that prints the sysname and powers off is
+# the whole assertion — that the kernel we built reaches userspace and calls itself MorpheOS.
+
+on:
+  push:
+    branches: [secure]
+    paths: ['secure/kernel/**', '.github/workflows/kernel.yml']
+  pull_request:
+    paths: ['secure/kernel/**', '.github/workflows/kernel.yml']
+  workflow_dispatch:
+
+jobs:
+  # One job per architecture we claim. Rob, 2026-10-31: "make sure its legit from pi zero to enterprise
+  # servers" — a kernel that only builds for x86_64 is a proof of concept, so the matrix IS the claim.
+  build-and-boot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            boot: true
+            extra: ""
+          - arch: arm64
+            boot: true
+            extra: gcc-aarch64-linux-gnu qemu-system-arm
+          - arch: arm
+            boot: false      # builds for the Pi Zero; a Zero cannot be emulated faithfully in CI
+            extra: gcc-arm-linux-gnueabihf
+    name: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential bison flex libelf-dev libssl-dev bc \
+            busybox-static qemu-system-x86 qemu-system-arm cpio ${{ matrix.extra }}
+
+      - name: Fetch the pinned kernel source
+        uses: actions/cache@v4
+        with:
+          path: linux-6.8.tar.xz
+          key: kernel-src-6.8
+
+      - name: Build the kernel from secure/kernel
+        run: |
+          # The recipe in the repo is used directly, so the workflow cannot drift from what a person builds.
+          ./secure/kernel/build.sh "${{ matrix.arch }}" "$RUNNER_TEMP/kbuild" "$(nproc)" || {
+            echo "the build script failed"; exit 1; }
+          ls -l "$RUNNER_TEMP/kbuild/out/"
+          cat "$RUNNER_TEMP/kbuild/out/build-report.txt"
+
+      # A static init, cross-compiled for the architecture under test. It exists because the first version
+      # of this gate put the runner's x86_64 busybox into the initramfs: x86_64 booted and passed, arm64
+      # built, booted, and then could not exec its own init — a gate that would have "passed" the easy
+      # architecture and hidden the failure on the one that mattered.
+      - name: A tiny initramfs whose only job is to say what the kernel calls itself
+        run: |
+          set -e
+          case "${{ matrix.arch }}" in
+            x86_64) CC=gcc ;;
+            arm64)  CC=aarch64-linux-gnu-gcc ;;
+            arm)    CC=arm-linux-gnueabihf-gcc ;;
+          esac
+          cat > "$RUNNER_TEMP/hello.c" <<'C'
+          #include <stdio.h>
+          #include <sys/utsname.h>
+          int main(void) {
+              struct utsname u;
+              if (uname(&u) != 0) return 1;
+              printf("MORPHEOS-GATE uname-s: %s\n", u.sysname);
+              printf("MORPHEOS-GATE uname-r: %s\n", u.release);
+              fflush(stdout);
+              return 0;
+          }
+          C
+          "$CC" -static -o "$RUNNER_TEMP/init" "$RUNNER_TEMP/hello.c"
+          file "$RUNNER_TEMP/init" || true
+          D="$RUNNER_TEMP/initrd"
+          mkdir -p "$D"
+          cp "$RUNNER_TEMP/init" "$D/init"
+          chmod +x "$D/init"
+          (cd "$D" && find . | cpio -o -H newc 2>/dev/null | gzip -9) > "$RUNNER_TEMP/initrd.gz"
+
+      - name: Build only (this architecture has no faithful emulator here)
+        if: ${{ !matrix.boot }}
+        run: |
+          echo "\${{ matrix.arch }} built:"
+          ls -l "$RUNNER_TEMP/kbuild/out/vmlinuz-morpheos"
+          grep -a "arch" "$RUNNER_TEMP/kbuild/out/build-report.txt"
+
+      - name: Boot it and read what it says
+        if: ${{ matrix.boot }}
+        run: |
+          set -e
+          LOG="$RUNNER_TEMP/serial.log"
+          if [ "${{ matrix.arch }}" = "x86_64" ]; then
+            timeout 180 qemu-system-x86_64 \
+              -kernel "$RUNNER_TEMP/kbuild/out/vmlinuz-morpheos" \
+              -initrd "$RUNNER_TEMP/initrd.gz" \
+              -append "console=ttyS0 panic=1" \
+              -nographic -no-reboot -m 1024 > "$LOG" 2>&1 || true
+          else
+            # arm64: the virt machine is the closest thing to a Pi 5 or an arm64 server for a boot test.
+            timeout 420 qemu-system-aarch64 \
+              -machine virt -cpu cortex-a57 -m 1024 -smp 2 \
+              -kernel "$RUNNER_TEMP/kbuild/out/vmlinuz-morpheos" \
+              -initrd "$RUNNER_TEMP/initrd.gz" \
+              -append "console=ttyAMA0 panic=1" \
+              -nographic -no-reboot > "$LOG" 2>&1 || true
+          fi
+          echo "=== the kernel said ==="
+          grep -a "MORPHEOS-GATE" "$LOG" || true
+          echo "=== version line ==="
+          grep -a "6\.8\.0-morpheos" "$LOG" | head -2 || true
+
+          if ! grep -aq "MORPHEOS-GATE uname-s: MorpheOS" "$LOG"; then
+            echo "::error::the kernel did not report MorpheOS — the branding is not in the build"
+            exit 1
+          fi
+          if ! grep -aq "6.8.0-morpheos" "$LOG"; then
+            echo "::error::the kernel does not carry the -morpheos local version"
+            exit 1
+          fi
+          echo "the kernel builds, boots to userspace, and calls itself MorpheOS"
+
+      - name: Keep the log either way
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-serial-log-${{ matrix.arch }}
+          path: ${{ runner.temp }}/serial.log
+          if-no-files-found: warn

@@ -1,0 +1,58 @@
+# MorpheOS kernel — x86_64: the 2012 laptop, and enterprise servers.
+#
+# The laptop is the constraint (it is the machine we can measure); the server options below are what makes
+# the same build legitimate on a rack machine rather than a kit build.
+
+CONFIG_64BIT=y
+CONFIG_X86_64=y
+CONFIG_RANDOMIZE_BASE=y
+CONFIG_PAGE_TABLE_ISOLATION=y
+
+# --- boot: UEFI stub, no initramfs needed for the storage path ---
+CONFIG_EFI=y
+CONFIG_EFI_STUB=y
+CONFIG_EFI_VARS=y
+
+# --- filesystems the machine has ---
+CONFIG_EXT4_FS=y
+CONFIG_VFAT_FS=y
+CONFIG_TMPFS=y
+CONFIG_PROC_FS=y
+CONFIG_SYSFS=y
+
+# --- storage built in (Phase 0/1: boot without an initramfs) ---
+CONFIG_VIRTIO=y
+CONFIG_VIRTIO_PCI=y
+CONFIG_VIRTIO_BLK=y
+CONFIG_VIRTIO_NET=y
+CONFIG_SCSI=y
+CONFIG_SCSI_VIRTIO=y
+CONFIG_XHCI_HCD=y
+CONFIG_USB=y
+CONFIG_USB_SUPPORT=y
+CONFIG_USB_STORAGE=y
+CONFIG_EFI_PARTITION=y
+
+# --- the 2012 laptop's hardware (measured) ---
+CONFIG_B43=m
+CONFIG_B43_SSB=m
+CONFIG_SSB=m
+CONFIG_DRM=y
+CONFIG_DRM_I915=m
+CONFIG_SND_HDA_INTEL=m
+CONFIG_SND_HDA_CODEC_ANALOG=m
+CONFIG_SND_USB_AUDIO=m
+
+# --- enterprise servers: scale, not a different operating system ---
+CONFIG_SMP=y
+CONFIG_NR_CPUS=512
+CONFIG_NUMA=y
+CONFIG_HUGETLBFS=y
+CONFIG_HUGETLB_PAGE=y
+CONFIG_TRANSPARENT_HUGEPAGE=y
+CONFIG_X86_MCE=y
+CONFIG_PCI_MSI=y
+CONFIG_VFIO=m
+CONFIG_XDP_SOCKETS=y
+CONFIG_SCHED_AUTOGROUP=y
+CONFIG_HOTPLUG_CPU=y
