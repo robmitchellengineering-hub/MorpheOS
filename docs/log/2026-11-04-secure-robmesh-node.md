@@ -61,3 +61,28 @@ to the mesh repo — not an ssh command posted by hand.
   publish on a later successful push. Worth a look; not a correctness problem.
 - **A non-root session** is the real fix for the audio condition, and for a whole class of read-only-root friction.
   That is a login change, and it belongs in a plan, not smuggled into an audio commit.
+
+## Two more failures, found by watching the node for half an hour
+
+Neither would have shown up in a plan, and both look like "the mesh is broken" from outside:
+
+1. **The node polled a lagging mirror.** It cloned `github.com`, but the orchestrator pushes to the **hub**
+   (`git://100.90.120.32:9418/mesh-hub.git`) and GitHub only catches up when the hub is mirrored. So a job
+   written to the bus took half an hour to be seen — or was never seen — while the machine reported itself
+   healthy and idle. The clone now targets the bus (`MESH_BUS` overrides it).
+2. **`git commit` failed silently for want of an identity.** `mesh-node-setup` had written no `~/.gitconfig`, so
+   every result stayed *staged*: the job never published, and because it never published the node re-ran it on
+   every poll. `mesh-node-setup` writes the identity and the unit sets `GIT_AUTHOR_*`/`GIT_COMMITTER_*` as well.
+
+With both fixed, a job dispatched from the Mac ran unattended and its result reached the hub:
+
+```
+[node morpheos-2012] running 2026-11-04T0717Z-…-second-job-unattended  (mode=shell, timeout=600s)
+[node morpheos-2012] 2026-11-04T0717Z-…-second-job-unattended: pass (exit 0, 1s)
+
+runs/morpheos-2012/2026-11-04T0717Z-…/stdout.txt  (on the hub):
+  agent identity: morpheos-a
+  uptime: 10737s
+  v22.11.0
+  active
+```
