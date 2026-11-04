@@ -406,9 +406,19 @@ mod tests {
 
     /// A fixture tree with known contents, so the collector is checked against input we chose rather than
     /// against whatever this machine happens to be.
+    ///
+    /// ONE DIRECTORY PER CALL, not per process. Keying it on the pid alone gave every test in this binary the
+    /// same path, and `cargo test` runs them on several threads: one test's `remove_dir_all` deleted the tree
+    /// another was reading, which failed as "no …/etc/os-release: this is not a MorpheOS root". It looked like
+    /// a flake on CI (the same commit passed six minutes earlier) and was a race a loaded runner exposed.
     fn fixture() -> PathBuf {
-        let root =
-            std::env::temp_dir().join(format!("morph-attest-fixture-{}", std::process::id()));
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let root = std::env::temp_dir().join(format!(
+            "morph-attest-fixture-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ));
         let _ = fs::remove_dir_all(&root);
         for (path, text) in [
             (

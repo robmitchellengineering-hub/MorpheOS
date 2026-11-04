@@ -214,5 +214,3 @@ jobs:
           name: image-our-kernel-shell-serial-log
           path: ${{ runner.temp }}/img/serial-shell.log
           if-no-files-found: warn
-
-          if-no-files-found: warn
