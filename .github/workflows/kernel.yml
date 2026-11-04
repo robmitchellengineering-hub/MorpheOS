@@ -141,23 +141,28 @@ jobs:
           path: ${{ runner.temp }}/serial.log
           if-no-files-found: warn
 
-  # THE CLAIM THIS JOB MAKES, and why it is separate from the matrix above: the matrix proves a kernel
-  # builds and that a bare init calls itself MorpheOS. This proves the IMAGE a person boots runs that
-  # kernel — our kernel and our modules in slot A, an initrd generated from them by the image's own
-  # initramfs-tools, Ubuntu's kernel left in slot B as the comparison. Until this passes, "MorpheOS has
-  # its own kernel" is a fact about a build, not about the machine.
-  image-carries-our-kernel:
+  # THE CLAIM THIS JOB MAKES, and why it is separate from the matrix above: the matrix proves a kernel builds
+  # and that a bare init calls itself MorpheOS. This proves the IMAGE a person boots runs that kernel — our
+  # kernel and our modules in slot A, an initrd generated from them by the image's own initramfs-tools,
+  # Ubuntu's kernel left in slot B as the comparison — and that the image's own scenario still passes.
+  #
+  # The scenario is the suite's existing driver, not a new harness: `test-shell.sh` boots a real display and
+  # asserts a window is on the screen with a keyboard and a pointer. Running it against our kernel is the point;
+  # a second harness that boots the same disk and greps the same log would be a copy that drifts.
+  #
+  # The two questions are judged SEPARATELY, because they fail for different reasons and a harness problem must
+  # not be able to hide a kernel problem: did our kernel boot and call itself MorpheOS, and did the scenario pass.
+  image-runs-our-kernel:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
 
       - name: The images suite's own setup, so CI and a person run the same thing
         run: bash scripts/setup-linux.sh --images
 
-      # The kernel's build tools, the same list the matrix job installs. `setup-linux.sh --images` does not need
-      # them, so this job failed at objtool with "gelf.h: No such file or directory" — a second job with a
-      # different tool list is a job that fails for a different reason.
+      # The kernel's build tools, the same list the build-and-boot jobs install. The images suite's setup does
+      # not need them, so without this the kernel build dies at objtool with "gelf.h: No such file".
       - name: The kernel's own build tools
         run: |
           sudo apt-get update -qq
@@ -168,40 +173,46 @@ jobs:
           ./secure/kernel/build.sh x86_64 "$RUNNER_TEMP/kbuild" "$(nproc)"
           cat "$RUNNER_TEMP/kbuild/out/build-report.txt"
 
-      - name: Build the image with our kernel in slot A
+      - name: The shell scenario, with our kernel in slot A
+        id: scenario
+        continue-on-error: true
         run: |
-          set -e
           sudo KERNEL=ours KERNEL_OUT="$RUNNER_TEMP/kbuild/out" \
-            bash images/x86-qemu/build.sh "$RUNNER_TEMP/img" shell
-          # The build asserts this too; asserted again here because it is the claim, and an assertion that
-          # only lives inside the thing it checks is the kind that quietly stops running.
-          ls -l "$RUNNER_TEMP/img"/*.img
+            bash images/x86-qemu/test-shell.sh "$RUNNER_TEMP/img"
 
-      - name: Boot it, and read which kernel the image actually booted
+      - name: Question 1 — did the image boot OUR kernel and call itself MorpheOS
         run: |
-          set +e
-          sudo bash images/x86-qemu/run-vm.sh "$RUNNER_TEMP/img/disk-shell.img" "$RUNNER_TEMP/img/ours.log" 420
-          echo "run-vm exit $? (a timeout is expected: the assertion is the boot log, not the exit code)"
-          set -e
-          echo "=== what the kernel said about itself ==="
-          grep -a -m3 -E "Linux version|Kernel command line" "$RUNNER_TEMP/img/ours.log" || true
-          if ! grep -aq "6.8.0-morpheos" "$RUNNER_TEMP/img/ours.log"; then
-            echo "::error::the image did not boot our kernel: no 6.8.0-morpheos in the boot log"
+          log="$RUNNER_TEMP/img/serial-shell.log"
+          ls -l "$log" || true
+          echo "=== the kernel that booted ==="
+          grep -a -m2 -E "Linux version" "$log" || true
+          if ! grep -aq "6.8.0-morpheos" "$log"; then
+            echo "::error::the image did not boot the kernel we built: no 6.8.0-morpheos in the boot log"
+            grep -a -m5 -E "Linux version|Kernel panic" "$log" || true
             exit 1
           fi
-          # The banner proves our release reached the kernel. This proves what the RUNNING system calls itself —
-          # a one-shot unit in that image prints it to the console, so it is read off the machine, not a file.
-          if ! grep -aq "MORPHEOS-KERNEL uname-s: MorpheOS" "$RUNNER_TEMP/img/ours.log"; then
+          # The release string proves our kernel booted. This proves what the RUNNING system calls itself: a
+          # one-shot unit in that image prints the sysname to the console.
+          if ! grep -aq "MORPHEOS-KERNEL uname-s: MorpheOS" "$log"; then
             echo "::error::the image booted our kernel but the running system did not report the name MorpheOS"
-            grep -a "uname-s" "$RUNNER_TEMP/img/ours.log" | tail -3 || true
+            grep -a "uname-s" "$log" | tail -3 || true
             exit 1
           fi
           echo "the image booted the kernel we built, and the running system calls itself MorpheOS"
 
-      - name: Keep the boot log either way
+      - name: Question 2 — did the shell scenario pass on it
+        if: steps.scenario.outcome != 'success'
+        run: |
+          echo "::error::the shell scenario failed against our kernel (see the serial log artifact)"
+          tail -40 "$RUNNER_TEMP/img/serial-shell.log" 2>/dev/null || true
+          exit 1
+
+      - name: Keep the serial log either way
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: image-our-kernel-serial-log
-          path: ${{ runner.temp }}/img/ours.log
+          name: image-our-kernel-shell-serial-log
+          path: ${{ runner.temp }}/img/serial-shell.log
+          if-no-files-found: warn
+
           if-no-files-found: warn

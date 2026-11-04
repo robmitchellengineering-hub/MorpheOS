@@ -122,3 +122,22 @@ images, never on one a person flashes.
   step and the reason is not in the logs until the run completes (a run-level log only appears at the end);
 - nothing has booted our kernel in an image yet, and nothing has touched hardware.
 
+## Round 2: the VM proof is the suite's own scenario, and there is no audio scenario to run
+
+The image job no longer boots the disk and greps a banner: it runs **`test-shell.sh`** — the suite's own
+driver, which boots a real display and asserts a window is on the screen with a keyboard and a pointer — with
+`KERNEL=ours`. Two questions are judged separately, because a harness failure must not hide a kernel failure:
+
+1. **did our kernel boot and call itself MorpheOS** — `6.8.0-morpheos` in the log, and
+   `MORPHEOS-KERNEL uname-s: MorpheOS` printed by the running system;
+2. **did the shell scenario pass** — the driver's own verdict, reported on its own line.
+
+**Measured, and it changes what the goal can claim: there is no audio scenario.** The suite has thirteen
+`test-*.sh` and none of them exercises a sound card; `grep -il audio images/x86-qemu/*.sh` matches
+`build.sh` alone. The only audio check in this repository is the build's driver assertion
+(`snd-hda-intel`, `snd-hda-codec-analog`, `snd-usb-audio` present in the kernel's module tree), which is a
+test that the driver was built — not that it works. "test-audio passes with our kernel" cannot be claimed
+until such a scenario exists, and inventing one now would be a second harness with its own bugs. The honest
+VM claim is shell + Wi-Fi once the second leg is added, and audio on real hardware through the hardware
+report.
+
