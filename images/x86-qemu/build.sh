@@ -660,6 +660,18 @@ EOF
             }
             ln -sf /etc/systemd/system/morpheos-mesh-node.service \
                 "$dir/etc/systemd/system/multi-user.target.wants/morpheos-mesh-node.service"
+
+            # APT CANNOT UPDATE AN IMMUTABLE SYSTEM, SO ITS TIMERS ONLY MAKE THE BOOT DEGRADED.
+            # Measured on the reference laptop 2026-11-04: every boot reported
+            #   apt-daily-upgrade.service  failed
+            #   apt-daily.service          failed
+            # because the root is read-only - and `systemctl is-system-running` therefore said "degraded" on
+            # every single boot, which boots-check records and the boot screen paints as a failure. A machine
+            # that always says something is wrong is a machine whose reports nobody reads. Masked: the
+            # mechanism that actually updates this system is morph-autoupdate (A/B slots), not apt.
+            for unit_name in apt-daily.service apt-daily.timer apt-daily-upgrade.service apt-daily-upgrade.timer; do
+                ln -sf /dev/null "$dir/etc/systemd/system/$unit_name"
+            done
         fi
         # The root console lives on VT2 while the shell has VT1 (Ctrl+Alt+F2 reaches it).
         # Started at boot under its own name, so its drop-in applies (logind's on-demand
