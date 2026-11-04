@@ -29,6 +29,13 @@ on:
   pull_request:
   workflow_dispatch:
 
+# ONE RUN PER BRANCH: a suite this long must not be run twice at once. A push during a run started a
+# second full suite and left the first burning a runner to answer a question about a tree nobody was
+# looking at any more (measured 2026-11-04: two `images` runs in flight, ~40 minutes each).
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   x86-ab-fallback:
     # The name is a required check (AGENTS.md H10): renaming it needs the branch
