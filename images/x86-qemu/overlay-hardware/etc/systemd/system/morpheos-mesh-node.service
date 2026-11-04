@@ -9,6 +9,11 @@
 # it first, so a fresh stick with no state becomes a node the moment it has a network and a credential.
 [Unit]
 Description=MorpheOS robmesh node agent
+# NOT A NODE UNTIL SOMEONE CLAIMS IT. Without this marker the unit ran on every image, including CI's scenario
+# VMs, and each boot spent its start timeout trying to clone from GitHub with no credential - slow boots in
+# tests and pointless work on a stick nobody has claimed. `mesh-node-setup --ensure` writes this file, so
+# claiming a machine into the mesh is an explicit act with a printed key, and an unclaimed machine costs nothing.
+ConditionPathExists=/persist/mesh/host-id
 Documentation=https://github.com/robmitchellengineering-hub/harness-mesh/blob/main/NETWORK.md
 After=network-online.target persist.mount tailscaled.service
 Wants=network-online.target
