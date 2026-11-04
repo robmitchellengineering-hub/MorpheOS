@@ -382,8 +382,12 @@ make_root() {
     # THE KERNEL THIS SLOT WILL BOOT, installed before anything asserts or builds an initrd from it. Slot A
     # carries ours when asked; slot B keeps Ubuntu's on purpose (the comparison Phase 0 falls back to). The
     # initrd is left to the image's own `update-initramfs` below, so our kernel walks the same boot path.
+    # THE INITRD IS PART OF THE INSTALL, not something to hope a later step picks up: `update-initramfs -u -k all`
+    # regenerates the versions dpkg knows about, and our kernel is not one of them — measured 2026-11-04, where
+    # slot A got our vmlinuz and the ESP copy then failed because /boot/initrd.img-6.8.0-morpheos did not exist.
+    # This runs after the overlay is in place, so the image's own recovery hook and bootctl go into it.
     if [ "$KERNEL" = ours ] && [ "$slot" = a ]; then
-        SKIP_INITRAMFS=1 install_our_kernel "$dir"
+        install_our_kernel "$dir"
     fi
     # The base's /etc/pam.d/login prints the Ubuntu legal notice TWICE at login. It carries
     # two motd lines: `pam_motd.so motd=/run/motd.dynamic` (the welcome + help + legal notice,
