@@ -16,6 +16,14 @@ on:
     paths: ['secure/kernel/**', 'images/x86-qemu/**', '.github/workflows/kernel.yml']
   workflow_dispatch:
 
+# ONE RUN PER BRANCH, and the older one cancelled. Every push here rebuilds a kernel per job, and a superseded
+# run kept burning its runner while the next one started: on 2026-11-04 two runs were compiling the same kernel
+# at the same time, ten jobs between them, and neither finished any sooner for it. `cancel-in-progress` makes
+# the newest commit the only one being built — which is also the only one whose verdict is worth having.
+concurrency:
+  group: kernel-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # One job per architecture we claim. Rob, 2026-10-31: "make sure its legit from pi zero to enterprise
   # servers" — a kernel that only builds for x86_64 is a proof of concept, so the matrix IS the claim.
@@ -176,8 +184,21 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq build-essential bison flex libelf-dev libssl-dev bc
 
-      - name: Build our kernel (x86_64)
+      # The same x86_64 kernel the build-and-boot jobs build. Cached on everything we control (the recipe and
+      # the kernel version), because otherwise each of the three jobs spends twelve minutes producing an
+      # identical artefact. The build-and-boot job is what proves it builds from scratch — this one only needs
+      # the result, and a cache miss simply rebuilds.
+      - name: Cache the kernel we build for the image
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/kbuild/out
+          key: kernel-out-x86_64-${{ hashFiles('secure/kernel/**') }}-${{ runner.os }}
+
+      - name: Build our kernel (x86_64) unless the cache has it
         run: |
+          if [ -s "$RUNNER_TEMP/kbuild/out/vmlinuz-morpheos" ] && [ -s "$RUNNER_TEMP/kbuild/out/modules.tar.xz" ]; then
+            echo "using the cached kernel build"; cat "$RUNNER_TEMP/kbuild/out/build-report.txt"; exit 0
+          fi
           ./secure/kernel/build.sh x86_64 "$RUNNER_TEMP/kbuild" "$(nproc)"
           cat "$RUNNER_TEMP/kbuild/out/build-report.txt"
 
