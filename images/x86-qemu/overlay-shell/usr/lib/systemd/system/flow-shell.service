@@ -20,6 +20,11 @@ OnFailure=getty@tty1.service
 
 [Service]
 Type=notify
+# THE SHELL RUNS AS THE PERSON, NOT AS ROOT (E11, option A chosen 2026-11-04). Root was the cause of audio that
+# could never work (pipewire refuses root), of /root being unusable, and of a desktop whose reports nobody could
+# trust. seatd opens the DRM and input devices for this user because it is in the `video` group.
+User=morph
+Group=morph
 # 180s, not 60s: the first frame on a slow TCG/emulated VM (S7 full-disk test) can take
 # longer than a minute to reach the display; a genuinely broken shell still fails, just later.
 TimeoutStartSec=180
@@ -30,7 +35,9 @@ RuntimeDirectoryMode=0755
 Environment=XDG_RUNTIME_DIR=/run/flow LIBSEAT_BACKEND=seatd
 # The bar's Wi-Fi button (and Super+W) opens the picker (doc 20, E5): the shell starts it
 # itself, so it says what it found on this unit's output.
-ExecStart=/usr/bin/flow-compositor --socket wayland-0 --drm auto --launch-wifi /usr/bin/flow-wifi
+# The Wi-Fi picker is NOT launched from here any more: a child of this unit would run as morph, and joining a
+# network needs NetworkManager's polkit check, which means root. It is flow-wifi.service, started alongside.
+ExecStart=/usr/bin/flow-compositor --socket wayland-0 --drm auto
 StandardOutput=journal+console
 StandardError=journal+console
 

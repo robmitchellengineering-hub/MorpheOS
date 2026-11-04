@@ -329,6 +329,26 @@ make_root() {
             echo "could not install $src into $dir" >&2; exit 1; }
     done
     ln -sf ../etc/os-release "$dir/usr/lib/os-release" 2>/dev/null || true
+    # ── THE PERSON'S ACCOUNT (E11; Rob chose option A on 2026-11-04) ──────────────────────────────────────────
+    # One ordinary user, uid 1000, no password. The shell runs as it; the Wi-Fi picker keeps root (see
+    # flow-wifi.service). The uid is FIXED and written straight into /etc/passwd because /etc/passwd lives in the
+    # read-only slot: every future image must agree with the one a stick already carries, or /persist/home/morph
+    # becomes a directory owned by a stranger. `useradd` is not installed (no `passwd` package), and a fixed line is
+    # deterministic anyway.
+    grep -q '^morph:' "$dir/etc/passwd" 2>/dev/null ||
+        printf 'morph:x:1000:1000:MorpheOS user:/persist/home/morph:/bin/bash\n' >> "$dir/etc/passwd"
+    grep -q '^morph:' "$dir/etc/group" 2>/dev/null ||
+        printf 'morph:x:1000:\n' >> "$dir/etc/group"
+    # seatd's socket is group `video` (its unit runs `seatd -g video`), so a non-root compositor opens DRM and
+    # input through the seat daemon — which is what makes running as morph possible at all.
+    grep -q '^video:.*\bmorph\b' "$dir/etc/group" 2>/dev/null || sed -i '/^video:/ s/$/,morph/' "$dir/etc/group"
+    # A stick that is UPDATED keeps its old data partition, so the boot has to put the home right even when the
+    # filesystem was made before the user existed.
+    mkdir -p "$dir/etc/tmpfiles.d"
+    printf 'd /persist/home/morph 0700 morph morph -\n' > "$dir/etc/tmpfiles.d/morph-home.conf"
+    # If the unit ever drifts back to root, the build says so rather than shipping a root session that looks fixed.
+    grep -q '^User=morph' "$dir/usr/lib/systemd/system/flow-shell.service" 2>/dev/null || {
+        echo "flow-shell.service does not set User=morph: the shell would run as root (E11)" >&2; exit 1; }
     # The base's /etc/pam.d/login prints the Ubuntu legal notice TWICE at login. It carries
     # two motd lines: `pam_motd.so motd=/run/motd.dynamic` (the welcome + help + legal notice,
     # kept) and `pam_motd.so noupdate` (the DEFAULT motd). Because /etc/motd was never created
@@ -544,6 +564,9 @@ EOF
         # The task says to write this while the compositor still runs as root and watch it go red - which is what it
         # does today: today's answer is uid 0, and the check reports it rather than pretending otherwise.
         cp -a "$HERE/overlay-shell-test/." "$dir/"
+        # The picker keeps root (NetworkManager needs polkit), so it is a unit of its own (E11).
+        ln -sf /usr/lib/systemd/system/flow-wifi.service \
+            "$dir/etc/systemd/system/multi-user.target.wants/flow-wifi.service"
         ln -sf /usr/lib/systemd/system/morph-session-facts.service \
             "$dir/etc/systemd/system/multi-user.target.wants/morph-session-facts.service"
         # WHAT THE MACHINE CALLS ITSELF, installed with the shell because this is the image a person
@@ -947,6 +970,10 @@ DATADIR="$WORK/data"
 rm -rf "$DATADIR"
 mkdir -p "$DATADIR/home/morph/Documents" "$DATADIR/strata" "$DATADIR/morph"
 chmod 0700 "$DATADIR/strata"
+# The person's home belongs to the person (uid 1000, E11). `mkfs.ext4 -d` keeps ownership, so this is the only
+# place it can be set — after the image is written the root is read-only and the directory already belongs to
+# whoever owned it when the filesystem was made.
+chown -R 1000:1000 "$DATADIR/home/morph"
 
 # Generation 1 (doc 20, S11): the Manifest the machine boots with. `morphd boot` converges to
 # it at every start, and a later `morphd apply` needs it as the generation to replace. The
