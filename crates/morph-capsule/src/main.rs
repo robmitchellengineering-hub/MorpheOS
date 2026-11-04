@@ -39,7 +39,8 @@ fn key_from(path: &Path) -> Result<SigningKey, String> {
 
 fn open(args: &[String]) -> Result<SealedSession, String> {
     let root = arg(args, "--root").ok_or("--root is required")?;
-    let key_path = arg(args, "--key").ok_or("--key is required: a session without a key cannot be sealed")?;
+    let key_path =
+        arg(args, "--key").ok_or("--key is required: a session without a key cannot be sealed")?;
     let label = arg(args, "--label").unwrap_or_else(|| "session".into());
     let query = arg(args, "--query").unwrap_or_else(|| "strata://query?under=.".into());
     let key = key_from(Path::new(&key_path))?;
@@ -57,7 +58,10 @@ fn main() -> ExitCode {
             };
             let out = PathBuf::from(out);
             if out.exists() {
-                eprintln!("morph-session: {} already exists; refusing to replace a key", out.display());
+                eprintln!(
+                    "morph-session: {} already exists; refusing to replace a key",
+                    out.display()
+                );
                 return ExitCode::from(1);
             }
             let mut seed = [0u8; 32];
@@ -233,7 +237,10 @@ fn main() -> ExitCode {
             };
             // The history first: a seal that does not verify makes any drift report meaningless.
             match session.history() {
-                Ok(history) => println!("history: {} sealed transition(s), all verified", history.len()),
+                Ok(history) => println!(
+                    "history: {} sealed transition(s), all verified",
+                    history.len()
+                ),
                 Err(why) => {
                     eprintln!("morph-session: history does not verify: {why}");
                     return ExitCode::from(1);
@@ -246,7 +253,10 @@ fn main() -> ExitCode {
                         ExitCode::SUCCESS
                     }
                     Ok(drift) => {
-                        eprintln!("state: {} path(s) written outside a sealed transition:", drift.len());
+                        eprintln!(
+                            "state: {} path(s) written outside a sealed transition:",
+                            drift.len()
+                        );
                         for d in drift {
                             eprintln!("  {d}");
                         }

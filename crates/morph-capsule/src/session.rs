@@ -55,25 +55,37 @@ fn collect(dir: &Path, prefix: &str, out: &mut BTreeMap<String, String>) -> Resu
         Ok(e) => e,
         Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(source) => {
-            return Err(Error::Io { what: format!("reading {}", dir.display()), source })
+            return Err(Error::Io {
+                what: format!("reading {}", dir.display()),
+                source,
+            });
         }
     };
     for entry in entries {
-        let entry = entry.map_err(|source| Error::Io { what: format!("reading {}", dir.display()), source })?;
+        let entry = entry.map_err(|source| Error::Io {
+            what: format!("reading {}", dir.display()),
+            source,
+        })?;
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
-        let meta = std::fs::symlink_metadata(&path)
-            .map_err(|source| Error::Io { what: format!("stat {}", path.display()), source })?;
+        let meta = std::fs::symlink_metadata(&path).map_err(|source| Error::Io {
+            what: format!("stat {}", path.display()),
+            source,
+        })?;
         let rel = format!("{prefix}/{name}");
         if meta.file_type().is_dir() {
             collect(&path, &rel, out)?;
         } else if meta.file_type().is_symlink() {
-            let target = std::fs::read_link(&path)
-                .map_err(|source| Error::Io { what: format!("reading link {}", path.display()), source })?;
+            let target = std::fs::read_link(&path).map_err(|source| Error::Io {
+                what: format!("reading link {}", path.display()),
+                source,
+            })?;
             out.insert(rel, format!("symlink:{}", target.display()));
         } else {
-            let bytes = std::fs::read(&path)
-                .map_err(|source| Error::Io { what: format!("reading {}", path.display()), source })?;
+            let bytes = std::fs::read(&path).map_err(|source| Error::Io {
+                what: format!("reading {}", path.display()),
+                source,
+            })?;
             out.insert(rel, strata::store::hash_hex(&bytes));
         }
     }
@@ -97,11 +109,15 @@ impl SessionLayer {
     pub fn open(root: impl Into<PathBuf>, label: &str, query: &str) -> Result<Self> {
         let root = root.into();
         let session_dir = root.join("session");
-        std::fs::create_dir_all(&session_dir)
-            .map_err(|source| Error::Io { what: format!("creating {}", session_dir.display()), source })?;
+        std::fs::create_dir_all(&session_dir).map_err(|source| Error::Io {
+            what: format!("creating {}", session_dir.display()),
+            source,
+        })?;
         let strata_root = root.join(".strata");
-        std::fs::create_dir_all(&strata_root)
-            .map_err(|source| Error::Io { what: format!("creating {}", strata_root.display()), source })?;
+        std::fs::create_dir_all(&strata_root).map_err(|source| Error::Io {
+            what: format!("creating {}", strata_root.display()),
+            source,
+        })?;
 
         // The capsule reuses the session's store, so one rewind covers both. `Capsule::open` would create its
         // own history beside it, which is precisely the split that makes "undo the session" a lie.
@@ -118,7 +134,13 @@ impl SessionLayer {
         }
         let capsule = Capsule::open_with_store(root.join("capsule"), label, &strata_root)?;
         let query = StrataQuery::parse(query)?;
-        Ok(Self { capsule, session_dir, strata_root, query, root })
+        Ok(Self {
+            capsule,
+            session_dir,
+            strata_root,
+            query,
+            root,
+        })
     }
 
     pub fn capsule(&self) -> &Capsule {
@@ -167,7 +189,9 @@ impl SessionLayer {
         strata
             .scan(&self.session_dir)
             .map_err(|e| Error::Strata(format!("{e}")))?;
-        strata.scan(self.capsule.layer()).map_err(|e| Error::Strata(format!("{e}")))?;
+        strata
+            .scan(self.capsule.layer())
+            .map_err(|e| Error::Strata(format!("{e}")))?;
         Ok(self.capsule.now())
     }
 
@@ -188,7 +212,10 @@ impl SessionLayer {
     pub fn digest(&self) -> Result<BTreeMap<String, String>> {
         let mut out = BTreeMap::new();
         // Both roots as `&Path`, so the tuple has one type.
-        let roots: [(&Path, &str); 2] = [(&self.session_dir, "session"), (self.capsule.layer(), "capsule")];
+        let roots: [(&Path, &str); 2] = [
+            (&self.session_dir, "session"),
+            (self.capsule.layer(), "capsule"),
+        ];
         for (root, prefix) in roots {
             collect(root, prefix, &mut out)?;
         }
@@ -202,7 +229,11 @@ impl SessionLayer {
 
     /// Seal a transition with `key` and keep it. A transition nobody sealed is a claim with no author, and the
     /// product's promise ("prove what it did") needs the author.
-    pub fn seal(&self, record: &TransitionRecord, key: &ed25519_dalek::SigningKey) -> Result<SealedTransition> {
+    pub fn seal(
+        &self,
+        record: &TransitionRecord,
+        key: &ed25519_dalek::SigningKey,
+    ) -> Result<SealedTransition> {
         // Stamp the record with its own moment if it does not have one yet. Stamping here as well as at creation
         // would give the record the caller holds and the record on disk different moments.
         let mut record = record.clone();
@@ -222,8 +253,14 @@ impl SessionLayer {
         let path = self
             .transitions_dir()
             .join(format!("{}.json", record.sealed_at));
-        std::fs::write(&path, serde_json::to_vec_pretty(&sealed).map_err(|e| Error::Refused(format!("{e}")))?)
-            .map_err(|source| Error::Io { what: format!("writing {}", path.display()), source })?;
+        std::fs::write(
+            &path,
+            serde_json::to_vec_pretty(&sealed).map_err(|e| Error::Refused(format!("{e}")))?,
+        )
+        .map_err(|source| Error::Io {
+            what: format!("writing {}", path.display()),
+            source,
+        })?;
         Ok(sealed)
     }
 
@@ -236,24 +273,36 @@ impl SessionLayer {
             Ok(e) => e,
             Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(out),
             Err(source) => {
-                return Err(Error::Io { what: format!("reading {}", dir.display()), source })
+                return Err(Error::Io {
+                    what: format!("reading {}", dir.display()),
+                    source,
+                });
             }
         };
         for entry in entries {
-            let entry = entry.map_err(|source| Error::Io { what: format!("reading {}", dir.display()), source })?;
+            let entry = entry.map_err(|source| Error::Io {
+                what: format!("reading {}", dir.display()),
+                source,
+            })?;
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) != Some("json") {
                 continue;
             }
-            let bytes = std::fs::read(&path)
-                .map_err(|source| Error::Io { what: format!("reading {}", path.display()), source })?;
-            let sealed: SealedTransition = serde_json::from_slice(&bytes)
-                .map_err(|e| Error::Refused(format!("{} is not a sealed transition: {e}", path.display())))?;
-            let payload = serde_json::to_vec(&sealed.record)
-                .map_err(|e| Error::Refused(format!("{e}")))?;
-            morph_attest::verify_payload(&sealed.key, &payload, &sealed.signature).map_err(|why| {
-                Error::Refused(format!("{} is not trustworthy: {why}", path.display()))
+            let bytes = std::fs::read(&path).map_err(|source| Error::Io {
+                what: format!("reading {}", path.display()),
+                source,
             })?;
+            let sealed: SealedTransition = serde_json::from_slice(&bytes).map_err(|e| {
+                Error::Refused(format!(
+                    "{} is not a sealed transition: {e}",
+                    path.display()
+                ))
+            })?;
+            let payload =
+                serde_json::to_vec(&sealed.record).map_err(|e| Error::Refused(format!("{e}")))?;
+            morph_attest::verify_payload(&sealed.key, &payload, &sealed.signature).map_err(
+                |why| Error::Refused(format!("{} is not trustworthy: {why}", path.display())),
+            )?;
             out.push(sealed);
         }
         out.sort_by_key(|s| s.record.sealed_at);
@@ -302,27 +351,42 @@ mod tests {
         let s = SessionLayer::open(&dir, "report", "strata://query?under=.").unwrap();
 
         s.write("report.md", b"draft one").unwrap();
-        s.capsule().write("home/prefs.json", br#"{"theme":"light"}"#).unwrap();
+        s.capsule()
+            .write("home/prefs.json", br#"{"theme":"light"}"#)
+            .unwrap();
         s.record().unwrap();
         let at = s.record().unwrap();
 
         std::thread::sleep(std::time::Duration::from_millis(5));
         s.write("report.md", b"draft two").unwrap();
-        s.capsule().write("home/prefs.json", br#"{"theme":"dark"}"#).unwrap();
+        s.capsule()
+            .write("home/prefs.json", br#"{"theme":"dark"}"#)
+            .unwrap();
         s.record().unwrap();
 
         assert_eq!(s.read("report.md").unwrap(), b"draft two");
-        assert_eq!(s.capsule().read("home/prefs.json").unwrap(), br#"{"theme":"dark"}"#);
+        assert_eq!(
+            s.capsule().read("home/prefs.json").unwrap(),
+            br#"{"theme":"dark"}"#
+        );
 
         let record = s.undo_to(at).unwrap();
 
-        assert_eq!(s.read("report.md").unwrap(), b"draft one", "the session file must come back");
+        assert_eq!(
+            s.read("report.md").unwrap(),
+            b"draft one",
+            "the session file must come back"
+        );
         assert_eq!(
             s.capsule().read("home/prefs.json").unwrap(),
             br#"{"theme":"light"}"#,
             "the application's state must come back in the SAME undo"
         );
-        assert!(record.restored >= 2, "both paths must be reported as restored: {}", record.restored);
+        assert!(
+            record.restored >= 2,
+            "both paths must be reported as restored: {}",
+            record.restored
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -346,14 +410,18 @@ mod tests {
         // Now edit the stored record the way an attacker editing history would: one field. The file is named by
         // the transition's own moment, not by the state it returns to (that naming collision is a bug this
         // suite already caught once).
-        let path = s.transitions_dir().join(format!("{}.json", record.sealed_at));
+        let path = s
+            .transitions_dir()
+            .join(format!("{}.json", record.sealed_at));
         let text = std::fs::read_to_string(&path).unwrap();
         let mut value: serde_json::Value = serde_json::from_str(&text).unwrap();
         value["record"]["restored"] = serde_json::json!(999);
         std::fs::write(&path, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
 
         match s.transitions() {
-            Err(Error::Refused(why)) => assert!(why.contains("not trustworthy"), "unexpected: {why}"),
+            Err(Error::Refused(why)) => {
+                assert!(why.contains("not trustworthy"), "unexpected: {why}")
+            }
             Ok(v) => panic!("an edited transition was accepted: {v:?}"),
             Err(other) => panic!("unexpected error: {other:?}"),
         }
@@ -368,7 +436,11 @@ mod tests {
         s.write("b.md", b"b").unwrap();
         s.record().unwrap();
         let files = s.files().unwrap();
-        assert_eq!(files.len(), 2, "the query must resolve both files: {files:?}");
+        assert_eq!(
+            files.len(),
+            2,
+            "the query must resolve both files: {files:?}"
+        );
         assert!(files.iter().all(|f| f.path.starts_with(s.session_dir())));
 
         // A query the machine cannot answer is refused where the session is opened, not silently empty.
@@ -376,5 +448,4 @@ mod tests {
         assert!(refused.is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
-
 }

@@ -750,14 +750,20 @@ EOF
         # ⚠️ MODULE FILE NAMES DO NOT MATCH MODULE NAMES. The first version of this check asked
         # for `xhci_hcd.ko` when the file is `xhci-hcd.ko`, and CI failed the build for it — which
         # is the check doing its job on the only input it could be wrong about.
-        builtin=$(cat "$dir"/usr/lib/modules/*/modules.builtin 2>/dev/null || true)
+        # WHOSE DRIVERS. When slot A carries the kernel we built, the driver assertion must be about THAT
+        # kernel's modules — otherwise Ubuntu's modules (still installed for slot B) satisfy it and the check
+        # reports a Wi-Fi driver for a kernel that does not have one. A claim about our kernel is read from
+        # our kernel's module tree, and from nowhere else.
+        moddirs="$dir/usr/lib/modules"
+        if [ "$KERNEL" = ours ] && [ "$1" = a ] && [ -n "$KREL" ]; then moddirs="$dir/usr/lib/modules/$KREL"; fi
+        builtin=$(cat "$moddirs"/modules.builtin 2>/dev/null || true)
         missing=""
         # And what a laptop needs once booted: its graphics, its Wi-Fi (and the stack under
         # it), its touchscreen, its wired network. Each of these was missing until the extra
         # modules went in, with the firmware for them already on the image.
         for mod in usb-storage uas xhci-hcd ahci sd_mod ext4 vfat \
             amdgpu i915 xe cfg80211 mac80211 iwlwifi mt7921e brcmfmac b43 hid-multitouch r8169; do
-            found=$(find "$dir/usr/lib/modules" -name "$mod.ko*" -print -quit 2>/dev/null || true)
+            found=$(find "$moddirs" -name "$mod.ko*" -print -quit 2>/dev/null || true)
             if [ -z "$found" ] && ! printf '%s' "$builtin" | grep -q "/$mod\.ko"; then
                 missing="$missing $mod"
             fi

@@ -18,9 +18,16 @@ fn shell() -> Shell {
 fn a_session_has_no_state_until_it_is_given_some() {
     let mut shell = shell();
     let id = shell.add_session_opening("Q3 report", vec![Openable::tool("editor")]);
-    assert_eq!(shell.layer_root(id), None, "a session with no state is a real state, not an error");
+    assert_eq!(
+        shell.layer_root(id),
+        None,
+        "a session with no state is a real state, not an error"
+    );
     assert!(shell.attach_layer(id, "/persist/sessions/q3"));
-    assert_eq!(shell.layer_root(id), Some(&PathBuf::from("/persist/sessions/q3")));
+    assert_eq!(
+        shell.layer_root(id),
+        Some(&PathBuf::from("/persist/sessions/q3"))
+    );
 }
 
 #[test]
@@ -28,7 +35,10 @@ fn attaching_state_to_a_session_that_does_not_exist_is_reported() {
     let mut shell = shell();
     let id = shell.add_session_opening("gone", Vec::new());
     assert!(shell.close_session(id));
-    assert!(!shell.attach_layer(id, "/persist/sessions/gone"), "a caller bug must not be silent");
+    assert!(
+        !shell.attach_layer(id, "/persist/sessions/gone"),
+        "a caller bug must not be silent"
+    );
 }
 
 #[test]
@@ -39,7 +49,10 @@ fn the_state_root_survives_focus_changes_and_relayout() {
     assert!(shell.attach_layer(a, "/persist/sessions/q3"));
     // Focus moves to b; a's state must still be a's.
     assert!(shell.focus(b), "focusing a live session must succeed");
-    assert_eq!(shell.layer_root(a), Some(&PathBuf::from("/persist/sessions/q3")));
+    assert_eq!(
+        shell.layer_root(a),
+        Some(&PathBuf::from("/persist/sessions/q3"))
+    );
     assert_eq!(shell.layer_root(b), None);
 }
 

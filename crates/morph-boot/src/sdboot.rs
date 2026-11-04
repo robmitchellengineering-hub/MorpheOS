@@ -194,7 +194,6 @@ mod tests {
     }
 }
 
-
 #[cfg(test)]
 mod custom_entry_tests {
     use super::*;
@@ -219,7 +218,11 @@ mod custom_entry_tests {
             cmdline,
             bootctl: std::path::PathBuf::from("bootctl"),
         };
-        assert_eq!(backend.default_slot().unwrap(), Slot::B, "the command line is the truth");
+        assert_eq!(
+            backend.default_slot().unwrap(),
+            Slot::B,
+            "the command line is the truth"
+        );
         let _ = std::fs::remove_dir_all(&esp);
     }
 
@@ -230,7 +233,11 @@ mod custom_entry_tests {
         let esp = std::env::temp_dir().join("morph-boot-custom-entry-noslot");
         let _ = std::fs::remove_dir_all(&esp);
         std::fs::create_dir_all(esp.join("loader")).unwrap();
-        std::fs::write(esp.join("loader/loader.conf"), "default morpheos-our.conf\n").unwrap();
+        std::fs::write(
+            esp.join("loader/loader.conf"),
+            "default morpheos-our.conf\n",
+        )
+        .unwrap();
         let cmdline = esp.join("cmdline");
         std::fs::write(&cmdline, "root=PARTLABEL=root-a ro").unwrap();
 
@@ -239,7 +246,10 @@ mod custom_entry_tests {
             cmdline,
             bootctl: std::path::PathBuf::from("bootctl"),
         };
-        assert!(backend.default_slot().is_err(), "no cmdline slot means no answer");
+        assert!(
+            backend.default_slot().is_err(),
+            "no cmdline slot means no answer"
+        );
         let _ = std::fs::remove_dir_all(&esp);
     }
 }

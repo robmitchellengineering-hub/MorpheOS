@@ -133,19 +133,31 @@ pub fn verify_signature(signed: &SignedStatement, trusted: Option<&VerifyingKey>
 pub fn changed_fields(signed: &SignedStatement, now: &Statement) -> Vec<String> {
     let mut out = Vec::new();
     if signed.statement.system != now.system {
-        out.push(format!("system: {} -> {}", signed.statement.system, now.system));
+        out.push(format!(
+            "system: {} -> {}",
+            signed.statement.system, now.system
+        ));
     }
     if signed.statement.kernel_release != now.kernel_release {
-        out.push(format!("kernel_release: {} -> {}", signed.statement.kernel_release, now.kernel_release));
+        out.push(format!(
+            "kernel_release: {} -> {}",
+            signed.statement.kernel_release, now.kernel_release
+        ));
     }
     if signed.statement.kernel_sysname != now.kernel_sysname {
-        out.push(format!("kernel_sysname: {} -> {}", signed.statement.kernel_sysname, now.kernel_sysname));
+        out.push(format!(
+            "kernel_sysname: {} -> {}",
+            signed.statement.kernel_sysname, now.kernel_sysname
+        ));
     }
     if signed.statement.slot != now.slot {
         out.push(format!("slot: {} -> {}", signed.statement.slot, now.slot));
     }
     if signed.statement.boot_id != now.boot_id {
-        out.push(format!("boot_id: {} -> {}", signed.statement.boot_id, now.boot_id));
+        out.push(format!(
+            "boot_id: {} -> {}",
+            signed.statement.boot_id, now.boot_id
+        ));
     }
     if signed.statement.lsm != now.lsm {
         out.push(format!("lsm: {:?} -> {:?}", signed.statement.lsm, now.lsm));
@@ -162,7 +174,11 @@ pub fn changed_fields(signed: &SignedStatement, now: &Statement) -> Vec<String> 
 
 /// The whole check a person actually wants: is this statement from a key I trust, and does it still
 /// describe this machine?
-pub fn evaluate(signed: &SignedStatement, trusted: Option<&VerifyingKey>, now: &Statement) -> Verdict {
+pub fn evaluate(
+    signed: &SignedStatement,
+    trusted: Option<&VerifyingKey>,
+    now: &Statement,
+) -> Verdict {
     match verify_signature(signed, trusted) {
         Verdict::Refused(why) => Verdict::Refused(why),
         _ => {
@@ -176,7 +192,6 @@ pub fn evaluate(signed: &SignedStatement, trusted: Option<&VerifyingKey>, now: &
     }
 }
 
-
 /// Sign arbitrary canonical bytes. The transition record of a session or a capsule needs the same seal the
 /// machine's self-description gets, and it is not a `Statement` — so this is the primitive, exposed rather than
 /// duplicated. The signature covers exactly `payload`; a caller that signs a structure must serialise it
@@ -189,14 +204,18 @@ pub fn sign_payload(key: &SigningKey, payload: &[u8]) -> String {
 /// someone reading a refusal needs.
 pub fn verify_payload(key_hex: &str, payload: &[u8], signature_hex: &str) -> Result<(), String> {
     let key_bytes = unhex(key_hex).ok_or("the key is not hex")?;
-    let key_bytes: [u8; 32] = key_bytes.try_into().map_err(|_| "the key is not 32 bytes")?;
-    let vk = VerifyingKey::from_bytes(&key_bytes).map_err(|_| "the key is not an ed25519 public key")?;
+    let key_bytes: [u8; 32] = key_bytes
+        .try_into()
+        .map_err(|_| "the key is not 32 bytes")?;
+    let vk =
+        VerifyingKey::from_bytes(&key_bytes).map_err(|_| "the key is not an ed25519 public key")?;
     let sig_bytes = unhex(signature_hex).ok_or("the signature is not hex")?;
-    let sig_bytes: [u8; 64] = sig_bytes.try_into().map_err(|_| "the signature is not 64 bytes")?;
+    let sig_bytes: [u8; 64] = sig_bytes
+        .try_into()
+        .map_err(|_| "the signature is not 64 bytes")?;
     vk.verify(payload, &Signature::from_bytes(&sig_bytes))
         .map_err(|_| "the signature does not cover these bytes".to_string())
 }
-
 
 /// The claimed facts about a boot: what the kernel measured, and — stated in the payload itself — whether a TPM
 /// was involved. A signed log without a hardware root is not a quote, and the text says so where a verifier
@@ -206,7 +225,9 @@ pub fn boot_payload(ima_log: &[u8], boot_id: &str, pcr10: Option<&str>) -> Strin
     // With a TPM the claim carries a hardware value; without one it says so. Neither case is a QUOTE: a quote is
     // the TPM signing the PCR with a key sealed to it, which needs tpm2_quote and an attestation key in the TPM.
     let tpm = match pcr10 {
-        Some(pcr) => format!("tpm_pcr10: {pcr}\ntpm_quote: none (PCR read, not signed by the TPM)\n"),
+        Some(pcr) => {
+            format!("tpm_pcr10: {pcr}\ntpm_quote: none (PCR read, not signed by the TPM)\n")
+        }
         None => "tpm_quote: none (no TPM on this machine)\n".to_string(),
     };
     format!(
@@ -275,9 +296,15 @@ mod tests {
         let b = boot_payload(log, "boot-1", None);
         assert_eq!(a, b, "the same log and boot must produce the same payload");
         let changed = boot_payload(b"10 def ima-ng sha256:... other\n", "boot-1", None);
-        assert_ne!(a, changed, "a different measurement log must produce a different payload");
+        assert_ne!(
+            a, changed,
+            "a different measurement log must produce a different payload"
+        );
         let other_boot = boot_payload(log, "boot-2", None);
-        assert_ne!(a, other_boot, "the payload must be bound to the boot it describes");
+        assert_ne!(
+            a, other_boot,
+            "the payload must be bound to the boot it describes"
+        );
         assert!(a.contains("ima_entries: 1"));
         assert!(
             a.contains("tpm_quote: none"),
@@ -292,7 +319,14 @@ mod tests {
         let sig = sign_payload(&key, payload);
         assert!(verify_payload(&hex(key.verifying_key().as_bytes()), payload, &sig).is_ok());
         // One changed byte must fail: this is the property the transition record depends on.
-        assert!(verify_payload(&hex(key.verifying_key().as_bytes()), b"transition: {restored: 3}", &sig).is_err());
+        assert!(
+            verify_payload(
+                &hex(key.verifying_key().as_bytes()),
+                b"transition: {restored: 3}",
+                &sig
+            )
+            .is_err()
+        );
         // And a foreign key must not verify it.
         let other = SigningKey::from_bytes(&[3u8; 32]);
         assert!(verify_payload(&hex(other.verifying_key().as_bytes()), payload, &sig).is_err());
@@ -302,7 +336,10 @@ mod tests {
     fn canonical_bytes_are_stable() {
         let a = canonical(&sample());
         let b = canonical(&sample());
-        assert_eq!(a, b, "the same facts must produce the same bytes; the signature covers them");
+        assert_eq!(
+            a, b,
+            "the same facts must produce the same bytes; the signature covers them"
+        );
         // And the order is the struct's field order, not serde_json's map ordering.
         let text = String::from_utf8(a).unwrap();
         let format_at = text.find("\"format\"").unwrap();
@@ -314,7 +351,10 @@ mod tests {
     fn a_valid_signature_is_trusted() {
         let key = key();
         let signed = sign(sample(), &key);
-        assert_eq!(verify_signature(&signed, Some(&key.verifying_key())), Verdict::Trusted);
+        assert_eq!(
+            verify_signature(&signed, Some(&key.verifying_key())),
+            Verdict::Trusted
+        );
     }
 
     #[test]
@@ -334,7 +374,9 @@ mod tests {
         let signed = sign(sample(), &key());
         let other = SigningKey::from_bytes(&[9u8; 32]);
         match verify_signature(&signed, Some(&other.verifying_key())) {
-            Verdict::Refused(why) => assert!(why.contains("this verifier trusts"), "unexpected: {why}"),
+            Verdict::Refused(why) => {
+                assert!(why.contains("this verifier trusts"), "unexpected: {why}")
+            }
             other => panic!("a foreign key was trusted: {other:?}"),
         }
     }
@@ -361,7 +403,11 @@ mod tests {
         now.slot = "b".into();
         match evaluate(&signed, Some(&key.verifying_key()), &now) {
             Verdict::Stale(changed) => {
-                assert_eq!(changed.len(), 2, "expected kernel_release and slot: {changed:?}");
+                assert_eq!(
+                    changed.len(),
+                    2,
+                    "expected kernel_release and slot: {changed:?}"
+                );
                 assert!(changed.iter().any(|c| c.starts_with("kernel_release")));
                 assert!(changed.iter().any(|c| c.starts_with("slot")));
             }
@@ -374,8 +420,14 @@ mod tests {
         let signed = sign(sample(), &key());
         let text = serde_json::to_string(&signed).unwrap();
         assert_eq!(from_json(&text).unwrap(), signed);
-        assert!(from_json("{}").is_err(), "an empty object must not be a statement");
-        assert!(from_json(r#"{"statement":{}}"#).is_err(), "a partial object must not be a statement");
+        assert!(
+            from_json("{}").is_err(),
+            "an empty object must not be a statement"
+        );
+        assert!(
+            from_json(r#"{"statement":{}}"#).is_err(),
+            "a partial object must not be a statement"
+        );
     }
 
     #[test]

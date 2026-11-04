@@ -72,7 +72,8 @@ impl super::Capsule {
         // "failed to change root from `.` to `.oldroot`: No such file or directory", which is what a pivot
         // without the mount point looks like.
         for dir in [
-            "usr", "bin", "sbin", "lib", "lib64", "etc", "proc", "dev", "tmp", "home", "root", "var", ".oldroot",
+            "usr", "bin", "sbin", "lib", "lib64", "etc", "proc", "dev", "tmp", "home", "root",
+            "var", ".oldroot",
         ] {
             std::fs::create_dir_all(root.join(dir)).map_err(|source| Error::Io {
                 what: format!("creating {}", root.join(dir).display()),
@@ -138,7 +139,9 @@ exec chroot "$ROOT" /bin/sh /.capsule-entry
         );
 
         Command::new("unshare")
-            .args(["--mount", "--pid", "--net", "--fork", "--", "sh", "-c", &bootstrap])
+            .args([
+                "--mount", "--pid", "--net", "--fork", "--", "sh", "-c", &bootstrap,
+            ])
             .env("HOME", "/home")
             .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
             .env("CAPSULE_LABEL", &self.manifest().label)
@@ -146,7 +149,10 @@ exec chroot "$ROOT" /bin/sh /.capsule-entry
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|source| Error::Io { what: "spawning unshare (is util-linux present?)".into(), source })
+            .map_err(|source| Error::Io {
+                what: "spawning unshare (is util-linux present?)".into(),
+                source,
+            })
     }
 
     /// Run a command inside the isolation and return (code, stdout, stderr).
@@ -154,7 +160,10 @@ exec chroot "$ROOT" /bin/sh /.capsule-entry
         let out = self
             .spawn_isolated(script)?
             .wait_with_output()
-            .map_err(|source| Error::Io { what: "waiting for the capsule".into(), source })?;
+            .map_err(|source| Error::Io {
+                what: "waiting for the capsule".into(),
+                source,
+            })?;
         Ok((
             out.status.code(),
             String::from_utf8_lossy(&out.stdout).into_owned(),
@@ -237,7 +246,10 @@ mod tests {
         let c = super::super::Capsule::open(&dir, "reader").unwrap();
         // `/persist` is the writable host filesystem (the root is read-only by design), so the marker goes
         // there: the first version wrote to /root, which failed with EROFS and skipped the whole test.
-        let host_marker = PathBuf::from(format!("/persist/capsule-host-marker-{}", std::process::id()));
+        let host_marker = PathBuf::from(format!(
+            "/persist/capsule-host-marker-{}",
+            std::process::id()
+        ));
         let marker_path = host_marker.display().to_string();
         if std::fs::write(&host_marker, b"HOST-SECRET").is_err() {
             eprintln!("skipping: not root, so a pivot_root test proves nothing");

@@ -34,7 +34,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
-    Io { what: String, source: std::io::Error },
+    Io {
+        what: String,
+        source: std::io::Error,
+    },
     Strata(String),
     Refused(String),
 }
@@ -114,16 +117,20 @@ impl Capsule {
     ) -> Result<Self> {
         let root = root.into();
         let layer = root.join("layer");
-        std::fs::create_dir_all(layer.join("home")).map_err(io(format!("creating {}", layer.display())))?;
+        std::fs::create_dir_all(layer.join("home"))
+            .map_err(io(format!("creating {}", layer.display())))?;
         let strata_root = strata_root.into();
         std::fs::create_dir_all(&strata_root)
             .map_err(io(format!("creating {}", strata_root.display())))?;
 
         let manifest_path = root.join("capsule.json");
         let manifest = match std::fs::read(&manifest_path) {
-            Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| Error::Refused(format!(
-                "{} is not a capsule manifest: {e}", manifest_path.display()
-            )))?,
+            Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| {
+                Error::Refused(format!(
+                    "{} is not a capsule manifest: {e}",
+                    manifest_path.display()
+                ))
+            })?,
             Err(_) => {
                 let m = Manifest {
                     label: label.into(),
@@ -131,14 +138,23 @@ impl Capsule {
                     capabilities: Vec::new(),
                     enforced: false,
                 };
-                std::fs::write(&manifest_path, serde_json::to_vec_pretty(&m).expect("serialises"))
-                    .map_err(io(format!("writing {}", manifest_path.display())))?;
+                std::fs::write(
+                    &manifest_path,
+                    serde_json::to_vec_pretty(&m).expect("serialises"),
+                )
+                .map_err(io(format!("writing {}", manifest_path.display())))?;
                 m
             }
         };
 
-        let strata = strata::Strata::open(&strata_root).map_err(|e| Error::Strata(format!("{e}")))?;
-        Ok(Self { root, layer, strata, manifest })
+        let strata =
+            strata::Strata::open(&strata_root).map_err(|e| Error::Strata(format!("{e}")))?;
+        Ok(Self {
+            root,
+            layer,
+            strata,
+            manifest,
+        })
     }
 
     pub fn root(&self) -> &Path {
@@ -158,18 +174,16 @@ impl Capsule {
     /// its writes are confined to the thing it versions.
     pub fn path(&self, rel: &str) -> Result<PathBuf> {
         let candidate = self.layer.join(rel);
-        let normalised = candidate
-            .components()
-            .fold(PathBuf::new(), |mut acc, c| {
-                match c {
-                    std::path::Component::ParentDir => {
-                        acc.pop();
-                    }
-                    std::path::Component::CurDir => {}
-                    other => acc.push(other.as_os_str()),
+        let normalised = candidate.components().fold(PathBuf::new(), |mut acc, c| {
+            match c {
+                std::path::Component::ParentDir => {
+                    acc.pop();
                 }
-                acc
-            });
+                std::path::Component::CurDir => {}
+                other => acc.push(other.as_os_str()),
+            }
+            acc
+        });
         if !normalised.starts_with(&self.layer) {
             return Err(Error::Refused(format!(
                 "'{rel}' escapes the capsule layer; a capsule may only change its own state"
@@ -183,7 +197,8 @@ impl Capsule {
     pub fn write(&self, rel: &str, content: &[u8]) -> Result<PathBuf> {
         let path = self.path(rel)?;
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(io(format!("creating {}", parent.display())))?;
+            std::fs::create_dir_all(parent)
+                .map_err(io(format!("creating {}", parent.display())))?;
         }
         std::fs::write(&path, content).map_err(io(format!("writing {}", path.display())))?;
         Ok(path)
@@ -285,7 +300,11 @@ mod tests {
 
         assert_eq!(c.read("notes.txt").unwrap(), b"second");
         c.undo_to(at).unwrap();
-        assert_eq!(c.read("notes.txt").unwrap(), b"first", "undo must restore the earlier version");
+        assert_eq!(
+            c.read("notes.txt").unwrap(),
+            b"first",
+            "undo must restore the earlier version"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -317,7 +336,10 @@ mod tests {
         let stdout = app.stdout.take().expect("piped stdout");
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
-            for line in BufReader::new(stdout).lines().map_while(std::result::Result::ok) {
+            for line in BufReader::new(stdout)
+                .lines()
+                .map_while(std::result::Result::ok)
+            {
                 if tx.send(line).is_err() {
                     break;
                 }
@@ -332,7 +354,10 @@ mod tests {
                 break;
             }
         }
-        assert!(saw_after, "the application never reported the pre-undo state");
+        assert!(
+            saw_after,
+            "the application never reported the pre-undo state"
+        );
 
         c.undo_to(at).unwrap();
 
@@ -371,7 +396,10 @@ mod tests {
         let c = Capsule::open(&dir, "browser").unwrap();
         assert_eq!(c.manifest().label, "browser");
         assert_eq!(c.manifest().rung, Rung::LayerOnly);
-        assert!(!c.manifest().enforced, "an unenforced capability list must say so, not look empty");
+        assert!(
+            !c.manifest().enforced,
+            "an unenforced capability list must say so, not look empty"
+        );
         // Re-opening reads the manifest back rather than inventing a new one.
         let again = Capsule::open(&dir, "different-label").unwrap();
         assert_eq!(again.manifest().label, "browser");
@@ -389,7 +417,10 @@ mod tests {
         c.write("new.txt", b"new").unwrap();
         c.record().unwrap();
         c.undo_to(at).unwrap();
-        assert!(!c.path("new.txt").unwrap().exists(), "a file created after the undo point must go");
+        assert!(
+            !c.path("new.txt").unwrap().exists(),
+            "a file created after the undo point must go"
+        );
         assert_eq!(c.read("keep.txt").unwrap(), b"keep");
         let _ = std::fs::remove_dir_all(&dir);
     }

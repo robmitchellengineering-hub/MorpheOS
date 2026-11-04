@@ -70,6 +70,23 @@ grep -q 'UTS_SYSNAME "MorpheOS"' include/linux/uts.h || {
 }
 echo "branding: UTS_SYSNAME is MorpheOS"
 
+# 2b. THE KEY THAT MAKES MODULES LOADABLE. `CONFIG_MODULE_SIG_FORCE=y` is the hardening we want and it means an
+#     unsigned module will not load — so a kernel that ships unsigned modules has no Wi-Fi and no audio on a
+#     real machine while the build looks green. The key is made per build (an ephemeral key proves the
+#     mechanism; the release key is Rob's, offline, ADR 0019) and its fingerprint goes in the report, so a
+#     module can be traced to the build that signed it. A per-build key is deliberate: build B must not be
+#     able to load build A's modules.
+KEYS="$WORK/keys"
+mkdir -p "$KEYS"
+if [ ! -f "$KEYS/signing.pem" ]; then
+    openssl req -new -x509 -newkey rsa:2048 -nodes -days 3650 \
+        -subj "/CN=MorpheOS module signing ($ARCH_KERNEL build)/" \
+        -keyout "$KEYS/signing.key" -out "$KEYS/signing.pem" 2>/dev/null \
+        || { echo "could not make a signing key: modules would not load on a real machine" >&2; exit 2; }
+    chmod 600 "$KEYS/signing.key"
+fi
+printf 'CONFIG_SYSTEM_TRUSTED_KEYS="%s"\n' "$KEYS/signing.pem" > "$WORK/trusted.config"
+
 # 3. Our configuration, merged on top of a small base so the result is a decision list rather than a
 #    vendor defconfig with everything enabled.
 if [ ! -f .config ]; then
@@ -78,8 +95,28 @@ if [ ! -f .config ]; then
     make ARCH="$KARCH" defconfig
 fi
 # Common promises first, then what this architecture actually has.
-scripts/kconfig/merge_config.sh -m -O . .config "$HERE/config.common" "$HERE/config.$ARCH_KERNEL" >/dev/null
+scripts/kconfig/merge_config.sh -m -O . .config "$HERE/config.common" "$HERE/config.$ARCH_KERNEL" "$WORK/trusted.config" >/dev/null
 make ARCH="$KARCH" olddefconfig
+
+# 3b. WHAT APPLIED, checked instead of printed. `olddefconfig` resolves a dependency by quietly disabling the
+#     symbol that asked for it, so a fragment can look applied while the driver it names is absent — which is
+#     exactly the defect this config exists to prevent. Every decision in the fragment is looked for, and the
+#     few kernel symbols that are implicit (they never appear in .config) are named rather than excused.
+IMPLICIT=" CONFIG_X86_64 CONFIG_64BIT "
+unapplied=""
+for f in "$HERE/config.common" "$HERE/config.$ARCH_KERNEL"; do
+    while IFS= read -r line; do
+        case "$line" in CONFIG_*=y|CONFIG_*=m|CONFIG_*=\"*\") ;; *) continue ;; esac
+        name=${line%%=*}
+        case "$IMPLICIT" in *" $name "*) continue ;; esac
+        grep -qxF "$line" .config || unapplied="$unapplied $name"
+    done < "$f"
+done
+if [ -n "$unapplied" ]; then
+    echo "these decisions did not apply:$unapplied" >&2
+    echo "(a symbol is dropped when something it needs is off — fix the fragment, do not excuse the driver)" >&2
+    exit 1
+fi
 
 # 4. Build.
 # The image target differs per architecture: bzImage is x86-only, arm64 builds Image, arm builds zImage.
@@ -102,6 +139,18 @@ case "$KARCH" in
     arm)    cp arch/arm/boot/zImage "$OUT/vmlinuz-morpheos" ;;
 esac
 INSTALL_MOD_PATH="$WORK/modules" make ARCH="$KARCH" modules_install >/dev/null
+
+# Sign what we are about to ship. MODULE_SIG_FORCE means this is not optional: an unsigned .ko is a module
+# the machine cannot load, and the failure appears at first boot as "no Wi-Fi" rather than as an error.
+signed=0
+while IFS= read -r -d '' ko; do
+    scripts/sign-file sha256 "$KEYS/signing.key" "$KEYS/signing.pem" "$ko"
+    signed=$((signed + 1))
+done < <(find "$WORK/modules" -name '*.ko' -print0)
+[ "$signed" -gt 0 ] || { echo "no modules to sign in $WORK/modules" >&2; exit 1; }
+first=$(find "$WORK/modules" -name '*.ko' -print -quit)
+tail -c 40 "$first" | grep -aq "~Module signature appended~" \
+    || { echo "$first is not signed, and MODULE_SIG_FORCE would refuse it" >&2; exit 1; }
 tar -C "$WORK/modules" -cJf "$OUT/modules.tar.xz" lib/modules
 
 {
@@ -111,6 +160,8 @@ tar -C "$WORK/modules" -cJf "$OUT/modules.tar.xz" lib/modules
     echo "uname -s will : $(grep -m1 'define UTS_SYSNAME' include/linux/uts.h | sed 's/.*"\(.*\)"/\1/')"
     echo "localversion  : $(grep -m1 '^CONFIG_LOCALVERSION=' .config)"
     echo "modules signed: $(grep -m1 '^CONFIG_MODULE_SIG_FORCE' .config || echo 'CONFIG_MODULE_SIG_FORCE unset')"
+    echo "modules signed now : $signed .ko"
+    echo "signing key    : $(openssl x509 -in "$KEYS/signing.pem" -noout -fingerprint -sha256 2>/dev/null | cut -d= -f2)"
     echo "lsm           : $(grep -m1 '^CONFIG_LSM=' .config)"
     echo "hardening     : $(grep -cE '^CONFIG_(RANDOMIZE_BASE|STRICT_KERNEL_RWX|STRICT_MODULE_RWX|SLAB_FREELIST_HARDENED|HARDENED_USERCOPY|FORTIFY_SOURCE|INIT_ON_ALLOC_DEFAULT_ON|INIT_STACK_ALL_ZERO|STACKPROTECTOR_STRONG|PAGE_TABLE_ISOLATION)=y' .config) of 10 present"
     echo "image bytes   : $(stat -c%s "$OUT/vmlinuz-morpheos" 2>/dev/null || stat -f%z "$OUT/vmlinuz-morpheos")"

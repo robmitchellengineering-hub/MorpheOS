@@ -20,7 +20,7 @@ use std::process::ExitCode;
 
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use morph_attest::{
-    canonical, evaluate, from_json, hex, sign, unhex, Statement, SignedStatement, Verdict, FORMAT,
+    FORMAT, SignedStatement, Statement, Verdict, canonical, evaluate, from_json, hex, sign, unhex,
 };
 
 /// Where the facts come from. A base path so a test (or an image build) can point at a fixture tree instead
@@ -31,7 +31,9 @@ pub struct Facts {
 }
 
 fn read(path: &Path) -> Option<String> {
-    std::fs::read_to_string(path).ok().map(|s| s.trim().to_string())
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|s| s.trim().to_string())
 }
 
 /// One field of a `key=value` or `key value` file, for os-release style files.
@@ -45,16 +47,22 @@ fn field(text: &str, key: &str) -> Option<String> {
 impl Facts {
     pub fn collect(&self) -> Result<Statement, String> {
         let root = &self.root;
-        let os_release = read(&root.join("etc/os-release"))
-            .ok_or_else(|| format!("no {}/etc/os-release: this is not a MorpheOS root", root.display()))?;
+        let os_release = read(&root.join("etc/os-release")).ok_or_else(|| {
+            format!(
+                "no {}/etc/os-release: this is not a MorpheOS root",
+                root.display()
+            )
+        })?;
         let system = field(&os_release, "PRETTY_NAME")
             .or_else(|| field(&os_release, "NAME"))
             .ok_or("os-release names no system")?;
 
         // The kernel's own answers. /proc/sys/kernel/ostype is the sysname uname(2) returns: "Linux" on a
         // stock kernel, "MorpheOS" on ours. That difference is the whole point of asking.
-        let kernel_release = read(&root.join("proc/sys/kernel/osrelease")).unwrap_or_else(|| "unknown".into());
-        let kernel_sysname = read(&root.join("proc/sys/kernel/ostype")).unwrap_or_else(|| "unknown".into());
+        let kernel_release =
+            read(&root.join("proc/sys/kernel/osrelease")).unwrap_or_else(|| "unknown".into());
+        let kernel_sysname =
+            read(&root.join("proc/sys/kernel/ostype")).unwrap_or_else(|| "unknown".into());
         let cmdline = read(&root.join("proc/cmdline")).unwrap_or_default();
         let slot = cmdline
             .split_whitespace()
@@ -62,17 +70,26 @@ impl Facts {
             .unwrap_or("unknown")
             .to_string();
 
-        let boot_id = read(&root.join("proc/sys/kernel/random/boot_id")).unwrap_or_else(|| "unknown".into());
+        let boot_id =
+            read(&root.join("proc/sys/kernel/random/boot_id")).unwrap_or_else(|| "unknown".into());
         let machine_id = read(&root.join("etc/machine-id")).unwrap_or_else(|| "unknown".into());
 
         let lsm = read(&root.join("sys/kernel/security/lsm"))
-            .map(|s| s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect())
+            .map(|s| {
+                s.split(',')
+                    .map(|x| x.trim().to_string())
+                    .filter(|x| !x.is_empty())
+                    .collect()
+            })
             .unwrap_or_default();
 
         let mut posture = BTreeMap::new();
         posture.insert(
             "console".into(),
-            if root.join("etc/systemd/system/getty@tty1.service.d/autologin.conf").exists() {
+            if root
+                .join("etc/systemd/system/getty@tty1.service.d/autologin.conf")
+                .exists()
+            {
                 "autologin".to_string()
             } else {
                 "credential-required".to_string()
@@ -90,7 +107,13 @@ impl Facts {
                     m.lines()
                         .find(|l| l.split_whitespace().nth(1) == Some("/"))
                         .and_then(|l| l.split_whitespace().nth(3))
-                        .map(|opts| if opts.split(',').any(|o| o == "ro") { "read-only" } else { "writable" })
+                        .map(|opts| {
+                            if opts.split(',').any(|o| o == "ro") {
+                                "read-only"
+                            } else {
+                                "writable"
+                            }
+                        })
                         .map(str::to_string)
                 })
                 .unwrap_or_else(|| "unknown".into()),
@@ -102,9 +125,8 @@ impl Facts {
             std::fs::read_dir(root.join("sys/firmware/efi/efivars"))
                 .ok()
                 .and_then(|d| {
-                    d.flatten().find(|e| {
-                        e.file_name().to_string_lossy().starts_with("SecureBoot-")
-                    })
+                    d.flatten()
+                        .find(|e| e.file_name().to_string_lossy().starts_with("SecureBoot-"))
                 })
                 .and_then(|e| std::fs::read(e.path()).ok())
                 .and_then(|b| b.get(4).copied())
@@ -127,12 +149,14 @@ impl Facts {
 }
 
 fn key_from_file(path: &Path) -> Result<SigningKey, String> {
-    let raw = std::fs::read(path).map_err(|e| format!("no attestation key at {}: {e}", path.display()))?;
+    let raw = std::fs::read(path)
+        .map_err(|e| format!("no attestation key at {}: {e}", path.display()))?;
     let bytes = if raw.len() == 32 {
         raw
     } else {
         // A hex key file is friendlier to provision than 32 binary bytes; accept both, and say which.
-        let text = String::from_utf8(raw).map_err(|_| "key file is neither 32 bytes nor hex".to_string())?;
+        let text = String::from_utf8(raw)
+            .map_err(|_| "key file is neither 32 bytes nor hex".to_string())?;
         unhex(text.trim()).ok_or("key file is neither 32 bytes nor hex")?
     };
     let arr: [u8; 32] = bytes
@@ -149,7 +173,10 @@ fn parse_flag(args: &[String], name: &str) -> Option<String> {
 fn keygen(path: &Path) -> Result<(), String> {
     if path.exists() {
         // Generating a key over an existing one would silently invalidate every statement ever signed.
-        return Err(format!("{} already exists; refusing to replace an attestation key", path.display()));
+        return Err(format!(
+            "{} already exists; refusing to replace an attestation key",
+            path.display()
+        ));
     }
     let mut seed = [0u8; 32];
     // getrandom is part of libc, which the image has; a key from a weak source is not a key.
@@ -181,7 +208,9 @@ fn keygen(path: &Path) -> Result<(), String> {
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let cmd = args.first().map(String::as_str).unwrap_or("show");
-    let root = parse_flag(&args, "--root").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/"));
+    let root = parse_flag(&args, "--root")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/"));
 
     match cmd {
         "show" => {
@@ -201,7 +230,9 @@ fn main() -> ExitCode {
             let key_path = match parse_flag(&args, "--key").map(PathBuf::from) {
                 Some(p) => p,
                 None => {
-                    eprintln!("morph-attest sign --key PATH  (no unsigned statement is ever printed)");
+                    eprintln!(
+                        "morph-attest sign --key PATH  (no unsigned statement is ever printed)"
+                    );
                     return ExitCode::from(2);
                 }
             };
@@ -273,8 +304,7 @@ fn main() -> ExitCode {
                 Verdict::Trusted => {
                     println!(
                         "trusted: signed by {}, format {}, and it matches this machine",
-                        signed.key,
-                        signed.statement.format
+                        signed.key, signed.statement.format
                     );
                     ExitCode::SUCCESS
                 }
@@ -297,7 +327,9 @@ fn main() -> ExitCode {
             // fact. WITHOUT a TPM this is not a quote — no PCR, no hardware root — and it is named accordingly.
             let ima = parse_flag(&args, "--ima")
                 .map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from("/sys/kernel/security/ima/ascii_runtime_measurements"));
+                .unwrap_or_else(|| {
+                    PathBuf::from("/sys/kernel/security/ima/ascii_runtime_measurements")
+                });
             let log = match std::fs::read(&ima) {
                 Ok(l) => l,
                 Err(e) => {
@@ -325,7 +357,10 @@ fn main() -> ExitCode {
                             "signature": signature,
                             "key": morph_attest::hex(key.verifying_key().as_bytes()),
                         });
-                        println!("{}", serde_json::to_string_pretty(&doc).expect("serialises"));
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&doc).expect("serialises")
+                        );
                         ExitCode::SUCCESS
                     }
                     Err(why) => {
@@ -372,15 +407,25 @@ mod tests {
     /// A fixture tree with known contents, so the collector is checked against input we chose rather than
     /// against whatever this machine happens to be.
     fn fixture() -> PathBuf {
-        let root = std::env::temp_dir().join(format!("morph-attest-fixture-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("morph-attest-fixture-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         for (path, text) in [
-            ("etc/os-release", "NAME=\"MorpheOS\"\nPRETTY_NAME=\"MorpheOS 1.0\"\nID=morpheos\n"),
+            (
+                "etc/os-release",
+                "NAME=\"MorpheOS\"\nPRETTY_NAME=\"MorpheOS 1.0\"\nID=morpheos\n",
+            ),
             ("etc/machine-id", "0123456789abcdef0123456789abcdef\n"),
             ("proc/sys/kernel/osrelease", "6.8.0-morpheos\n"),
             ("proc/sys/kernel/ostype", "MorpheOS\n"),
-            ("proc/cmdline", "root=PARTLABEL=root-b ro morph.slot=b console=ttyS0\n"),
-            ("proc/sys/kernel/random/boot_id", "0f0e0d0c-0b0a-4908-8706-050403020100\n"),
+            (
+                "proc/cmdline",
+                "root=PARTLABEL=root-b ro morph.slot=b console=ttyS0\n",
+            ),
+            (
+                "proc/sys/kernel/random/boot_id",
+                "0f0e0d0c-0b0a-4908-8706-050403020100\n",
+            ),
             ("sys/kernel/security/lsm", "lockdown,bpf,yama\n"),
             ("sys/kernel/security/lockdown", "[integrity] none\n"),
             ("proc/mounts", "/dev/vda2 / ext4 ro,relatime 0 0\n"),
@@ -398,7 +443,10 @@ mod tests {
         let s = facts.collect().unwrap();
         assert_eq!(s.system, "MorpheOS 1.0");
         assert_eq!(s.kernel_release, "6.8.0-morpheos");
-        assert_eq!(s.kernel_sysname, "MorpheOS", "the sysname is the field that separates us from Linux");
+        assert_eq!(
+            s.kernel_sysname, "MorpheOS",
+            "the sysname is the field that separates us from Linux"
+        );
         assert_eq!(s.slot, "b", "the slot comes from the kernel command line");
         assert_eq!(s.lsm, vec!["lockdown", "bpf", "yama"]);
         assert_eq!(s.posture["root"], "read-only");
@@ -411,7 +459,11 @@ mod tests {
         let empty = std::env::temp_dir().join(format!("morph-attest-empty-{}", std::process::id()));
         let _ = fs::remove_dir_all(&empty);
         fs::create_dir_all(&empty).unwrap();
-        let err = Facts { root: empty.clone() }.collect().unwrap_err();
+        let err = Facts {
+            root: empty.clone(),
+        }
+        .collect()
+        .unwrap_err();
         assert!(err.contains("not a MorpheOS root"), "unexpected: {err}");
         let _ = fs::remove_dir_all(&empty);
     }

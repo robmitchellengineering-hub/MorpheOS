@@ -60,3 +60,34 @@ it, boot it, and fail unless the boot log carries `6.8.0-morpheos`. That job is 
 
 - DSH on K1: opened as `open · parallel` — its build is done and gated on the arm; the image running
   it is the remaining work, 2026-11-04.
+
+## Round 1: the things that would have made the claim false
+
+CI was red on `ci` (`cargo fmt --all --check`, **102 diffs** — the arm's crates were never rustfmt'd; the
+toolchain is pinned at 1.99.0 and this machine has exactly that, so the diff is the one CI would produce).
+Formatted, and `--check` is clean.
+
+Then three defects in the claim itself, found by asking "would this actually work", none of them visible from
+a green build:
+
+1. **The driver assertion was about somebody else's kernel.** The HARDWARE=1 images assert that a Wi-Fi,
+   graphics, storage and input driver is present, by searching `usr/lib/modules` — and Ubuntu's modules are
+   still installed for slot B, so a kernel with no Wi-Fi driver passed the check on Ubuntu's. Scoped to the
+   module tree of the kernel under test when slot A carries ours.
+2. **Our config did not carry the drivers that assertion is about.** It had b43/i915/snd — the 2012 laptop —
+   and nothing for amdgpu, xe, iwlwifi, mt7921, brcmfmac, r8169, hdmi/console, SATA or USB UAS. The image
+   claims those for every laptop it is flashed on, so a kernel in slot A must carry them or the image boots
+   and cannot get online. Added, and the set is now the image's own list.
+3. **`CONFIG_MODULE_SIG_FORCE=y` and no module signing.** The hardening we want means an *unsigned* module
+   will not load: Wi-Fi and audio would have been dead on a real machine while the build was green, and it
+   would have read at first boot as "no WiFi", not as a build defect. `build.sh` now makes a per-build key,
+   embeds it as `CONFIG_SYSTEM_TRUSTED_KEYS`, signs every `.ko`, proves one signature is attached, and prints
+   the fingerprint in the report. Per-build on purpose: build B must not load build A's modules.
+
+And one guard so the fragment cannot lie: after `olddefconfig`, **every decision in the fragment is looked
+for in `.config`** and the build fails naming the ones that did not apply (`olddefconfig` resolves a
+dependency by quietly dropping the symbol that asked for it, which is how a kernel ships without the driver
+its own image asserts).
+
+Not claimed: none of this has been proven by a boot yet. The `image-carries-our-kernel` job is the evidence,
+and it is the next thing to read.

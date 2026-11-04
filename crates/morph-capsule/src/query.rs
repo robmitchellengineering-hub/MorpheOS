@@ -50,30 +50,32 @@ impl StrataQuery {
             match key {
                 "under" => under = Some(PathBuf::from(value)),
                 "since" => {
-                    since = Some(
-                        value
-                            .parse()
-                            .map_err(|_| Error::Refused(format!("since='{value}' is not a number")))?,
-                    )
+                    since =
+                        Some(value.parse().map_err(|_| {
+                            Error::Refused(format!("since='{value}' is not a number"))
+                        })?)
                 }
                 "limit" => {
-                    limit = Some(
-                        value
-                            .parse()
-                            .map_err(|_| Error::Refused(format!("limit='{value}' is not a number")))?,
-                    )
+                    limit =
+                        Some(value.parse().map_err(|_| {
+                            Error::Refused(format!("limit='{value}' is not a number"))
+                        })?)
                 }
                 // The metadata graph is doc 04's future; refusing is the honest answer until it exists.
                 other => {
                     return Err(Error::Refused(format!(
                         "'{other}' is not a query this machine can answer yet (the metadata graph is not \
                          built); it can answer under, since and limit"
-                    )))
+                    )));
                 }
             }
         }
         let under = under.ok_or_else(|| Error::Refused("a query needs under=<dir>".into()))?;
-        Ok(Self { under, since, limit })
+        Ok(Self {
+            under,
+            since,
+            limit,
+        })
     }
 
     /// Resolve against a Strata store. Paths are confined to `under`: a query cannot list the machine.
@@ -84,7 +86,10 @@ impl StrataQuery {
             .map_err(|e| Error::Strata(format!("{e}")))?;
         let mut out = Vec::new();
         for path in paths {
-            let Some(version) = index.latest(&path).map_err(|e| Error::Strata(format!("{e}")))? else {
+            let Some(version) = index
+                .latest(&path)
+                .map_err(|e| Error::Strata(format!("{e}")))?
+            else {
                 continue;
             };
             if version.kind == strata::index::Kind::Deleted {
@@ -120,7 +125,8 @@ mod tests {
 
     #[test]
     fn a_query_parses_the_parts_the_index_can_answer() {
-        let q = StrataQuery::parse("strata://query?under=/data/sessions/q3&since=100&limit=5").unwrap();
+        let q =
+            StrataQuery::parse("strata://query?under=/data/sessions/q3&since=100&limit=5").unwrap();
         assert_eq!(q.under, PathBuf::from("/data/sessions/q3"));
         assert_eq!(q.since, Some(100));
         assert_eq!(q.limit, Some(5));
@@ -130,7 +136,10 @@ mod tests {
     fn a_query_naming_a_feature_that_does_not_exist_is_refused_by_name() {
         let err = StrataQuery::parse("strata://query?project=q3-report").unwrap_err();
         let msg = format!("{err}");
-        assert!(msg.contains("'project'"), "the refusal must name what it cannot do: {msg}");
+        assert!(
+            msg.contains("'project'"),
+            "the refusal must name what it cannot do: {msg}"
+        );
         assert!(msg.contains("metadata graph is not built"));
     }
 

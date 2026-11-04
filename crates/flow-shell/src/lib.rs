@@ -568,11 +568,7 @@ impl Shell {
     /// never be how a person loses their work: the layer is theirs, and the shell only forgets the view.
     pub fn close_session_keeping_state(&mut self, id: SessionId) -> Option<PathBuf> {
         let root = self.layer_root(id).cloned();
-        if self.close_session(id) {
-            root
-        } else {
-            None
-        }
+        if self.close_session(id) { root } else { None }
     }
 
     /// Forget a session. Returns whether it existed.

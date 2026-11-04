@@ -89,7 +89,10 @@ impl SealedSession {
                     sealed_at: 0, // stamped by `SessionLayer::seal`
                 };
                 let sealed = self.layer.seal(&record, &self.key)?;
-                Ok(Committed { sealed, restored: 0 })
+                Ok(Committed {
+                    sealed,
+                    restored: 0,
+                })
             }
             Err(why) => {
                 // Take it back. If the rollback itself fails, say both things: a half-applied change that
@@ -113,7 +116,10 @@ impl SealedSession {
     pub fn undo_to(&self, at: i64) -> Result<Committed> {
         let record = self.layer.undo_to(at)?;
         let sealed = self.layer.seal(&record, &self.key)?;
-        Ok(Committed { sealed, restored: record.restored })
+        Ok(Committed {
+            sealed,
+            restored: record.restored,
+        })
     }
 
     /// Compare the state on disk with the digest of the last sealed transition. Anything that differs — added,
@@ -200,9 +206,10 @@ mod tests {
         let dir = scratch("fail");
         let s = SealedSession::open(&dir, "report", "strata://query?under=.", key()).unwrap();
         s.change("first", |layer| {
-                layer.write("a.md", b"original")?;
-                Ok(())
-            }).unwrap();
+            layer.write("a.md", b"original")?;
+            Ok(())
+        })
+        .unwrap();
         let before = s.read("a.md").unwrap();
         assert_eq!(before, b"original");
 
@@ -213,10 +220,21 @@ mod tests {
         assert!(refused.is_err());
         let message = format!("{}", refused.unwrap_err());
         assert!(message.contains("taken back"), "unexpected: {message}");
-        assert!(message.contains("no seal was written"), "unexpected: {message}");
+        assert!(
+            message.contains("no seal was written"),
+            "unexpected: {message}"
+        );
 
-        assert_eq!(s.read("a.md").unwrap(), before, "the failed change must be reverted");
-        assert_eq!(s.history().unwrap().len(), 1, "only the successful change may be sealed");
+        assert_eq!(
+            s.read("a.md").unwrap(),
+            before,
+            "the failed change must be reverted"
+        );
+        assert_eq!(
+            s.history().unwrap().len(),
+            1,
+            "only the successful change may be sealed"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -225,18 +243,25 @@ mod tests {
         let dir = scratch("undo");
         let s = SealedSession::open(&dir, "report", "strata://query?under=.", key()).unwrap();
         s.change("one", |layer| {
-                layer.write("a.md", b"one")?;
-                Ok(())
-            }).unwrap();
-        let at = s.change("two", |layer| {
+            layer.write("a.md", b"one")?;
+            Ok(())
+        })
+        .unwrap();
+        let at = s
+            .change("two", |layer| {
                 layer.write("a.md", b"two")?;
                 Ok(())
-            }).unwrap();
+            })
+            .unwrap();
         // Undo the second change, then seal it: an undo must be as checkable as the change it reverses.
         let undone = s.undo_to(at.sealed.record.at).unwrap();
         assert_eq!(s.read("a.md").unwrap(), b"one");
         assert!(undone.sealed.record.label.contains("undo"));
-        assert_eq!(s.history().unwrap().len(), 3, "two changes and the undo, all sealed");
+        assert_eq!(
+            s.history().unwrap().len(),
+            3,
+            "two changes and the undo, all sealed"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -246,8 +271,16 @@ mod tests {
     fn a_write_around_the_seal_is_reported_with_its_path() {
         let dir = scratch("drift");
         let s = SealedSession::open(&dir, "report", "strata://query?under=.", key()).unwrap();
-        s.change("sealed", |layer| { layer.write("a.md", b"sealed content")?; Ok(()) }).unwrap();
-        assert_eq!(s.drift().unwrap(), Vec::<String>::new(), "a clean session must report no drift");
+        s.change("sealed", |layer| {
+            layer.write("a.md", b"sealed content")?;
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(
+            s.drift().unwrap(),
+            Vec::<String>::new(),
+            "a clean session must report no drift"
+        );
 
         // Write directly into the layer, exactly as a process that does not know about sealing would.
         let sneaky = dir.join("capsule/layer/home/sneaky.txt");
@@ -255,9 +288,16 @@ mod tests {
         std::fs::write(&sneaky, b"written around the seal").unwrap();
 
         let drift = s.drift().unwrap();
-        assert_eq!(drift.len(), 1, "expected exactly one drifted path: {drift:?}");
+        assert_eq!(
+            drift.len(),
+            1,
+            "expected exactly one drifted path: {drift:?}"
+        );
         assert!(drift[0].contains("added outside a seal"), "{drift:?}");
-        assert!(drift[0].contains("sneaky.txt"), "the path must be named: {drift:?}");
+        assert!(
+            drift[0].contains("sneaky.txt"),
+            "the path must be named: {drift:?}"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -265,7 +305,11 @@ mod tests {
     fn a_removed_file_is_drift_too() {
         let dir = scratch("drift-remove");
         let s = SealedSession::open(&dir, "report", "strata://query?under=.", key()).unwrap();
-        s.change("sealed", |layer| { layer.write("a.md", b"here")?; Ok(()) }).unwrap();
+        s.change("sealed", |layer| {
+            layer.write("a.md", b"here")?;
+            Ok(())
+        })
+        .unwrap();
         std::fs::remove_file(dir.join("session/a.md")).unwrap();
         let drift = s.drift().unwrap();
         assert_eq!(drift.len(), 1, "{drift:?}");
@@ -277,9 +321,18 @@ mod tests {
     fn a_sealed_change_then_undo_leaves_no_drift() {
         let dir = scratch("drift-undo");
         let s = SealedSession::open(&dir, "report", "strata://query?under=.", key()).unwrap();
-        let at = s.change("one", |layer| { layer.write("a.md", b"one")?; Ok(()) }).unwrap();
+        let at = s
+            .change("one", |layer| {
+                layer.write("a.md", b"one")?;
+                Ok(())
+            })
+            .unwrap();
         s.undo_to(at.sealed.record.at).unwrap();
-        assert_eq!(s.drift().unwrap(), Vec::<String>::new(), "a sealed undo is not drift");
+        assert_eq!(
+            s.drift().unwrap(),
+            Vec::<String>::new(),
+            "a sealed undo is not drift"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -288,9 +341,10 @@ mod tests {
         let dir = scratch("foreign");
         let s = SealedSession::open(&dir, "report", "strata://query?under=.", key()).unwrap();
         s.change("one", |layer| {
-                layer.write("a.md", b"one")?;
-                Ok(())
-            }).unwrap();
+            layer.write("a.md", b"one")?;
+            Ok(())
+        })
+        .unwrap();
         let history = s.history().unwrap();
         let recorded = &history[0];
 
