@@ -8,6 +8,13 @@ vms"* (morpheos-a-1 takes the hardware boot when it is free). The account model 
 [ADR 0020](adr/0020-account-model.md) (Accepted, Rob's answers, 2026-11-04); the kernel it builds
 is [ADR 0022](adr/0022-own-the-kernel-build.md).
 
+**The everyday build is not this arm's to touch.** Rob, 2026-11-04: *"Revert everything you've done to the
+everyday version, it was already working on hardware and is a different project, I never asked you to touch
+it."* The arm had been proved by putting `KERNEL=ours` into `images/x86-qemu/build.sh` and booting the
+everyday scenarios with it. That is reverted: the everyday builder, its VM runner and the everyday images
+workflow are as they were before the arm landed, and the arm has **no image of its own yet**. The kernel
+recipe stays; the everyday tree does not carry it.
+
 **This doc is the arm's index and its task list. Its design lives in the arm's own documents**,
 which land with it: [`security/README.md`](../security/README.md) (the charter and the measured
 attacks), [`SEALED-STATE.md`](SEALED-STATE.md), [`ATTESTATION.md`](ATTESTATION.md) and
@@ -208,9 +215,9 @@ person is expected to flash themselves.
 
 ## 5. The kernel is this arm's, first — and it is already built
 
-[ADR 0022](adr/0022-own-the-kernel-build.md) makes the kernel ours to build and patch. **K1 is
-done as a build and gated; what is open is booting it as the image's kernel.** Measured on the
-arm, 2026-10-31:
+[ADR 0022](adr/0022-own-the-kernel-build.md) makes the kernel ours to build and patch. **K1's *build* is
+done and gated. K1 itself is not done: the arm has no image, so no arm image has ever booted our kernel.**
+Measured on the arm, 2026-10-31:
 
 | | state | evidence |
 |---|---|---|
@@ -221,10 +228,17 @@ arm, 2026-10-31:
 | no initramfs | kernel stage **0.757 s faster**; userspace totals not comparable and not claimed | the gate log |
 | the flight recorder (K2) | `pstore` over EFI variables survives a real `sysrq` panic: 15 records, panic text readable after reboot | its log |
 
-**K1's open half is the boot, not the build:** put that kernel and its modules into the image's
-slots and boot the image's own scenarios against it — the wifi, shell and audio scenarios — with
-the drivers intact. **In a VM first**, on `morpheos-a-1` for the hardware falsifier: a machine that
-boots our kernel and loses Wi-Fi, audio or the panel has failed Phase 0.
+**One experiment was run on 2026-11-04, and its route no longer exists.** With `KERNEL=ours` added to the
+everyday builder, an image whose slot A carried our kernel booted it — `Linux version 6.8.0-morpheos`, the
+compositor on `/dev/dri/card0`, `flow-compositor: 1 window(s) on screen`, and `MORPHEOS-KERNEL uname-s:
+MorpheOS` read off the running system. The arm's attack suite was never run against that image, because it was
+not the arm's image. **That flag, and the everyday scenarios it drove, are reverted** — the result stands as an
+experiment (with its serial log), not as an arm milestone.
+
+**K1's open half is an image of our own:** `images/x86-secure/`, carrying our kernel in slot A and Ubuntu's in
+slot B, built and booted by the arm's own CI job, with the drivers intact. **In a VM first**, then on
+`morpheos-a-1` for the hardware falsifier: a machine that boots our kernel and loses Wi-Fi, audio or the panel
+has failed Phase 0.
 
 **K2's open half** is `kexec` rollback — the flight recorder proves the machine can *explain* a
 crash; nothing yet switches kernels without userspace. **K3** (eBPF LSM per service, IMA,
@@ -238,16 +252,17 @@ for.
 **The phase after this arm's first release** (no systemd, the app as a kernel object, versioning
 at the VFS) is not planned here, and doc 03's Rust microkernel stays where doc 03 puts it.
 
-### K1 · The image runs our kernel · open · parallel
+### K1 · An image of ours runs our kernel · open · parallel
 
 **What:** the arm's kernel as the image's kernel, not only as a `bzImage` behind a busybox init.
 The image's slots carry our kernel and our modules, built from `secure/kernel/`, and the image's
 own scenarios boot against them with the drivers intact.
 
-**Done when:** an image built with our kernel boots `test-shell.sh`, `test-wifi.sh` and
-`test-audio.sh` green in a VM; `uname -s` reads `MorpheOS` from **inside** that image (not from a
-bare init); and on `morpheos-a-1` the machine boots our kernel with Wi-Fi, audio and the panel
-working — Phase 0's stated falsifier. Ubuntu's kernel stays in the other slot as the comparison.
+**Done when:** `images/x86-secure/` builds an image whose slot A carries our kernel and modules and whose
+slot B carries Ubuntu's; that image boots the arm's own scenarios green in a VM; `uname -s` reads
+`MorpheOS` from **inside** it (not from a bare init); and on `morpheos-a-1` the machine boots our kernel with
+Wi-Fi, audio and the panel working — Phase 0's stated falsifier. Every one of those is read off the arm's
+build, never off the everyday one.
 
 **Notes:** the build already exists and is gated (M0). `defconfig` is the base, not `tinyconfig`:
 `tinyconfig` sets `CONFIG_BLOCK=n`, which silently deletes ext4 and vfat from the fragment. The
@@ -292,12 +307,10 @@ arm cannot reach the everyday image by accident.
 
 What is **not** built yet, and is the work in front of us:
 
-- **the image with our kernel in it.** Today the arm's kernel is a `bzImage` + modules booted with
-  a busybox init that prints the sysname. The image still ships Ubuntu's `linux-image-virtual`.
-  The next artefact is an image whose **slots carry our kernel and our modules**, booted by the
-  existing scenarios (`test-shell.sh`, `test-wifi.sh`, `test-audio.sh`) with the drivers intact.
-  That is the "flash on VMs" step, and it is what makes K1's claim one the *image* keeps rather
-  than one a build proves.
+- **the arm's own image target, `images/x86-secure/`.** This is now the first thing to build, not a
+  later refinement: until it exists, K1 has no image to be true about. It carries our kernel in slot A and
+  Ubuntu's in slot B, and it is built by the arm — **not** by adding a flag to the everyday builder, which is
+  exactly the mistake this section now warns about.
 - **its own image target** (`images/x86-secure/`) once that boot holds — the hardened
   configuration, its own seed Manifest and its own release number line.
 - **its own CI job**: the attack suite run against that image, where a red attack fails the job.
@@ -311,7 +324,7 @@ What is **not** built yet, and is the work in front of us:
 | | milestone | proof | state |
 |---|---|---|---|
 | **M0** | the arm's kernel is ours | the gate builds three architectures and boots two of them to a program that prints `uname -s` = MorpheOS | **done** — green 2026-10-31T11:47, and proven able to fail |
-| **M1** | the image runs our kernel | an image whose slots carry our kernel and modules boots `test-shell`, `test-wifi` and `test-audio` with the drivers intact, in a VM | **open** — this is the next work |
+| **M1** | the arm's image runs our kernel | `images/x86-secure/` builds with our kernel in slot A and Ubuntu's in slot B, and boots the arm's own scenarios with the drivers intact, in a VM. **There is no audio scenario in this repository** (thirteen `test-*.sh`, none touches a sound card), so audio is judged on hardware, never in a VM | **open** — and it is the next work, because the arm has no image yet |
 | **M2** | the lost-laptop claims hold | X3 green (`login:` before any shell) and X2 green (`attack-disk.sh` reads nothing), both read off a booted image | open |
 | **M3** | nothing comes in and nothing goes out | X5 green (scan), X4 green (another machine's key refused), X6 green (old signed release refused) | open |
 | **M4** | the machine can prove it | X7 green (a quote a verifier accepts, a tampered image refused), on a machine with TPM 2.0 | open |
