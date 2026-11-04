@@ -27,6 +27,10 @@
 # systemd-boot-efi, and built morph-boot and strata binaries
 # (cargo build --release -p morph-boot -p strata).
 set -euo pipefail
+# NAME THE LINE THAT FAILED. With `set -e`, a command that fails without printing anything ends the build with a
+# bare exit code, and that is what a whole CI job was spent on on 2026-11-04: six seconds of silence after the
+# base finished, and no way to tell which command did it. The trap costs one line and points at the answer.
+trap 'rc=$?; printf "build.sh: FAILED at line %s (exit %s): %s\n" "$LINENO" "$rc" "$BASH_COMMAND" >&2' ERR
 
 WORK=${1:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
 SCENARIO=${2:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
@@ -42,6 +46,13 @@ case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell|browser|wifi|bro
 # carries Firefox, so the test can prove it comes online once the picker joins (E14).
 HARDWARE=0
 SHELL_UI=0
+# KERNEL=ours puts the kernel WE build into slot A, and leaves Ubuntu's in slot B on purpose: Phase 0's
+# comparison is ours against theirs on the same machine, and a kernel we cannot fall back from is not
+# shippable. KERNEL_OUT is that build's output directory (secure/kernel/build.sh prints it: it holds
+# vmlinuz-morpheos, modules.tar.xz and build-report.txt).
+KERNEL=${KERNEL:-ubuntu}
+KERNEL_OUT=${KERNEL_OUT:-}
+KREL=""
 # `broken-shell` and `hung-shell` are self-test images (the scripted A/B walk) WITH the shell:
 # slot B's update ships a shell that cannot start, or one that never draws (E11).
 case "$SCENARIO" in
@@ -70,6 +81,10 @@ MORPH_UPDATE=${MORPH_UPDATE:-$REPO/target/release/morph-update}
 MORPH_HEAL=${MORPH_HEAL:-$REPO/target/release/morph-heal}
 MORPH_MANIFEST=${MORPH_MANIFEST:-$REPO/target/release/morph-manifest}
 MORPH_D=${MORPH_D:-$REPO/target/release/morphd}
+# The machine that can state what it is (docs/ATTESTATION.md). Same build, same release profile.
+MORPH_ATTEST=${MORPH_ATTEST:-$REPO/target/release/morph-attest}
+# A session whose every change is sealed (docs/SEALED-STATE.md). Same build, same release profile.
+MORPH_SESSION=${MORPH_SESSION:-$REPO/target/release/morph-session}
 MORPH_AUTOUPDATE=${MORPH_AUTOUPDATE:-$REPO/target/release/morph-autoupdate}
 SDBOOT_EFI=${SDBOOT_EFI:-/usr/lib/systemd/boot/efi/systemd-bootx64.efi}
 FLOW_COMPOSITOR=${FLOW_COMPOSITOR:-$REPO/target/release/flow-compositor}
@@ -299,6 +314,54 @@ regenerate_initrd() {
     for m in $mounted; do umount "$m" 2>/dev/null || true; done
 }
 
+# install_our_kernel — the kernel we built, inside one slot root, with an initrd made from it.
+#
+# WHY THIS IS SEPARATE FROM THE REST OF THE BUILD. Until this existed, "MorpheOS has its own kernel" was a
+# claim about a bzImage behind a busybox init in CI; the image a person boots still ran Ubuntu's. This is the
+# step that makes the claim about the IMAGE: our kernel, our modules, an initrd generated from those modules,
+# booting the same slots, the same systemd, the same drivers — so Wi-Fi, audio and the panel are tested
+# against it rather than assumed.
+install_our_kernel() {
+    local dir=$1 mounted="" tarball found
+    [ -n "$KERNEL_OUT" ] || { echo "KERNEL=ours needs KERNEL_OUT=<secure/kernel/build.sh out dir>" >&2; exit 2; }
+    tarball="$KERNEL_OUT/modules.tar.xz"
+    [ -s "$KERNEL_OUT/vmlinuz-morpheos" ] || { echo "missing $KERNEL_OUT/vmlinuz-morpheos" >&2; exit 2; }
+    [ -s "$tarball" ] || { echo "missing $tarball" >&2; exit 2; }
+    # One release, measured from the artefact itself: a second kernel version in that tarball means the
+    # build directory is stale, and guessing which one to install is how a machine boots the wrong kernel.
+    found=$(tar -tJf "$tarball" | sed -n 's|^lib/modules/\([^/]*\)/.*|\1|p' | sort -u)
+    [ -n "$found" ] || { echo "$tarball carries no lib/modules/<release>/" >&2; exit 2; }
+    [ "$(printf '%s\n' "$found" | wc -l)" -eq 1 ] || {
+        echo "$tarball carries more than one kernel release: $(printf '%s ' $found)" >&2; exit 2; }
+    KREL="$found"
+    echo "installing our kernel $KREL into $dir" >&2
+    install -D -m 0755 "$KERNEL_OUT/vmlinuz-morpheos" "$dir/boot/vmlinuz-$KREL"
+    tar -C "$dir" -xJf "$tarball"
+    [ -d "$dir/lib/modules/$KREL" ] || { echo "modules did not land at $dir/lib/modules/$KREL" >&2; exit 2; }
+    for m in proc sys dev; do
+        if mount --bind "/$m" "$dir/$m" 2>/dev/null; then mounted="$mounted $dir/$m"; fi
+    done
+    if ! chroot "$dir" depmod "$KREL"; then
+        echo "depmod failed for $KREL in $dir" >&2; for m in $mounted; do umount "$m" 2>/dev/null || true; done; exit 1
+    fi
+    # An initrd from OUR modules, through the image's own initramfs-tools — not a hand-made one, because the
+    # point is that our kernel boots the image's real boot path (the recovery hook, bootctl, the lot).
+    if [ "${SKIP_INITRAMFS:-0}" != 1 ]; then
+        if ! chroot "$dir" update-initramfs -c -k "$KREL"; then
+            echo "update-initramfs could not build an initrd for $KREL: the image would not boot it" >&2
+            for m in $mounted; do umount "$m" 2>/dev/null || true; done; exit 1
+        fi
+        [ -s "$dir/boot/initrd.img-$KREL" ] || { echo "no initrd.img-$KREL after update-initramfs" >&2; exit 1; }
+    fi
+    for m in $mounted; do umount "$m" 2>/dev/null || true; done
+    # The claim, asserted by BYTES rather than by string archaeology: a bzImage is compressed, so `strings` on it
+    # shows the decompressor's stub and not the kernel's own release string — an earlier version of this line
+    # failed a perfectly good build for exactly that reason. What matters is that the file in the image is the
+    # file we built, and that is a comparison.
+    cmp -s "$KERNEL_OUT/vmlinuz-morpheos" "$dir/boot/vmlinuz-$KREL" \
+        || { echo "$dir/boot/vmlinuz-$KREL is not the kernel we built (bytes differ from $KERNEL_OUT/vmlinuz-morpheos)" >&2; exit 1; }
+}
+
 make_root() {
     local slot=$1 dir="$WORK/root-$1"
     rm -rf "$dir"
@@ -316,6 +379,16 @@ make_root() {
             echo "could not install $src into $dir" >&2; exit 1; }
     done
     ln -sf ../etc/os-release "$dir/usr/lib/os-release" 2>/dev/null || true
+    # THE KERNEL THIS SLOT WILL BOOT, installed before anything asserts or builds an initrd from it. Slot A
+    # carries ours when asked; slot B keeps Ubuntu's on purpose (the comparison Phase 0 falls back to). The
+    # initrd is left to the image's own `update-initramfs` below, so our kernel walks the same boot path.
+    # THE INITRD IS PART OF THE INSTALL, not something to hope a later step picks up: `update-initramfs -u -k all`
+    # regenerates the versions dpkg knows about, and our kernel is not one of them — measured 2026-11-04, where
+    # slot A got our vmlinuz and the ESP copy then failed because /boot/initrd.img-6.8.0-morpheos did not exist.
+    # This runs after the overlay is in place, so the image's own recovery hook and bootctl go into it.
+    if [ "$KERNEL" = ours ] && [ "$slot" = a ]; then
+        install_our_kernel "$dir"
+    fi
     # The base's /etc/pam.d/login prints the Ubuntu legal notice TWICE at login. It carries
     # two motd lines: `pam_motd.so motd=/run/motd.dynamic` (the welcome + help + legal notice,
     # kept) and `pam_motd.so noupdate` (the DEFAULT motd). Because /etc/motd was never created
@@ -392,6 +465,17 @@ make_root() {
             [ -x "$dir$tool" ] || { echo "missing $tool: the machine could not build on itself" >&2; exit 1; }
         done
     fi
+    # ATTESTATION: a machine that can say what it is, signed. Installed here because this is the image a
+    # person boots; the key is provisioned into /persist at first use, never baked in (a key in a published
+    # artefact is a key everybody has — the SOP rule V-21 taught us).
+    install -m 0755 "$MORPH_ATTEST" "$dir/usr/bin/morph-attest"
+    [ -x "$dir/usr/bin/morph-attest" ] \
+        || { echo "morph-attest did not install: the machine could not state what it is" >&2; exit 1; }
+    # SEALED STATE: a machine whose changes can be signed and checked, so "prove what it did" is a command and
+    # not a promise. Installed with the identity because a person booting this image should be able to run it.
+    install -m 0755 "$MORPH_SESSION" "$dir/usr/bin/morph-session"
+    [ -x "$dir/usr/bin/morph-session" ] \
+        || { echo "morph-session did not install: the machine could not prove what it did" >&2; exit 1; }
     # SSH in, so the mesh can drive this machine over the network (E6: no stick, no console
     # person). Root, key only — the mesh admin key is baked into the image.
     mkdir -p "$dir/root/.ssh" "$dir/etc/ssh/sshd_config.d" "$dir/etc/systemd/system/ssh.service.d"
@@ -683,14 +767,29 @@ EOF
         # ⚠️ MODULE FILE NAMES DO NOT MATCH MODULE NAMES. The first version of this check asked
         # for `xhci_hcd.ko` when the file is `xhci-hcd.ko`, and CI failed the build for it — which
         # is the check doing its job on the only input it could be wrong about.
-        builtin=$(cat "$dir"/usr/lib/modules/*/modules.builtin 2>/dev/null || true)
+        # WHOSE DRIVERS. When slot A carries the kernel we built, the driver assertion must be about THAT
+        # kernel's modules — otherwise Ubuntu's modules (still installed for slot B) satisfy it and the check
+        # reports a Wi-Fi driver for a kernel that does not have one. A claim about our kernel is read from
+        # our kernel's module tree, and from nowhere else.
+        #
+        # ⚠️ `modules.builtin` lives INSIDE a version directory, not beside them. The lookup is a glob when the
+        # question is "this image" and one file when the question is "this kernel"; a single path in the first
+        # case reads nothing, and then every built-in driver (xhci-hcd, sd_mod, ext4, vfat) reads as missing.
+        # That regression failed the everyday image on 2026-11-04, which is D26's falsifier doing its job.
+        if [ "$KERNEL" = ours ] && [ "$1" = a ] && [ -n "$KREL" ]; then
+            moddirs="$dir/usr/lib/modules/$KREL"
+            builtin=$(cat "$moddirs/modules.builtin" 2>/dev/null || true)
+        else
+            moddirs="$dir/usr/lib/modules"
+            builtin=$(cat "$moddirs"/*/modules.builtin 2>/dev/null || true)
+        fi
         missing=""
         # And what a laptop needs once booted: its graphics, its Wi-Fi (and the stack under
         # it), its touchscreen, its wired network. Each of these was missing until the extra
         # modules went in, with the firmware for them already on the image.
         for mod in usb-storage uas xhci-hcd ahci sd_mod ext4 vfat \
             amdgpu i915 xe cfg80211 mac80211 iwlwifi mt7921e brcmfmac b43 hid-multitouch r8169; do
-            found=$(find "$dir/usr/lib/modules" -name "$mod.ko*" -print -quit 2>/dev/null || true)
+            found=$(find "$moddirs" -name "$mod.ko*" -print -quit 2>/dev/null || true)
             if [ -z "$found" ] && ! printf '%s' "$builtin" | grep -q "/$mod\.ko"; then
                 missing="$missing $mod"
             fi
@@ -769,6 +868,40 @@ EOF
     fi
     # The overlay (recovery hook + bootctl) must be inside the initrd the ESP ships.
     regenerate_initrd "$dir"
+    # AND THE MACHINE SAYS ITS OWN NAME — test images with our kernel, slot A only. The boot log proves a
+    # release string reached the kernel; it cannot prove what the running system reports, because the banner is
+    # a kernel constant, not the sysname. This one-shot unit prints `uname -s` to the console at every boot, so
+    # "the machine calls itself MorpheOS" is read off the running machine rather than off a build artefact. A
+    # shipping image must not carry a unit whose whole job is to talk to a serial port, which is why it is here
+    # and not in the overlay.
+    if [ "$KERNEL" = ours ] && [ "$slot" = a ]; then
+        # A SCRIPT, NOT AN INLINE SHELL COMMAND. `ExecStart=/bin/sh -c 'printf … "$(uname -s)"'` was measured to
+        # print `/usr/bin/bash` instead of the sysname: systemd does not hand that string to a shell the way a
+        # shell would, and a quoting mistake inside a unit is invisible until a boot. A file is not.
+        mkdir -p "$dir/usr/lib/morpheos"
+        cat > "$dir/usr/lib/morpheos/kernel-identity" <<'SCRIPT'
+#!/bin/sh
+# Print what this running system calls itself, to the console a test harness reads.
+printf 'MORPHEOS-KERNEL uname-s: %s\n' "$(uname -s)"
+printf 'MORPHEOS-KERNEL uname-r: %s\n' "$(uname -r)"
+SCRIPT
+        chmod 0755 "$dir/usr/lib/morpheos/kernel-identity"
+        cat > "$dir/etc/systemd/system/morph-kernel-identity.service" <<'UNIT'
+[Unit]
+Description=MorpheOS kernel identity (test images with our kernel only)
+DefaultDependencies=no
+After=systemd-journald.service
+Before=multi-user.target
+
+[Service]
+Type=oneshot
+StandardOutput=journal+console
+ExecStart=/usr/lib/morpheos/kernel-identity
+UNIT
+        mkdir -p "$dir/etc/systemd/system/multi-user.target.wants"
+        ln -sf /etc/systemd/system/morph-kernel-identity.service \
+            "$dir/etc/systemd/system/multi-user.target.wants/morph-kernel-identity.service"
+    fi
 }
 make_root a
 make_root b
@@ -815,8 +948,17 @@ printf 'default morpheos-a.conf\ntimeout 0\nconsole-mode keep\n' > "$ESPDIR/load
 for slot in a b; do
     root="$WORK/root-$slot"
     mkdir -p "$ESPDIR/morpheos/$slot"
-    cp "$(ls "$root"/boot/vmlinuz-* | sort | tail -1)" "$ESPDIR/morpheos/$slot/vmlinuz"
-    cp "$(ls "$root"/boot/initrd.img-* | sort | tail -1)" "$ESPDIR/morpheos/$slot/initrd.img"
+    if [ "$KERNEL" = ours ] && [ "$slot" = a ] && [ -n "$KREL" ]; then
+        # Our kernel, named exactly — `ls | sort | tail -1` would pick whichever release sorts last, and
+        # with two kernels in one root that is a coin toss between ours and Ubuntu's.
+        cp "$root/boot/vmlinuz-$KREL" "$ESPDIR/morpheos/$slot/vmlinuz"
+        cp "$root/boot/initrd.img-$KREL" "$ESPDIR/morpheos/$slot/initrd.img"
+        cmp -s "$KERNEL_OUT/vmlinuz-morpheos" "$ESPDIR/morpheos/$slot/vmlinuz" \
+            || { echo "the ESP's slot $slot kernel is not the one we built" >&2; exit 1; }
+    else
+        cp "$(ls "$root"/boot/vmlinuz-* | sort | tail -1)" "$ESPDIR/morpheos/$slot/vmlinuz"
+        cp "$(ls "$root"/boot/initrd.img-* | sort | tail -1)" "$ESPDIR/morpheos/$slot/initrd.img"
+    fi
     extra=""
     console="console=ttyS0"
     if [ "$HARDWARE" = 1 ]; then

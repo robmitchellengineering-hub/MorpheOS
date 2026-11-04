@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
 
+# ONE RUN PER BRANCH: a suite this long must not be run twice at once. A push during a run started a
+# second full suite and left the first burning a runner to answer a question about a tree nobody was
+# looking at any more (measured 2026-11-04: two `images` runs in flight, ~40 minutes each).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   rust:
     # Pinned, not ubuntu-latest: the image's own base, and what scripts/setup-linux.sh and

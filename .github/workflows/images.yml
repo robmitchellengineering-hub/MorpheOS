@@ -29,6 +29,13 @@ on:
   pull_request:
   workflow_dispatch:
 
+# ONE RUN PER BRANCH: a suite this long must not be run twice at once. A push during a run started a
+# second full suite and left the first burning a runner to answer a question about a tree nobody was
+# looking at any more (measured 2026-11-04: two `images` runs in flight, ~40 minutes each).
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   x86-ab-fallback:
     # The name is a required check (AGENTS.md H10): renaming it needs the branch
@@ -48,6 +55,13 @@ jobs:
       - run: cargo build --release -p morph-update -p morph-autoupdate
       - run: cargo build --release -p morph-heal
       - run: cargo build --release -p morph-manifest -p morphd
+      # The attestation binary the image installs (docs/ATTESTATION.md). Without this line the build
+      # would install a file that was never compiled, and fail as a missing file rather than as a
+      # missing build — the sort of failure that costs a round trip to diagnose.
+      - run: cargo build --release -p morph-attest
+      # The session binary the image installs (docs/SEALED-STATE.md). Same reason as the line above: an
+      # install of a binary nobody built fails as a missing file, which reads like a packaging bug.
+      - run: cargo build --release -p morph-capsule
       # The SAME script the builder runs in WSL2 (doc 20, S10), with the image and VM tools,
       # and KVM opened up if the runner has it.
       - name: Install image and VM tools (scripts/setup-linux.sh --images)
