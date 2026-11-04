@@ -163,3 +163,30 @@ identified from here. Recorded as HM25 in the mesh's hazard ledger, with the rul
 measured at dispatch time and a queue that is not draining is a finding. Every build in this session therefore
 went to CI, at roughly 50 minutes an iteration.
 
+## Round 11: the image boots the kernel we built, and the Flow shell comes up on it
+
+The `image/shell` leg's serial log, from the run at 14:09 on `dda300e` — the artefact is
+`image-our-kernel-shell-serial-log` on that run:
+
+```
+[    0.000000] Linux version 6.8.0-morpheos (runner@runnervm48cm3) ...
+[   10.497] flow-compositor: showing on /dev/dri/card0 at 1280x800
+[   10.663] flow-compositor: input: QEMU QEMU USB Tablet (pointer)
+[   10.669] flow-compositor: input: AT Translated Set 2 keyboard (keyboard)
+[   10.680] flow-compositor: first frame on the display; ready
+[   10.796] flow-compositor: 1 window(s) on screen
+[   21.237] flow-compositor: session paused (another virtual terminal is showing)
+[   22.132] flow-compositor: session active
+```
+
+That is our kernel, systemd reaching its targets, the compositor on the real DRM device, libinput finding a
+keyboard and two pointers, a frame on the screen, and the scenario driving the console chord. **Slot A carries
+our kernel; slot B still carries Ubuntu's** — the comparison Phase 0 falls back to.
+
+**The one thing that failed is my test.** `MORPHEOS-KERNEL uname-s:` printed `/usr/bin/bash`: systemd does not
+hand `ExecStart=/bin/sh -c '... "$(uname -s)"'` to a shell the way a shell would. The unit now calls a script
+(`/usr/lib/morpheos/kernel-identity`) with `StandardOutput=journal+console` and no inline quoting to get wrong.
+
+**Not claimed:** the Wi-Fi scenario on our kernel is still running in that same run, and nothing has touched
+hardware. The VM proves the image; only the machine proves the machine.
+

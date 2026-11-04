@@ -875,6 +875,17 @@ EOF
     # shipping image must not carry a unit whose whole job is to talk to a serial port, which is why it is here
     # and not in the overlay.
     if [ "$KERNEL" = ours ] && [ "$slot" = a ]; then
+        # A SCRIPT, NOT AN INLINE SHELL COMMAND. `ExecStart=/bin/sh -c 'printf … "$(uname -s)"'` was measured to
+        # print `/usr/bin/bash` instead of the sysname: systemd does not hand that string to a shell the way a
+        # shell would, and a quoting mistake inside a unit is invisible until a boot. A file is not.
+        mkdir -p "$dir/usr/lib/morpheos"
+        cat > "$dir/usr/lib/morpheos/kernel-identity" <<'SCRIPT'
+#!/bin/sh
+# Print what this running system calls itself, to the console a test harness reads.
+printf 'MORPHEOS-KERNEL uname-s: %s\n' "$(uname -s)"
+printf 'MORPHEOS-KERNEL uname-r: %s\n' "$(uname -r)"
+SCRIPT
+        chmod 0755 "$dir/usr/lib/morpheos/kernel-identity"
         cat > "$dir/etc/systemd/system/morph-kernel-identity.service" <<'UNIT'
 [Unit]
 Description=MorpheOS kernel identity (test images with our kernel only)
@@ -884,7 +895,8 @@ Before=multi-user.target
 
 [Service]
 Type=oneshot
-ExecStart=/bin/sh -c 'printf "MORPHEOS-KERNEL uname-s: %s\n" "$(uname -s)" | tee /dev/console'
+StandardOutput=journal+console
+ExecStart=/usr/lib/morpheos/kernel-identity
 UNIT
         mkdir -p "$dir/etc/systemd/system/multi-user.target.wants"
         ln -sf /etc/systemd/system/morph-kernel-identity.service \
