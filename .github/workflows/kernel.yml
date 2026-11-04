@@ -173,6 +173,13 @@ jobs:
           ./secure/kernel/build.sh x86_64 "$RUNNER_TEMP/kbuild" "$(nproc)"
           cat "$RUNNER_TEMP/kbuild/out/build-report.txt"
 
+      # The `shell` scenario is a person-facing image, so its build wants the binaries that image installs. The
+      # images workflow builds exactly these before the same script; without them the build stops at
+      # "missing target/release/flow-compositor". Built after the kernel, because the images suite's setup is
+      # what installs the X/wayland/input development packages the compositor needs.
+      - name: Build the shell and the picker the image installs
+        run: cargo build --release -p flow-compositor -p flow-wifi -p flow-files -p flow-timeline -p flow-notice
+
       - name: The shell scenario, with our kernel in slot A
         id: scenario
         continue-on-error: true
