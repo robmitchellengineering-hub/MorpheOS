@@ -181,12 +181,17 @@ jobs:
           ./secure/kernel/build.sh x86_64 "$RUNNER_TEMP/kbuild" "$(nproc)"
           cat "$RUNNER_TEMP/kbuild/out/build-report.txt"
 
-      # The `shell` scenario is a person-facing image, so its build wants the binaries that image installs. The
-      # images workflow builds exactly these before the same script; without them the build stops at
-      # "missing target/release/flow-compositor". Built after the kernel, because the images suite's setup is
-      # what installs the X/wayland/input development packages the compositor needs.
-      - name: Build the shell and the picker the image installs
-        run: cargo build --release -p flow-compositor -p flow-wifi -p flow-files -p flow-timeline -p flow-notice
+      # EVERY BINARY THE IMAGE INSTALLS. The scenario builds are person-facing images, so build.sh wants the
+      # system binaries as well as the shell's, and each one it cannot find stops the build with
+      # "missing target/release/<name>". The list is `scripts/test-images.sh`'s own list — the one a person runs
+      # locally — plus the arm's two crates, because a second hand-maintained list is how this step was wrong
+      # twice (flow-compositor, then morph-boot).
+      - name: Build every binary the image installs
+        run: |
+          cargo build --release \
+            -p morph-boot -p strata -p morph-update -p morph-autoupdate -p morph-heal \
+            -p morph-manifest -p morphd -p morph-attest -p morph-capsule \
+            -p flow-compositor -p flow-wifi -p flow-files -p flow-timeline -p flow-notice
 
       - name: The ${{ matrix.scenario }} scenario, with our kernel in slot A
         id: scenario
