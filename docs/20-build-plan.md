@@ -1968,6 +1968,13 @@ well as in the graph, and the volume control's effect.)
 8. **Size:** M. PRs: (1) `VM_AUDIO`, PipeWire in the image, the tone through the graph, both
    captures; (2) the bar's control and the volume keys.
 
+**Progress (2026-11-04): the mechanism exists and was measured on hardware, the shell control does not.**
+`morph-volume status|up|down|set|mute|unmute|toggle` changes the session's default sink and was exercised on the
+reference machine (`100% → down 20 → 80% → up 10 → 90% → muted → unmute → set 100 → 100%`). What is still missing is
+the thing a person uses: a control in the shell, and the on-screen feedback for it. The plumbing was fixed the same
+day — `pipewire`, `pipewire-pulse` and `wireplumber` refuse to run as root and this image autologins as root, so no
+application could make a sound at all until the condition was cleared.
+
 ### D3 · Suspend, resume and battery · open
 **What:** the machine suspends to RAM from the shell (a button on the bar), from the lid and
 from the power button, and comes back with the screen, the keyboard and mouse, and the network
