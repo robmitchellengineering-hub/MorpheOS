@@ -15,6 +15,8 @@
 #   morph-node key        print the deploy-key line an operator adds to the repository
 #   morph-node start      start the loop now
 #   morph-node stop       stop it
+#   morph-node build [c]  build MorpheOS here (whole workspace, or one crate)
+#   morph-node logs       the last lines of the agent's own log
 #
 # Nothing here needs the network except `claim`, which clones the bus.
 set -u
@@ -61,8 +63,24 @@ case "${1:-status}" in
         say "next: morph-node status"
         ;;
     key) "$SETUP" --print-key ;;
+    build)
+        shift
+        # The image ships morph-build in /usr/bin; an older machine may have it on /persist. Take whichever is
+        # there rather than assuming one layout - the first version assumed /persist and said "no morph-build"
+        # on a machine that had it.
+        if command -v morph-build >/dev/null 2>&1; then
+            BUILD=$(command -v morph-build)
+        elif [ -x /persist/morph-build ]; then
+            BUILD=/persist/morph-build
+        else
+            say "no morph-build on this machine (the image ships it at /usr/bin/morph-build)"; exit 1
+        fi
+        "$BUILD" "$@"
+        exit $?
+        ;;
+    logs) journalctl -u "$UNIT" -n 40 --no-pager 2>/dev/null || say "no journal for $UNIT" ;;
     start) systemctl start "$UNIT" && say "started" ;;
     stop) systemctl stop "$UNIT" && say "stopped" ;;
     -h|--help|help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//' ;;
-    *) say "usage: morph-node [status|claim|key|start|stop]" >&2; exit 2 ;;
+    *) say "usage: morph-node [status|claim|key|start|stop|build|logs]" >&2; exit 2 ;;
 esac

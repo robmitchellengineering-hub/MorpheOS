@@ -15,15 +15,22 @@ set -u
 P=/persist
 TOOL="$P/rust-install/bin"
 [ -x "$TOOL/cargo" ] || { echo "morph-build: no toolchain at $TOOL (was /persist wiped?)" >&2; exit 1; }
-[ -d "$P/vendor" ] || { echo "morph-build: no vendored crates at $P/vendor" >&2; exit 1; }
+# TWO WAYS TO HAVE CRATES, and it should not matter which. Vendored crates (carried to a machine with no network)
+# or a network the machine can reach (a fresh flash wipes /persist, so a build node right after a flash has no
+# vendored crates and may well have internet). Refusing on the first without trying the second made a healthy
+# machine look broken - measured 2026-11-04, right after a flash: "builder: morph-build (no vendored crates)".
+if [ -d "$P/vendor" ]; then
+    CARGO_NET_OFFLINE=true
+    export CARGO_NET_OFFLINE
+else
+    echo "morph-build: no vendored crates at $P/vendor - building online" >&2
+fi
 [ -d "$P/morpheos" ] || { echo "morph-build: no source at $P/morpheos" >&2; exit 1; }
 
 export PATH="$TOOL:$PATH"
 export LD_LIBRARY_PATH="$P/rust-install/lib"
 export CARGO_HOME="$P/cargo-home"
 export CARGO_TARGET_DIR="$P/target"
-export CARGO_NET_OFFLINE=true
-
 cd "$P/morpheos" || exit 1
 if [ "$#" -gt 0 ]; then
     exec "$TOOL/cargo" build --release -p "$1"
