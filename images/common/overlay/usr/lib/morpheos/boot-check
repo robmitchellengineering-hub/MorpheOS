@@ -20,14 +20,19 @@ record() {
         log "warning: could not write boot history to $HISTORY"
 }
 
-# A CAP, NOT A HABIT. `systemctl is-system-running --wait` blocks until the boot settles; if anything keeps the
-# system in "starting" it waits the whole timeout and the record is never written - which is what the CI boot test
-# saw on 2026-11-04 (it kills the VM at 300s, and the default here was 300s, so the history file was never
-# created and the test reported "no boot history at all" on an image that booted perfectly).
+# THE CAP IS A WINDOW BETWEEN TWO TESTS, so it is chosen from their numbers rather than by taste.
 #
-# The record matters more than the wait: a boot that has not settled in two minutes is "timeout", which is a
-# verdict this script already knows how to write down.
-state=$(timeout "${MORPH_HEALTH_TIMEOUT:-120}" systemctl is-system-running --wait 2>/dev/null)
+# `systemctl is-system-running --wait` blocks until the boot settles. Unbounded, a boot that never settles means
+# the record is never written: the CI boot test kills the VM at 300s, so a 300s default left it with no history
+# at all ("the image recorded no boot history") on an image that had booted perfectly.
+#
+# Too short is the other failure: the fallback test sabotages flow-shell.service and requires boot-check to NAME
+# it ("failed unit: flow-shell.service"). At 120s boot-check judged the boot before flow-shell had failed, so the
+# trial fell back for the wrong reason and the name never appeared.
+#
+# 240s sits inside both windows: late enough for a sabotaged unit to be reported, early enough that a record
+# always lands before the 300s console test ends. It is a number with two constraints behind it, not a guess.
+state=$(timeout "${MORPH_HEALTH_TIMEOUT:-240}" systemctl is-system-running --wait 2>/dev/null)
 [ -n "$state" ] || state="timeout"
 log "system state: $state"
 status=$(morph-boot status)
