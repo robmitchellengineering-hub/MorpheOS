@@ -83,3 +83,29 @@ Two parts could not simply follow the user:
 The risk taken knowingly: the shell test asserts the picker is *on the screen, in front*, and a picker started by
 its own unit may map without being activated. If that assertion goes red, the fix is activation — not a return to
 root.
+
+## E7's write path and the install harness (2026-11-05, continued)
+
+**The installer can now do the destructive half**, after the refusals pass and with `--yes`: sfdisk the
+layout (script generated in sectors — emitting MiB/GiB would be a silent off-by-512, and the test asserts the
+sizes sum to disk-minus-1MiB, the GPT alignment gap), mkfs the ESP/data/slots, copy the boot tree, `bootctl
+install`, write both slots via `morph-update install`. Each step is guarded and reports its own failure — a
+silent "install failed" is how a person spends an evening guessing which of nine steps it was.
+
+`morph-install` is shipped next to `morph-update`, and `fdisk` + `e2fsprogs` joined BASE_PKGS (dosfstools was
+already there for mkfs.vfat). The build asserts sfdisk and mkfs.ext4 exist — an installer whose tools are
+missing is a machine that silently cannot install itself.
+
+**The harness scenario** is `test-install.sh` + an in-image driver (`morph-install-test.service`): it boots the
+install image with a blank 40 GiB second disk, the driver runs `morph-install` at boot and records the verdict to
+the ESP, and the harness checks the boot disk was refused, the target got esp/root-a/root-b/data, and the boot
+disk's partition table and both slots hash unchanged. Wired into `images.yml`, gated like every other scenario.
+
+**E11 got its last red pixel green.** The non-root shell broke exactly one thing — Firefox, left as root while the
+compositor's Wayland socket became owned by `morph` (0 px of its start page). Doc 28's option A already said "the
+shell *and Firefox* run as morph"; that is now true, and Firefox renders again. The shell scenario then failed in
+`build.sh` silently (slot b, then nothing) — an ERR trap is now in place so the next failure names its line.
+
+**The node's toolchain was wiped by the flash** (it lives on /persist), and a first rustup download was reset by
+the network; retried, it installed rustc 1.99.0, MorpheOS was cloned to /persist/mesh/code, and
+`cargo test -p morph-install` = 11/11 on the node.
