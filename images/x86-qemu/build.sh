@@ -35,7 +35,7 @@ trap 'echo "build.sh: FAILED at line $LINENO: $BASH_COMMAND" >&2' ERR
 
 WORK=${1:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
 SCENARIO=${2:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
-case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell|browser|wifi|broken-shell|hung-shell|recovery|manifest|autoupdate|rewind|full-disk|config-rollback) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
+case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell|browser|wifi|broken-shell|hung-shell|recovery|manifest|autoupdate|rewind|full-disk|config-rollback|install) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
 # `plain` is the one that leaves the CI harness behind and is meant to be booted by a person:
 # the Flow shell drawing the screen and taking the keyboard and mouse, Firefox on a local
 # start page, NetworkManager, and the Wi-Fi picker when there is no network (doc 20, E4 and
@@ -586,6 +586,13 @@ EOF
         [ -f "$dir/usr/lib/systemd/system/flow-wifi.service" ] || {
             echo "flow-wifi.service is missing: the picker would not start, and it must stay root (E11)" >&2; exit 1; }
         cp -a "$HERE/overlay-shell-test/." "$dir/"
+        # E7: a test-only overlay whose unit runs the installer at boot and records the verdict to the ESP.
+        # Copied only for the `install` scenario, never into a person's image.
+        if [ "$SCENARIO" = install ]; then
+            cp -a "$HERE/overlay-install-test/." "$dir/"
+            ln -sf /usr/lib/systemd/system/morph-install-test.service \
+                "$dir/etc/systemd/system/multi-user.target.wants/morph-install-test.service"
+        fi
         # The picker keeps root (NetworkManager needs polkit), so it is a unit of its own (E11).
         ln -sf /usr/lib/systemd/system/flow-wifi.service \
             "$dir/etc/systemd/system/multi-user.target.wants/flow-wifi.service"

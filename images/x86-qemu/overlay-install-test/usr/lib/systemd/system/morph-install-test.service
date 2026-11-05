@@ -1,0 +1,14 @@
+[Unit]
+Description=Run the installer against the second disk, and record the verdict (E7)
+After=multi-user.target
+ConditionPathExists=/usr/bin/morph-install
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/morpheos/morph-install-driver
+StandardOutput=journal+console
+StandardError=journal+console
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target
