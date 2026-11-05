@@ -147,6 +147,14 @@ jobs:
       - name: A corrupted setting rolls back (S8)
         if: ${{ !inputs.quick }}
         run: sudo images/x86-qemu/test-config-rollback.sh "$RUNNER_TEMP/img"
+      # Doc 20, E7: the install stick — boot from one disk, install onto a second, refuse the
+      # boot disk, and leave the boot disk byte-for-byte unchanged. The image's own driver runs
+      # morph-install at boot; verdicts are read off the ESP and the target's partition table.
+      - name: An install onto a second disk (E7)
+        if: ${{ !inputs.quick }}
+        run: |
+          cargo build --release -p morph-install -p morph-update
+          sudo images/x86-qemu/test-install.sh "$RUNNER_TEMP/img"
       # Doc 20, E3 and E10: the compositor drives a real (virtio-gpu) display and the VM's
       # own keyboard and mouse, and every verdict is a screenshot's pixels. Its system
       # libraries came from setup-linux.sh above.
