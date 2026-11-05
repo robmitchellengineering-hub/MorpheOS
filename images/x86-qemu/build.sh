@@ -1082,6 +1082,24 @@ if [ "$HARDWARE" = 1 ]; then
     mcopy -i "$WORK/esp.img" "$RPAY/BLAKE3SUMS" "$RPAY/BLAKE3SUMS.sig" "::/morpheos/recovery/"
 fi
 
+# ── E7: the install payload a person's stick carries ──────────────────────────────────────────────
+# morph-install writes the system into an internal disk with `morph-update install`, whose whole point
+# is that the write is VERIFIED (it reads the device back and checks the digest). That needs a sealed,
+# signed payload — and the signing key is the builder's, never shipped. So the payload is built, sealed
+# and signed HERE, and carried on the ESP at /morpheos/install/, which the running machine sees as
+# /efi/morpheos/install/. slot A's root is the system that gets installed, and its kernel/initrd are the
+# ESP files a fresh slot boots with.
+if [ "$HARDWARE" = 1 ] || [ "$SCENARIO" = install ]; then
+    IPAY="$WORK/install-payload"
+    rm -rf "$IPAY"; mkdir -p "$IPAY"
+    cp "$WORK/root-a.img" "$IPAY/root.img"
+    cp "$ESPDIR/morpheos/a/vmlinuz" "$IPAY/vmlinuz"
+    cp "$ESPDIR/morpheos/a/initrd.img" "$IPAY/initrd.img"
+    "$MORPH_UPDATE" --payload "$IPAY" --release "$RELEASE" seal >/dev/null
+    "$MORPH_UPDATE" --payload "$IPAY" --key "$UPDATE_KEY" sign
+    mcopy -i "$WORK/esp.img" "$IPAY/root.img" "$IPAY/vmlinuz" "$IPAY/initrd.img"         "$IPAY/BLAKE3SUMS" "$IPAY/BLAKE3SUMS.sig" "::/morpheos/install/"
+fi
+
 DISK="$WORK/disk-$SCENARIO.img"
 rm -f "$DISK"
 truncate -s $((1 + ESP_MB + 2 * ROOT_MB + DATA_MB + RECOVERY_MB + 1))M "$DISK"

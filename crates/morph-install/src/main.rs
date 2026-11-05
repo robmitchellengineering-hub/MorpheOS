@@ -125,11 +125,14 @@ fn run_step(
         MakeRootB => run("mkfs.ext4", &["-L", "root-b", part_dev.unwrap()], None)
             .map_err(|e| format!("mkfs.ext4 root-b: {e}")),
         WriteEspTree => {
+            // Mount the TARGET ESP and copy the running stick's boot tree into it. It STAYS mounted: the two
+            // slot writes below hand `--esp` to morph-update, which writes the fresh slot's kernel/initrd and
+            // loader entry there. (An earlier draft umounted here, so the slot writes would have rebuilt the
+            // STICK's own ESP — the wrong disk.)
             let esp = part_dev.unwrap();
             run("mkdir", &["-p", "/tmp/morph-install-esp"], None)
                 .and_then(|_| run("mount", &[esp, "/tmp/morph-install-esp"], None))
                 .and_then(|_| run("cp", &["-a", "/efi/.", "/tmp/morph-install-esp/"], None))
-                .and_then(|_| run("umount", &["/tmp/morph-install-esp"], None))
                 .map_err(|e| format!("copying the ESP tree: {e}"))
         }
         InstallBootEntry => run(
@@ -138,15 +141,40 @@ fn run_step(
             None,
         )
         .map_err(|e| format!("bootctl install: {e}")),
+        // morph-update write is the VERIFIED write: it writes the sealed, signed payload's root image into
+        // the slot device and reads it back to check the digest. The payload is carried on the stick's ESP
+        // (/efi/morpheos/install), sealed and signed at image-build time — the key is the builder's, never
+        // shipped. --slot asserts WHICH slot this partition is; --esp points at the mounted TARGET ESP so the
+        // entry lands on the disk being installed, not on the stick.
         WriteSlotA => run(
             "morph-update",
-            &["install", "--root", part_dev.unwrap()],
+            &[
+                "write",
+                "--payload",
+                "/efi/morpheos/install",
+                "--root",
+                part_dev.unwrap(),
+                "--slot",
+                "a",
+                "--esp",
+                "/tmp/morph-install-esp",
+            ],
             None,
         )
         .map_err(|e| format!("write slot A: {e}")),
         WriteSlotB => run(
             "morph-update",
-            &["install", "--root", part_dev.unwrap()],
+            &[
+                "write",
+                "--payload",
+                "/efi/morpheos/install",
+                "--root",
+                part_dev.unwrap(),
+                "--slot",
+                "b",
+                "--esp",
+                "/tmp/morph-install-esp",
+            ],
             None,
         )
         .map_err(|e| format!("write slot B: {e}")),
