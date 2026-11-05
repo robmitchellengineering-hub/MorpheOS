@@ -56,7 +56,7 @@ fail=0
 # promise E11 makes is "the compositor does not run as root", and the image does not make that promise yet (it
 # runs as root on purpose, because the account model is undecided). The moment flow-shell.service sets User= to
 # anything but root, this check starts enforcing - so the flip cannot be made without the evidence following it.
-facts=$(mtype -i "$DISK@@1M" ::/morph-session-facts.txt 2>/dev/null || true)
+facts=$(mtype -i "$disk@@1M" ::/morph-session-facts.txt 2>/dev/null || true)
 if [ -z "$facts" ]; then
     echo "    note  no /morph-session-facts.txt on the ESP: the session recorder did not run (E11)"
 else
