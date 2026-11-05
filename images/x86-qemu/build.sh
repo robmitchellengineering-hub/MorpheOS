@@ -346,9 +346,9 @@ make_root() {
     # filesystem was made before the user existed.
     mkdir -p "$dir/etc/tmpfiles.d"
     printf 'd /persist/home/morph 0700 morph morph -\n' > "$dir/etc/tmpfiles.d/morph-home.conf"
-    # If the unit ever drifts back to root, the build says so rather than shipping a root session that looks fixed.
-    grep -q '^User=morph' "$dir/usr/lib/systemd/system/flow-shell.service" 2>/dev/null || {
-        echo "flow-shell.service does not set User=morph: the shell would run as root (E11)" >&2; exit 1; }
+    # (The check that the shell unit runs as morph lives with the shell overlay below, not here: this function runs
+    # for every slot BEFORE the shell overlay is applied, so looking for the unit at this point fails the build on a
+    # correct tree. It did, twice, before this line existed to explain it.)
     # The base's /etc/pam.d/login prints the Ubuntu legal notice TWICE at login. It carries
     # two motd lines: `pam_motd.so motd=/run/motd.dynamic` (the welcome + help + legal notice,
     # kept) and `pam_motd.so noupdate` (the DEFAULT motd). Because /etc/motd was never created
@@ -563,6 +563,12 @@ EOF
         # uid, the Wayland socket's owner and what the unit asked for, onto the ESP where the harness can read it.
         # The task says to write this while the compositor still runs as root and watch it go red - which is what it
         # does today: today's answer is uid 0, and the check reports it rather than pretending otherwise.
+        # NOW the unit exists. If it ever drifts back to root, the build says so rather than shipping a root
+        # session that looks fixed - the whole of E11 rests on this line.
+        grep -q '^User=morph' "$dir/usr/lib/systemd/system/flow-shell.service" 2>/dev/null || {
+            echo "flow-shell.service does not set User=morph: the shell would run as root (E11)" >&2; exit 1; }
+        [ -f "$dir/usr/lib/systemd/system/flow-wifi.service" ] || {
+            echo "flow-wifi.service is missing: the picker would not start, and it must stay root (E11)" >&2; exit 1; }
         cp -a "$HERE/overlay-shell-test/." "$dir/"
         # The picker keeps root (NetworkManager needs polkit), so it is a unit of its own (E11).
         ln -sf /usr/lib/systemd/system/flow-wifi.service \
