@@ -27,6 +27,11 @@
 # systemd-boot-efi, and built morph-boot and strata binaries
 # (cargo build --release -p morph-boot -p strata).
 set -euo pipefail
+# A SILENT EXIT IS A WALL. Under `set -e`, a failing command ends the script with no message, and the operator is
+# left inferring which of a hundred lines did it across a 90-minute CI cycle (that is how the shell scenario failed
+# on 2026-11-05: "slot b: 717 MiB" and then nothing). This trap says the line and the failing command, so the next
+# failure is a sentence instead of a guess.
+trap 'echo "build.sh: FAILED at line $LINENO: $BASH_COMMAND" >&2' ERR
 
 WORK=${1:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
 SCENARIO=${2:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
