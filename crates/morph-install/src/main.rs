@@ -57,12 +57,130 @@ fn main() -> ExitCode {
         }
         return ExitCode::FAILURE;
     }
-    println!("\nNOTE: nothing has been written. The install steps are E7's next half.");
+    // ── THE DESTRUCTIVE HALF ──────────────────────────────────────────────────────────────────────────────
+    // Everything below writes to a disk, so it runs only after the refusals came back empty AND the caller said
+    // --yes. Each step is guarded and reports its own failure; test-install.sh exercises this path in a VM, because
+    // running it against a machine you care about is how you lose it.
+    if !yes {
+        println!(
+            "\nrefused to write: run again with --yes <disk> once you have read the plan above"
+        );
+        return ExitCode::FAILURE;
+    }
+    for step in morph_install::InstallStep::all() {
+        let dev = morph_install::partition_device(disk, part_index(step));
+        print!("  → {} ... ", step.label());
+        if let Err(e) = run_step(step, disk, dev.as_deref()) {
+            println!("FAILED: {e}");
+            eprintln!(
+                "    the disk is in a partial state; do not boot it. Fix the cause and re-run."
+            );
+            return ExitCode::FAILURE;
+        }
+        println!("ok");
+    }
+    println!("\ninstalled. Boot the machine from its internal disk and confirm slot A commits.");
     ExitCode::SUCCESS
 }
 
+fn part_index(step: morph_install::InstallStep) -> u32 {
+    use morph_install::InstallStep::*;
+    match step {
+        Repartition => 0,
+        MakeEsp | WriteEspTree | InstallBootEntry => 1,
+        MakeRootA | WriteSlotA => 2,
+        MakeRootB | WriteSlotB => 3,
+        MakeData => 4,
+    }
+}
+
+/// One install step, as a command. Returns an error that names what went wrong rather than a raw exit code.
+fn run_step(
+    step: morph_install::InstallStep,
+    disk: &str,
+    part_dev: Option<&str>,
+) -> Result<(), String> {
+    use morph_install::InstallStep::*;
+    let plan = morph_install::plan(disk_size(disk));
+    match step {
+        Repartition => {
+            let script = morph_install::sfdisk_script(&plan);
+            run("sfdisk", &[disk], Some(&script))?;
+            let _ = run("partprobe", &[disk], None); // make the kernel see the new table
+            Ok(())
+        }
+        MakeEsp => {
+            // mkfs.vfat on the whole-disk-relative device, sized for the partition
+            run(
+                "mkfs.vfat",
+                &["-F", "32", "-n", "ESP", part_dev.unwrap()],
+                None,
+            )
+            .map_err(|e| format!("mkfs.vfat: {e}"))
+        }
+        MakeData => run("mkfs.ext4", &["-L", "data", part_dev.unwrap()], None)
+            .map_err(|e| format!("mkfs.ext4 data: {e}")),
+        MakeRootA => run("mkfs.ext4", &["-L", "root-a", part_dev.unwrap()], None)
+            .map_err(|e| format!("mkfs.ext4 root-a: {e}")),
+        MakeRootB => run("mkfs.ext4", &["-L", "root-b", part_dev.unwrap()], None)
+            .map_err(|e| format!("mkfs.ext4 root-b: {e}")),
+        WriteEspTree => {
+            let esp = part_dev.unwrap();
+            run("mkdir", &["-p", "/tmp/morph-install-esp"], None)
+                .and_then(|_| run("mount", &[esp, "/tmp/morph-install-esp"], None))
+                .and_then(|_| run("cp", &["-a", "/efi/.", "/tmp/morph-install-esp/"], None))
+                .and_then(|_| run("umount", &["/tmp/morph-install-esp"], None))
+                .map_err(|e| format!("copying the ESP tree: {e}"))
+        }
+        InstallBootEntry => run(
+            "bootctl",
+            &["install", "--esp-path=/tmp/morph-install-esp"],
+            None,
+        )
+        .map_err(|e| format!("bootctl install: {e}")),
+        WriteSlotA => run(
+            "morph-update",
+            &["install", "--root", part_dev.unwrap()],
+            None,
+        )
+        .map_err(|e| format!("write slot A: {e}")),
+        WriteSlotB => run(
+            "morph-update",
+            &["install", "--root", part_dev.unwrap()],
+            None,
+        )
+        .map_err(|e| format!("write slot B: {e}")),
+    }
+}
+
+fn run(cmd: &str, args: &[&str], stdin: Option<&str>) -> Result<(), String> {
+    use std::io::Write;
+    let mut c = std::process::Command::new(cmd);
+    c.args(args);
+    c.stdin(std::process::Stdio::piped());
+    c.stdout(std::process::Stdio::null());
+    c.stderr(std::process::Stdio::piped());
+    let mut child = c.spawn().map_err(|e| format!("{cmd}: {e}"))?;
+    if let Some(input) = stdin {
+        child
+            .stdin
+            .as_mut()
+            .unwrap()
+            .write_all(input.as_bytes())
+            .map_err(|e| format!("writing to {cmd}: {e}"))?;
+    }
+    let out = child
+        .wait_with_output()
+        .map_err(|e| format!("waiting on {cmd}: {e}"))?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+    }
+}
+
 fn disk_size(disk: &str) -> u64 {
-    // sysfs reports 512-byte sectors for block devices; a disk given as /dev/vda2 still needs its parent's size.
+    // sysfs reports 512-byte sectors for block devices. A disk given as /dev/vda2 still needs its parent's size.
     let base = disk.rsplit('/').next().unwrap_or("");
     let sectors = std::fs::read_to_string(format!("/sys/class/block/{base}/size"))
         .ok()
@@ -78,11 +196,11 @@ fn is_removable(disk: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// A mountinfo line is: `id parent major:minor root mount_point options [optional...] - fstype source superopts`.
+/// A mountinfo line is: `id parent major:minor root mount_point options … - fstype source superopts`.
 ///
 /// The SOURCE is not field 3 — that is `major:minor`. It sits after the `-` separator, which is why an installer
-/// that reads the wrong field "sees" no mounted partition and erases one that is in use. Returns the mount point
-/// and the source.
+/// that reads the wrong field "sees" no mounted partition and erases one that is in use. Returns (mount_point,
+/// source).
 fn mountinfo_parts(line: &str) -> Option<(&str, &str)> {
     let mut it = line.split_whitespace();
     let _id = it.next()?;
@@ -92,9 +210,8 @@ fn mountinfo_parts(line: &str) -> Option<(&str, &str)> {
     let point = it.next()?;
     let rest: Vec<&str> = it.collect();
     let sep = rest.iter().position(|f| *f == "-")?;
-    let fstype = *rest.get(sep + 1)?;
+    let _fstype = *rest.get(sep + 1)?;
     let source = *rest.get(sep + 2)?;
-    let _ = fstype;
     Some((point, source))
 }
 
@@ -103,8 +220,6 @@ fn mounted_partitions(disk: &str) -> Vec<String> {
     let mut out = Vec::new();
     if let Ok(mountinfo) = std::fs::read_to_string("/proc/self/mountinfo") {
         for line in mountinfo.lines() {
-            // `let ... else` rather than a nested `if let`: clippy flags the nest, and the early continue says the
-            // same thing more plainly.
             let Some((_point, src)) = mountinfo_parts(line) else {
                 continue;
             };
@@ -116,7 +231,7 @@ fn mounted_partitions(disk: &str) -> Vec<String> {
     out
 }
 
-/// The parent disks of `/` and `/efi`, so the installer can refuse the disk it booted from.
+/// The parent disks of `/` and `/efi`, so the installer refuses the disk it booted from.
 fn running_disks() -> Vec<String> {
     let mut out = Vec::new();
     if let Ok(mountinfo) = std::fs::read_to_string("/proc/self/mountinfo") {
@@ -130,15 +245,13 @@ fn running_disks() -> Vec<String> {
             let Some(part) = src.rsplit('/').next() else {
                 continue;
             };
-            if !part.starts_with('v')
-                && !part.starts_with('s')
-                && !part.starts_with("nvme")
-                && !part.starts_with("mmcblk")
+            if !(part.starts_with('v')
+                || part.starts_with('s')
+                || part.starts_with("nvme")
+                || part.starts_with("mmcblk"))
             {
                 continue;
             }
-            // vda1 -> vda, nvme0n1p2 -> nvme0n1, mmcblk0p3 -> mmcblk0. Written as a match rather than a nested
-            // `if let` because clippy is right that the nest says nothing the pattern does not.
             let trimmed = part.trim_end_matches(|c: char| c.is_ascii_digit());
             let disk = match part.split_once('p') {
                 Some((head, _)) if part.starts_with("nvme") || part.starts_with("mmcblk") => head,

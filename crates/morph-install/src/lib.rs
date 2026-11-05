@@ -318,3 +318,112 @@ mod tests {
         }
     }
 }
+
+/// The sfdisk input that lays the plan out, one line per partition, in the order sfdisk expects.
+///
+/// Pure so it can be tested without a disk: the moment this touches a device it is a command, not a function.
+/// `label: gpt` first, then `start=…, size=…, type=…, name=…` for each partition. Sizes are in sectors (512 bytes),
+/// which is what sfdisk reads — producing MiB/GiB here would be a silent off-by-a-factor.
+pub fn sfdisk_script(plan: &[Partition]) -> String {
+    let mut out = String::from("label: gpt\n");
+    for p in plan {
+        let start_s = p.start_bytes / 512;
+        let size_s = p.size_bytes / 512;
+        out.push_str(&format!(
+            "start={start_s}, size={size_s}, type={}, name={}\n",
+            p.type_guid, p.name
+        ));
+    }
+    out
+}
+
+/// Every destructive step an install performs, in order, so the main binary can say *which* step failed rather
+/// than "it failed". A silent "install failed" is how a person spends an evening guessing whether the disk was
+/// partitioned, formatted, or half-written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstallStep {
+    Repartition,
+    MakeEsp,
+    MakeData,
+    MakeRootA,
+    MakeRootB,
+    WriteEspTree,
+    InstallBootEntry,
+    WriteSlotA,
+    WriteSlotB,
+}
+
+impl InstallStep {
+    pub fn label(self) -> &'static str {
+        match self {
+            InstallStep::Repartition => "sfdisk (partition the disk)",
+            InstallStep::MakeEsp => "mkfs.vfat on the ESP",
+            InstallStep::MakeData => "mkfs.ext4 on data",
+            InstallStep::MakeRootA => "mkfs.ext4 on root-a",
+            InstallStep::MakeRootB => "mkfs.ext4 on root-b",
+            InstallStep::WriteEspTree => "copy the boot tree to the ESP",
+            InstallStep::InstallBootEntry => "bootctl install",
+            InstallStep::WriteSlotA => "write slot A",
+            InstallStep::WriteSlotB => "write slot B",
+        }
+    }
+
+    /// The order, as a value, so the tests and the runner share one list rather than two that can drift.
+    pub fn all() -> [InstallStep; 9] {
+        [
+            InstallStep::Repartition,
+            InstallStep::MakeEsp,
+            InstallStep::MakeData,
+            InstallStep::MakeRootA,
+            InstallStep::MakeRootB,
+            InstallStep::WriteEspTree,
+            InstallStep::InstallBootEntry,
+            InstallStep::WriteSlotA,
+            InstallStep::WriteSlotB,
+        ]
+    }
+}
+
+#[cfg(test)]
+mod install_tests {
+    use super::*;
+
+    #[test]
+    fn the_sfdisk_script_is_in_sectors_and_covers_the_disk() {
+        let p = plan(64 * GIB);
+        let script = sfdisk_script(&p);
+        // first line labels the table GPT
+        assert!(script.starts_with("label: gpt\n"), "{script}");
+        // every partition line is size=… and the sizes sum back to the disk (in sectors)
+        let mut sectors: u64 = 0;
+        for (i, part) in p.iter().enumerate() {
+            let line = script.lines().nth(i + 1).unwrap();
+            assert!(line.contains(&format!("name={}", part.name)), "{line}");
+            let size_s = line
+                .split(", ")
+                .find_map(|kv| kv.strip_prefix("size=").and_then(|v| v.parse::<u64>().ok()))
+                .unwrap();
+            sectors += size_s;
+        }
+        assert_eq!(sectors * 512, 64 * GIB);
+    }
+
+    #[test]
+    fn the_steps_name_every_failure_point() {
+        let all = InstallStep::all();
+        assert_eq!(all.len(), 9);
+        // no two labels the same, and every label says what it is
+        let labels: std::collections::HashSet<_> = all.iter().map(|s| s.label()).collect();
+        assert_eq!(labels.len(), all.len());
+        for s in all {
+            assert!(s.label().len() > 10, "{}", s.label());
+        }
+    }
+
+    #[test]
+    fn the_first_and_last_steps_are_the_irreversible_edges() {
+        let all = InstallStep::all();
+        assert_eq!(all[0], InstallStep::Repartition);
+        assert_eq!(all[all.len() - 1], InstallStep::WriteSlotB);
+    }
+}
