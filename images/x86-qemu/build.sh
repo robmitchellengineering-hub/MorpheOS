@@ -346,6 +346,7 @@ make_root() {
     # filesystem was made before the user existed.
     mkdir -p "$dir/etc/tmpfiles.d"
     printf 'd /persist/home/morph 0700 morph morph -\n' > "$dir/etc/tmpfiles.d/morph-home.conf"
+    printf 'd /persist/browser 0755 morph morph -\n' > "$dir/etc/tmpfiles.d/morph-browser.conf"
     # (The check that the shell unit runs as morph lives with the shell overlay below, not here: this function runs
     # for every slot BEFORE the shell overlay is applied, so looking for the unit at this point fails the build on a
     # correct tree. It did, twice, before this line existed to explain it.)
@@ -980,6 +981,7 @@ chmod 0700 "$DATADIR/strata"
 # place it can be set — after the image is written the root is read-only and the directory already belongs to
 # whoever owned it when the filesystem was made.
 chown -R 1000:1000 "$DATADIR/home/morph"
+chown -R 1000:1000 "$DATADIR/browser" 2>/dev/null || mkdir -p "$DATADIR/browser" && chown -R 1000:1000 "$DATADIR/browser"
 
 # Generation 1 (doc 20, S11): the Manifest the machine boots with. `morphd boot` converges to
 # it at every start, and a later `morphd apply` needs it as the generation to replace. The

@@ -9,11 +9,16 @@ After=flow-shell.service
 RequiresMountsFor=/home /persist
 
 [Service]
+# FIREFOX RUNS AS THE PERSON TOO (E11, option A). Doc 28 said "the shell and Firefox run as morph", and keeping it
+# root broke exactly here: the compositor's Wayland socket is owned by morph, and Firefox-as-root no longer
+# rendered (0 px of its start page) while the shell and the picker both worked. Same user, clean socket handshake.
+User=morph
+Group=morph
 Environment=XDG_RUNTIME_DIR=/run/flow WAYLAND_DISPLAY=wayland-0 MOZ_ENABLE_WAYLAND=1
-Environment=HOME=/home/browser NO_AT_BRIDGE=1 XDG_CACHE_HOME=/persist/browser/cache
+Environment=HOME=/persist/home/morph NO_AT_BRIDGE=1 XDG_CACHE_HOME=/persist/browser/cache
 # The socket appears when the compositor has bound it; wait for it rather than guessing.
 ExecStartPre=/bin/sh -c 'for i in $(seq 1 300); do [ -S /run/flow/wayland-0 ] && exit 0; sleep 0.1; done; exit 1'
-ExecStartPre=/bin/mkdir -p /home/browser /persist/browser/profile /persist/browser/cache
+ExecStartPre=/bin/mkdir -p /persist/home/morph /persist/browser/profile /persist/browser/cache
 # Seed the E14 offline-mode prefs once: Firefox starts with no network, and by default its
 # network.manage-offline-status flips it into "Work Offline", which it does not clear when
 # NetworkManager comes up. Seed idempotently (only if absent), so a profile a person has
