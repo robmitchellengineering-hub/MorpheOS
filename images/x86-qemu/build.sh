@@ -76,6 +76,7 @@ MORPH_HEAL=${MORPH_HEAL:-$REPO/target/release/morph-heal}
 MORPH_MANIFEST=${MORPH_MANIFEST:-$REPO/target/release/morph-manifest}
 MORPH_D=${MORPH_D:-$REPO/target/release/morphd}
 MORPH_AUTOUPDATE=${MORPH_AUTOUPDATE:-$REPO/target/release/morph-autoupdate}
+MORPH_INSTALL=${MORPH_INSTALL:-$REPO/target/release/morph-install}
 SDBOOT_EFI=${SDBOOT_EFI:-/usr/lib/systemd/boot/efi/systemd-bootx64.efi}
 FLOW_COMPOSITOR=${FLOW_COMPOSITOR:-$REPO/target/release/flow-compositor}
 SOLID_WINDOW=${SOLID_WINDOW:-$REPO/target/release/solid-window}
@@ -110,7 +111,7 @@ mkdir -p "$WORK"
 # installed, by name, in a hook; the firmware stays the chosen sets below. The extra modules
 # also carry mac80211_hwsim, the simulated Wi-Fi the E5 test connects through.
 BASE="$WORK/rootfs-base"
-BASE_PKGS=systemd-sysv,udev,kmod,linux-image-virtual,initramfs-tools,systemd-boot,dosfstools,libpixman-1-0,libxkbcommon0,libinput10,libseat1,seatd,pciutils,usbutils,pci.ids,usb.ids,linux-firmware-amd-graphics,linux-firmware-intel-graphics,linux-firmware-intel-wireless,linux-firmware-mediatek,linux-firmware-realtek,linux-firmware-broadcom-wireless,firmware-sof-signed,firmware-b43-installer,openssh-server,git,curl,ca-certificates,alsa-utils
+BASE_PKGS=systemd-sysv,udev,kmod,linux-image-virtual,initramfs-tools,systemd-boot,dosfstools,fdisk,e2fsprogs,libpixman-1-0,libxkbcommon0,libinput10,libseat1,seatd,pciutils,usbutils,pci.ids,usb.ids,linux-firmware-amd-graphics,linux-firmware-intel-graphics,linux-firmware-intel-wireless,linux-firmware-mediatek,linux-firmware-realtek,linux-firmware-broadcom-wireless,firmware-sof-signed,firmware-b43-installer,openssh-server,git,curl,ca-certificates,alsa-utils
 MODULES_EXTRA_HOOK='chroot "$1" sh -c "apt-get install -y -q linux-modules-extra-\$(ls /usr/lib/modules | sort -V | tail -1)"'
 BASE_KEY="$BASE_PKGS,(linux-modules-extra)"
 if [ "$(cat "$BASE/.complete" 2>/dev/null)" != "$BASE_KEY" ]; then
@@ -399,6 +400,9 @@ make_root() {
     # The updater and the keys it accepts, in the image's own read-only root: an update
     # medium's own binary could check nothing, so the machine verifies with these (S2).
     install -m 0755 "$MORPH_UPDATE" "$dir/usr/bin/morph-update"
+    # E7: the installer the machine uses to lay out its own internal disk. Not built for the test scenarios (its
+    # write path needs a real target disk), but the binary must be there for a person to run.
+    if [ -x "$MORPH_INSTALL" ]; then install -m 0755 "$MORPH_INSTALL" "$dir/usr/bin/morph-install"; fi
     install -D -m 0644 "$UPDATE_KEY.pub" "$dir/usr/share/morpheos/update-keys/build.pub"
     # The unattended-update entry point (doc 20, S3): the timer runs this, in the image's own
     # read-only root, with its own trusted keys.
@@ -436,6 +440,12 @@ make_root() {
             echo "missing /usr/bin/node: the robmesh agent cannot parse a job without it" >&2
             exit 1
         }
+        # E7: the installer's tools. A machine that can lay out its own internal disk needs sfdisk (fdisk) and
+        # mkfs.ext4 (e2fsprogs) — dosfstools already provides mkfs.vfat. Asserted, not assumed, because an installer
+        # whose tools are missing is a machine that silently cannot install itself.
+        for tool in /usr/sbin/sfdisk /usr/sbin/mkfs.ext4; do
+            [ -x "$dir$tool" ] || { echo "missing $tool: morph-install cannot lay out a disk without it" >&2; exit 1; }
+        done
         # And the libraries the workspace links against. Present as .pc files, which is what pkg-config and the
         # crates' build scripts actually look for — a package that installed only a runtime library would pass a
         # `dpkg -l` check and still fail the build.
