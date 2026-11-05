@@ -405,7 +405,11 @@ mod install_tests {
                 .unwrap();
             sectors += size_s;
         }
-        assert_eq!(sectors * 512, 64 * GIB);
+        // The partitions start at 1 MiB, the GPT alignment gap, so they cover from there to the END of the disk:
+        // the sum of their sizes is `disk - 1 MiB`, not `disk`. Asserting `== 64 GiB` was the bug the first version
+        // of this test carried, and the 1-MiB shortfall it reported was the script being RIGHT.
+        assert_eq!(sectors * 512, 64 * GIB - MIB);
+        assert_eq!(p[0].start_bytes, MIB);
     }
 
     #[test]
