@@ -28,7 +28,7 @@ mkdir -p "$WORK"
 
 # The harness scripts run under sudo, whose PATH has no cargo: build first, as yourself.
 step "build the binaries the images carry"
-cargo build --release -p morph-boot -p strata -p morph-update -p morph-autoupdate -p morph-heal -p morph-manifest -p morphd -p flow-compositor -p flow-wifi -p flow-files -p flow-timeline -p flow-notice
+cargo build --release -p morph-boot -p strata -p morph-update -p morph-autoupdate -p morph-heal -p morph-manifest -p morphd -p morph-install -p flow-compositor -p flow-wifi -p flow-files -p flow-timeline -p flow-notice
 
 if [ "$WHAT" = plain ] || [ "$WHAT" = all ]; then
     step "the image a person uses: build, boot, and read back its report"
@@ -53,6 +53,8 @@ if [ "$WHAT" = scenarios ] || [ "$WHAT" = all ]; then
     sudo images/x86-qemu/test-full-disk.sh "$WORK"
     step "a corrupted setting rolls back (S8)"
     sudo images/x86-qemu/test-config-rollback.sh "$WORK"
+    step "an install onto a second disk (E7)"
+    sudo images/x86-qemu/test-install.sh "$WORK"
 fi
 if [ "$WHAT" = shell ] || [ "$WHAT" = all ]; then
     step "the shell on a real display, with a keyboard and a mouse"
