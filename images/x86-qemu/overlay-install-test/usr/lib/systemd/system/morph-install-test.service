@@ -1,6 +1,8 @@
 [Unit]
 Description=Run the installer against the second disk, and record the verdict (E7)
 After=multi-user.target
+# The payload lives on the data partition, so it must be mounted before the driver reads it.
+RequiresMountsFor=/persist
 ConditionPathExists=/usr/bin/morph-install
 
 [Service]

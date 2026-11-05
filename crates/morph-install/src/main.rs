@@ -142,8 +142,8 @@ fn run_step(
         )
         .map_err(|e| format!("bootctl install: {e}")),
         // morph-update write is the VERIFIED write: it writes the sealed, signed payload's root image into
-        // the slot device and reads it back to check the digest. The payload is carried on the stick's ESP
-        // (/efi/morpheos/install), sealed and signed at image-build time — the key is the builder's, never
+        // the slot device and reads it back to check the digest. The payload is carried on the stick's DATA partition
+        // (/persist/morpheos/install), sealed and signed at image-build time — the key is the builder's, never
         // shipped. --slot asserts WHICH slot this partition is; --esp points at the mounted TARGET ESP so the
         // entry lands on the disk being installed, not on the stick.
         WriteSlotA => run(
@@ -151,7 +151,7 @@ fn run_step(
             &[
                 "write",
                 "--payload",
-                "/efi/morpheos/install",
+                "/persist/morpheos/install",
                 "--root",
                 part_dev.unwrap(),
                 "--slot",
@@ -167,7 +167,7 @@ fn run_step(
             &[
                 "write",
                 "--payload",
-                "/efi/morpheos/install",
+                "/persist/morpheos/install",
                 "--root",
                 part_dev.unwrap(),
                 "--slot",

@@ -1028,6 +1028,11 @@ ESP_MB=300 ROOT_MB=2400 DATA_MB=256
 if [ "$SCENARIO" = autoupdate ]; then
     DATA_MB=2048
 fi
+# E7: the install payload's root image (slot A's system, ~700 MiB) is carried on the DATA partition, so the
+# install scenario needs room there too — same reason as autoupdate.
+if [ "$SCENARIO" = install ]; then
+    DATA_MB=2048
+fi
 # A stick-sized image must be able to hold a person's work — and, for the mesh, a toolchain and a work
 # tree, because the machine has no other writable place: the root is read-only and /persist is this
 # partition. At 256 MiB that is impossible (measured on the first real hardware node, 2026-10-30: "the
@@ -1052,6 +1057,23 @@ for slot in a b; do
     rm -f "$WORK/root-$slot.img"
     mkfs.ext4 -q -L "root-$slot" -d "$WORK/root-$slot" "$WORK/root-$slot.img" "${ROOT_MB}M"
 done
+# ── E7: the install payload a person's stick carries ──────────────────────────────────────────────
+# morph-install writes the system into an internal disk with `morph-update write`, whose whole point is that
+# the write is VERIFIED (it re-reads the device and checks the digest). That needs a sealed, signed payload —
+# and the signing key is the builder's, never shipped. The payload is built, sealed and signed HERE, and carried
+# on the DATA partition at /morpheos/install/ (the running machine sees /persist/morpheos/install/): the ESP is
+# only 300 MiB and cannot hold slot A's ~700 MiB root image, the data partition can. slot A's root is the system
+# that gets installed, and its kernel/initrd are the files a fresh slot boots with.
+if [ "$HARDWARE" = 1 ] || [ "$SCENARIO" = install ]; then
+    IPAY="$DATADIR/morpheos/install"
+    rm -rf "$IPAY"; mkdir -p "$IPAY"
+    cp "$WORK/root-a.img" "$IPAY/root.img"
+    cp "$ESPDIR/morpheos/a/vmlinuz" "$IPAY/vmlinuz"
+    cp "$ESPDIR/morpheos/a/initrd.img" "$IPAY/initrd.img"
+    "$MORPH_UPDATE" --payload "$IPAY" --release "$RELEASE" seal >/dev/null
+    "$MORPH_UPDATE" --payload "$IPAY" --key "$UPDATE_KEY" sign
+fi
+
 rm -f "$WORK/data.img"
 mkfs.ext4 -q -L data -d "$DATADIR" "$WORK/data.img" "${DATA_MB}M"
 # The recovery root (S4): slot A's tree with every boot service dropped — assembled
@@ -1080,24 +1102,6 @@ if [ "$HARDWARE" = 1 ]; then
     "$MORPH_UPDATE" --payload "$RPAY" --release "$RELEASE" seal >/dev/null
     "$MORPH_UPDATE" --payload "$RPAY" --key "$UPDATE_KEY" sign
     mcopy -i "$WORK/esp.img" "$RPAY/BLAKE3SUMS" "$RPAY/BLAKE3SUMS.sig" "::/morpheos/recovery/"
-fi
-
-# ── E7: the install payload a person's stick carries ──────────────────────────────────────────────
-# morph-install writes the system into an internal disk with `morph-update install`, whose whole point
-# is that the write is VERIFIED (it reads the device back and checks the digest). That needs a sealed,
-# signed payload — and the signing key is the builder's, never shipped. So the payload is built, sealed
-# and signed HERE, and carried on the ESP at /morpheos/install/, which the running machine sees as
-# /efi/morpheos/install/. slot A's root is the system that gets installed, and its kernel/initrd are the
-# ESP files a fresh slot boots with.
-if [ "$HARDWARE" = 1 ] || [ "$SCENARIO" = install ]; then
-    IPAY="$WORK/install-payload"
-    rm -rf "$IPAY"; mkdir -p "$IPAY"
-    cp "$WORK/root-a.img" "$IPAY/root.img"
-    cp "$ESPDIR/morpheos/a/vmlinuz" "$IPAY/vmlinuz"
-    cp "$ESPDIR/morpheos/a/initrd.img" "$IPAY/initrd.img"
-    "$MORPH_UPDATE" --payload "$IPAY" --release "$RELEASE" seal >/dev/null
-    "$MORPH_UPDATE" --payload "$IPAY" --key "$UPDATE_KEY" sign
-    mcopy -i "$WORK/esp.img" "$IPAY/root.img" "$IPAY/vmlinuz" "$IPAY/initrd.img"         "$IPAY/BLAKE3SUMS" "$IPAY/BLAKE3SUMS.sig" "::/morpheos/install/"
 fi
 
 DISK="$WORK/disk-$SCENARIO.img"
