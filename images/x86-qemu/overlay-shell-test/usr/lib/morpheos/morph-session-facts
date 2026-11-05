@@ -1,0 +1,48 @@
+#!/bin/sh
+# Write what the session really is, where the harness can read it.
+#
+# Output (one `key=value` per line, on the ESP):
+#   compositor_pid=<pid or none>
+#   compositor_uid=<uid or none>        the real uid of the running compositor
+#   socket_owner=<uid or none>          the owner of /run/flow/wayland-0
+#   unit_user=<value of User= or root>  what the unit asked systemd for
+#   passwd_morph=<uid of user morph, or none>
+#
+# `unit_user` and `compositor_uid` being different is the failure this exists to catch: a unit that says one thing
+# and a process that does another.
+set -u
+OUT=${MORPH_SESSION_FACTS:-/efi/morph-session-facts.txt}
+mkdir -p "$(dirname "$OUT")" 2>/dev/null || true
+
+pid=""
+for i in $(seq 1 60); do
+    pid=$(pgrep -x flow-compositor 2>/dev/null | head -1)
+    [ -n "$pid" ] && break
+    sleep 1
+done
+
+uid=none
+[ -n "$pid" ] && uid=$(awk '/^Uid:/{print $2}' "/proc/$pid/status" 2>/dev/null)
+[ -n "${uid:-}" ] || uid=none
+
+sock=/run/flow/wayland-0
+sowner=none
+if [ -e "$sock" ]; then
+    # stat -c is GNU coreutils, which the image has; busybox would need -c too.
+    sowner=$(stat -c %u "$sock" 2>/dev/null || echo none)
+fi
+
+unit_user=$(systemctl show -p User --value flow-shell.service 2>/dev/null)
+[ -n "${unit_user:-}" ] || unit_user=root
+
+passwd_morph=$(awk -F: '$1=="morph"{print $3}' /etc/passwd 2>/dev/null | head -1)
+[ -n "${passwd_morph:-}" ] || passwd_morph=none
+
+{
+    printf 'compositor_pid=%s\n' "${pid:-none}"
+    printf 'compositor_uid=%s\n' "$uid"
+    printf 'socket_owner=%s\n' "$sowner"
+    printf 'unit_user=%s\n' "$unit_user"
+    printf 'passwd_morph=%s\n' "$passwd_morph"
+} > "$OUT"
+sync "$OUT" 2>/dev/null || sync

@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use morph_boot::{BackendOptions, Slot};
-use morph_update::{Layout, Payload, TrustedKeys, install};
+use morph_update::{Layout, Payload, TrustedKeys, install, write_slot};
 
 const USAGE: &str = "\
 usage: morph-update [options] <command>
@@ -181,6 +181,25 @@ fn run(o: &Opts) -> Result<(), String> {
                 "slot {} holds the new system; boot it once with: morph-boot trial {} --reboot",
                 outcome.slot, outcome.slot
             );
+            Ok(())
+        }
+        ["write"] => {
+            // E7: the mechanical half, no policy. `install` refuses a slot that is not the running system's
+            // inactive one — correct for updates, wrong for a fresh disk, which has no running slot at all. This
+            // writes exactly the slot named by --root/--slot and verifies it, which is what an installer needs.
+            let mut payload = open()?;
+            let slot = o.slot.ok_or("write needs --slot a|b")?;
+            let root = o
+                .root
+                .clone()
+                .ok_or("write needs --root PATH (the slot device)")?;
+            let layout = Layout {
+                esp: o.backend.esp.clone(),
+                root_device: root,
+                running_release: 0, // write_slot does not consult it; the release gate lives in install
+            };
+            let outcome = write_slot(&mut payload, &layout, slot).map_err(|e| e.to_string())?;
+            println!("{}", serde_json::to_string(&outcome).unwrap());
             Ok(())
         }
         _ => Err(format!("unknown command\n{USAGE}")),

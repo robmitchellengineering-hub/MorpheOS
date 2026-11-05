@@ -28,6 +28,14 @@ on:
   # unnoticed breakage.
   pull_request:
   workflow_dispatch:
+    # A FAST PATH. The whole suite is ~90 minutes, and most image changes only need to know "does it build and
+    # boot". quick=true stops after the boot check and the artefact upload; leave it false for a real run.
+    # Added 2026-11-04 after a day of 90-minute feedback loops on image work.
+    inputs:
+      quick:
+        description: "Only build, boot and publish the image (skip the long scenarios)"
+        type: boolean
+        default: false
 
 jobs:
   x86-ab-fallback:
@@ -101,16 +109,19 @@ jobs:
       # ransomware test, and `main` grew the `heal` scenario. Kept both — a merge that
       # drops one of them is the quiet way to lose a test.
       - name: Good, unhealthy, crashing, updating and healing
+        if: ${{ !inputs.quick }}
         run: sudo images/x86-qemu/test-fallback.sh "$RUNNER_TEMP/img" good unhealthy crash update heal
       # Doc 20, S3: the autoupdate image's timer checks the CI host's update server over HTTPS
       # and installs a signed payload with no input from the harness after boot. Verdicts read
       # off the disk (boot history, slot B's root) and the server's request log.
       - name: An update arrives by itself over HTTPS (S3 — good, bad, tampered)
+        if: ${{ !inputs.quick }}
         run: |
           sudo images/x86-qemu/test-autoupdate.sh "$RUNNER_TEMP/img" good
           sudo images/x86-qemu/test-autoupdate.sh "$RUNNER_TEMP/img" bad
           sudo images/x86-qemu/test-autoupdate.sh "$RUNNER_TEMP/img" tampered
       - name: Ransomware against Strata
+        if: ${{ !inputs.quick }}
         run: sudo images/x86-qemu/test-ransomware.sh "$RUNNER_TEMP/img"
       # Doc 20, S4: the recovery image. Arm the recovery entry by hand (recovery-boot), then
       # zero both slot partitions from the harness (wipe) — each time the machine must rebuild
@@ -118,24 +129,37 @@ jobs:
       # by the retention policy and the shell warns. Verdicts read off the disk: boot history,
       # the copied store (the host's own `strata`), dumpe2fs free space, and a screendump.
       - name: A full disk does not break the machine (S7)
+        if: ${{ !inputs.quick }}
         run: sudo images/x86-qemu/test-full-disk.sh "$RUNNER_TEMP/img"
       # both slots and boot slot A committed. Verdicts read off the disk: boot history,
       # recovery record, /etc/hostname on both slots, and /home checksums on the data partition.
       - name: The recovery image (S4)
+        if: ${{ !inputs.quick }}
         run: sudo images/x86-qemu/test-recovery.sh "$RUNNER_TEMP/img"
       # Doc 20, S11: morphd obeys the Manifest — a new generation changes the hostname and
       # Strata's retention (read off the machine), and a refused change is rolled back.
       - name: The Manifest is obeyed (S11)
+        if: ${{ !inputs.quick }}
         run: sudo images/x86-qemu/test-manifest.sh "$RUNNER_TEMP/img"
       # Doc 20, S8: a corrupt Manifest generation rolls back — morphd finds the corrupted file
       # at boot, rolls back to the newest good generation, and the shell names it. Verdicts read
       # off the disk: the store's `current` and heal.jsonl, and a screendump of the notice.
       - name: A corrupted setting rolls back (S8)
+        if: ${{ !inputs.quick }}
         run: sudo images/x86-qemu/test-config-rollback.sh "$RUNNER_TEMP/img"
+      # Doc 20, E7: the install stick — boot from one disk, install onto a second, refuse the
+      # boot disk, and leave the boot disk byte-for-byte unchanged. The image's own driver runs
+      # morph-install at boot; verdicts are read off the ESP and the target's partition table.
+      - name: An install onto a second disk (E7)
+        if: ${{ !inputs.quick }}
+        run: |
+          cargo build --release -p morph-install -p morph-update
+          sudo images/x86-qemu/test-install.sh "$RUNNER_TEMP/img"
       # Doc 20, E3 and E10: the compositor drives a real (virtio-gpu) display and the VM's
       # own keyboard and mouse, and every verdict is a screenshot's pixels. Its system
       # libraries came from setup-linux.sh above.
       - name: The Flow shell on a real display, with a keyboard and a mouse
+        if: ${{ !inputs.quick }}
         run: |
           cargo build --release -p flow-compositor -p flow-wifi -p flow-files -p flow-timeline -p flow-notice
           sudo images/x86-qemu/test-shell.sh "$RUNNER_TEMP/img"
@@ -143,21 +167,26 @@ jobs:
       # trialled once and falls back, like `unhealthy`. The second is why the shell is
       # Type=notify and ready only with a frame on the display.
       - name: A broken or hung shell update falls back
+        if: ${{ !inputs.quick }}
         run: sudo images/x86-qemu/test-fallback.sh "$RUNNER_TEMP/img" broken-shell hung-shell
       # Doc 20, E4: Firefox (Mozilla's own build, from packages.mozilla.org) on the shell,
       # showing a local page; the verdict is the page's colours in a screendump.
       - name: A browser on the Flow shell
+        if: ${{ !inputs.quick }}
         run: sudo images/x86-qemu/test-browser.sh "$RUNNER_TEMP/img"
       # Doc 20, E5: the Wi-Fi picker joins a WPA2 network (the kernel's simulated radios,
       # mac80211_hwsim) through NetworkManager: a wrong password, then the right one, typed
       # on the VM's keyboard; verdicts from screendumps and the network's own DHCP log.
       - name: Joining Wi-Fi with the picker
+        if: ${{ !inputs.quick }}
         run: sudo images/x86-qemu/test-wifi.sh "$RUNNER_TEMP/img"
       - name: A USB stick mounts itself (E18)
+        if: ${{ !inputs.quick }}
         run: sudo images/x86-qemu/test-usb.sh "$RUNNER_TEMP/img"
       # Doc 20, S6: the rewind timeline opens by itself on Strata's alert, the harness
       # confirms the rewind on the VM's keyboard, and the disk is read back after poweroff.
       - name: The rewind timeline opens and the person confirms it
+        if: ${{ !inputs.quick }}
         run: sudo images/x86-qemu/test-rewind.sh "$RUNNER_TEMP/img"
       - name: Keep serial logs
         if: always()

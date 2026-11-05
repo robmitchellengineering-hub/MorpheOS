@@ -1213,6 +1213,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "morph-install"
+version = "0.1.0"
+
+[[package]]
 name = "morph-manifest"
 version = "0.1.0"
 dependencies = [
