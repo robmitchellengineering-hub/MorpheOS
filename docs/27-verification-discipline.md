@@ -1,4 +1,4 @@
-# 23 · Verification discipline — what the pacland method gives MorpheOS
+# 27 · Verification discipline — what the pacland method gives MorpheOS
 
 Status: design note (no code). Written 2026-11-06 after Rob asked what the pacland
 "belief system / maths proof / quantum gravity" work offers MorpheOS.

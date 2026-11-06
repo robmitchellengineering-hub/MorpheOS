@@ -72,7 +72,7 @@ pub fn validate(m: &Manifest) -> Report {
     r
 }
 
-/// The claim judge (doc 23 §2.1): grade every claim the Conductor makes.
+/// The claim judge (doc 27 §2.1): grade every claim the Conductor makes.
 ///
 /// A claim is only as strong as the falsifier it names:
 /// - `demonstrated` with no falsifier is an **error** — it is not demonstrated.
@@ -80,7 +80,7 @@ pub fn validate(m: &Manifest) -> Report {
 /// - `not-demonstrated` is honest and passes.
 /// - an empty id, a duplicate id, or an empty remedy is a **warning**.
 fn claims(m: &Manifest, r: &mut Report) {
-    // The tension register (doc 23 §2.4): facts that cannot both be true. Two claims with one
+    // The tension register (doc 27 §2.4): facts that cannot both be true. Two claims with one
     // id are two statements about the same subject, so when they disagree that is a tension with
     // a discriminator, not a silent overwrite.
     let mut seen: HashMap<String, &Claim> = HashMap::new();
@@ -144,7 +144,7 @@ fn claims(m: &Manifest, r: &mut Report) {
     }
 }
 
-/// The first field on which two claims differ, as the tension's discriminator (doc 23 §2.4).
+/// The first field on which two claims differ, as the tension's discriminator (doc 27 §2.4).
 fn claim_diff(a: &Claim, b: &Claim) -> String {
     if a.status != b.status {
         format!("status ({} vs {})", a.status.as_str(), b.status.as_str())

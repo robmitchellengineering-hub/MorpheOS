@@ -1,5 +1,5 @@
 //! A claim the Conductor makes about a machine, and the discipline attached to it
-//! (doc 23 §2.1).
+//! (doc 27 §2.1).
 //!
 //! A claim is only as strong as the falsifier it names: a claim marked
 //! `demonstrated` with no falsifier is refused, not trusted — *"a check that
@@ -56,7 +56,7 @@ impl ClaimStatus {
     }
 }
 
-/// One claim about the machine, with the discipline attached (doc 23 §2.1).
+/// One claim about the machine, with the discipline attached (doc 27 §2.1).
 ///
 /// Fields, and why each is required by the discipline:
 /// - `oracle_class` — *what kind of check could settle this*; a claim without a
