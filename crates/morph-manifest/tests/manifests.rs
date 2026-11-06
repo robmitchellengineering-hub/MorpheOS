@@ -413,3 +413,114 @@ fn a_temporary_name_is_appended_so_two_generations_cannot_collide() {
     assert_eq!(written["storage"]["min_free_percent"], 12);
     assert!(leftovers(&target).is_empty(), "{:?}", leftovers(&target));
 }
+
+// ── the claim judge (doc 23 §2.1) ────────────────────────────────────────────────
+
+#[test]
+fn a_demonstrated_claim_without_a_falsifier_is_refused() {
+    let m = resolve(
+        &with(
+            r#"
+[[claims]]
+id = "boot-a-committed"
+oracle_class = "boot-count"
+remedy = "roll back to slot A"
+status = "demonstrated"
+"#,
+        ),
+        "t",
+    )
+    .unwrap();
+    let r = validate(&m);
+    assert!(!r.is_ok());
+    assert!(r.has("CLAIM-NO-FALSIFIER"), "{:#?}", r.findings);
+}
+
+#[test]
+fn a_demonstrated_claim_with_a_falsifier_passes() {
+    let m = resolve(
+        &with(
+            r#"
+[[claims]]
+id = "boot-a-committed"
+oracle_class = "boot-count"
+falsifier = "the failed-boot counter advances past 1"
+remedy = "roll back to slot A"
+status = "demonstrated"
+"#,
+        ),
+        "t",
+    )
+    .unwrap();
+    let r = validate(&m);
+    assert!(!r.has("CLAIM-NO-FALSIFIER"), "{:#?}", r.findings);
+    assert!(r.is_ok(), "{:#?}", r.findings);
+}
+
+#[test]
+fn a_stated_claim_is_a_warning_not_a_pass() {
+    let m = resolve(
+        &with(
+            r#"
+[[claims]]
+id = "boot-a-committed"
+oracle_class = "boot-count"
+remedy = "roll back to slot A"
+status = "stated"
+"#,
+        ),
+        "t",
+    )
+    .unwrap();
+    let r = validate(&m);
+    assert!(r.has("CLAIM-STATED"), "{:#?}", r.findings);
+    assert!(r.is_ok(), "a warning must not block: {:#?}", r.findings);
+}
+
+#[test]
+fn a_not_demonstrated_claim_is_honest_and_passes() {
+    let m = resolve(
+        &with(
+            r#"
+[[claims]]
+id = "boot-a-committed"
+oracle_class = "boot-count"
+remedy = "roll back to slot A"
+status = "not-demonstrated"
+"#,
+        ),
+        "t",
+    )
+    .unwrap();
+    let r = validate(&m);
+    assert!(!r.has("CLAIM-NO-FALSIFIER"), "{:#?}", r.findings);
+    assert!(!r.has("CLAIM-STATED"), "{:#?}", r.findings);
+    assert!(r.is_ok(), "{:#?}", r.findings);
+}
+
+#[test]
+fn two_claims_with_one_id_are_a_tension_not_a_silent_overwrite() {
+    let m = resolve(
+        &with(
+            r#"
+[[claims]]
+id = "boot-a-committed"
+oracle_class = "boot-count"
+falsifier = "the counter advances"
+remedy = "roll back"
+status = "demonstrated"
+
+[[claims]]
+id = "boot-a-committed"
+oracle_class = "boot-count"
+falsifier = "the counter advances"
+remedy = "roll back"
+status = "demonstrated"
+"#,
+        ),
+        "t",
+    )
+    .unwrap();
+    let r = validate(&m);
+    assert!(r.has("CLAIM-DUP"), "{:#?}", r.findings);
+}

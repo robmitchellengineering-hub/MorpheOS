@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
 
+use crate::claim::ClaimStatus;
 use crate::model::{
     IntentClass, KernelVariant, MANIFEST_VERSION, Manifest, Profile, ReplicaKind, Runtime,
 };
@@ -66,8 +67,66 @@ pub fn validate(m: &Manifest) -> Report {
     let mut r = Report::default();
     structure(m, &mut r);
     invariants(m, &mut r);
+    claims(m, &mut r);
     advisories(m, &mut r);
     r
+}
+
+/// The claim judge (doc 23 §2.1): grade every claim the Conductor makes.
+///
+/// A claim is only as strong as the falsifier it names:
+/// - `demonstrated` with no falsifier is an **error** — it is not demonstrated.
+/// - `stated` is a **warning** — a statement is not a demonstration.
+/// - `not-demonstrated` is honest and passes.
+/// - an empty id, a duplicate id, or an empty remedy is a **warning**.
+fn claims(m: &Manifest, r: &mut Report) {
+    let mut seen = HashSet::new();
+    for c in &m.claims {
+        let path = format!("/claims[{}]", c.id);
+        if c.id.trim().is_empty() {
+            r.error("CLAIM-ID", "/claims", "a claim needs a non-empty id");
+        }
+        if !seen.insert(c.id.clone()) {
+            r.warn(
+                "CLAIM-DUP",
+                &path,
+                "two claims share this id — a tension to resolve, not a silent overwrite",
+            );
+        }
+        if c.remedy.trim().is_empty() {
+            r.warn(
+                "CLAIM-REMEDY",
+                &path,
+                "a claim should name its remedy — what to do when the falsifier fires",
+            );
+        }
+        match c.status {
+            ClaimStatus::Demonstrated => {
+                let has_falsifier = c.falsifier.as_deref().is_some_and(|f| !f.trim().is_empty());
+                if !has_falsifier {
+                    r.error(
+                        "CLAIM-NO-FALSIFIER",
+                        &path,
+                        format!(
+                            "a claim marked demonstrated must name its falsifier (oracle class {}); \
+                             without one it is NOT_DEMONSTRATED, never demonstrated",
+                            c.oracle_class.as_str()
+                        ),
+                    );
+                }
+            }
+            ClaimStatus::Stated => {
+                r.warn(
+                    "CLAIM-STATED",
+                    &path,
+                    "a stated claim is a statement, not a demonstration — name a falsifier and check it",
+                );
+            }
+            ClaimStatus::NotDemonstrated => {
+                // Honest about being unproven: no finding.
+            }
+        }
+    }
 }
 
 fn structure(m: &Manifest, r: &mut Report) {

@@ -89,9 +89,23 @@ five graders, a tension register, constraint-first, and "NOT_DEMONSTRATED" — i
 portable artifact, and it lands on the Conductor, the Manifest and self-healing
 directly.
 
-## 5. First concrete slice (proposed, not started)
+## 5. First concrete slice — implemented (this change)
 
-The smallest real piece: a **claim type** in Rust — `{ oracle_class, falsifier,
-remedy, status }` — with a `judge` that refuses `status = demonstrated` when there
-is no falsifier. Then hang it off the Manifest validator so every invariant is a
-claim, not a bare assertion. This is a `proposed` doc-20 task, not work done here.
+The smallest real piece, now landed: a **claim type** in Rust —
+`{ id, oracle_class, falsifier, remedy, status }` in `crates/morph-manifest/src/claim.rs`,
+and a **judge** in `validate.rs` that grades every claim on the Manifest:
+
+- `demonstrated` with no falsifier → **error** (`CLAIM-NO-FALSIFIER`) — it is
+  not demonstrated.
+- `stated` → **warning** (`CLAIM-STATED`) — a statement is not a demonstration.
+- `not-demonstrated` → passes (honest about being unproven).
+- empty/duplicate id, empty remedy → **warning** (a tension, not a silent overwrite).
+
+`claims` is a `#[serde(default)]` field on the `Manifest`, so existing manifests
+are unchanged. The risk table classifies `/claims` as security-critical (marking
+something "demonstrated" is exactly the hole the judge closes). The judge's key
+rule is mutation-tested: break "no falsifier → error" and
+`a_demonstrated_claim_without_a_falsifier_is_refused` fails.
+
+Still `proposed` (not built): the five graders, the tension register on Strata,
+and wiring the judge into `morphd` so it actually refuses a claim at apply time.
