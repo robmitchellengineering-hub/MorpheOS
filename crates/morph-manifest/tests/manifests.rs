@@ -413,3 +413,191 @@ fn a_temporary_name_is_appended_so_two_generations_cannot_collide() {
     assert_eq!(written["storage"]["min_free_percent"], 12);
     assert!(leftovers(&target).is_empty(), "{:?}", leftovers(&target));
 }
+
+// ── the claim judge (doc 23 §2.1) ────────────────────────────────────────────────
+
+#[test]
+fn a_demonstrated_claim_without_a_falsifier_is_refused() {
+    let m = resolve(
+        &with(
+            r#"
+[[claims]]
+id = "boot-a-committed"
+oracle_class = "boot-count"
+remedy = "roll back to slot A"
+status = "demonstrated"
+"#,
+        ),
+        "t",
+    )
+    .unwrap();
+    let r = validate(&m);
+    assert!(!r.is_ok());
+    assert!(r.has("CLAIM-NO-FALSIFIER"), "{:#?}", r.findings);
+}
+
+#[test]
+fn a_demonstrated_claim_with_a_falsifier_passes() {
+    let m = resolve(
+        &with(
+            r#"
+[[claims]]
+id = "boot-a-committed"
+oracle_class = "boot-count"
+falsifier = "the failed-boot counter advances past 1"
+remedy = "roll back to slot A"
+status = "demonstrated"
+"#,
+        ),
+        "t",
+    )
+    .unwrap();
+    let r = validate(&m);
+    assert!(!r.has("CLAIM-NO-FALSIFIER"), "{:#?}", r.findings);
+    assert!(r.is_ok(), "{:#?}", r.findings);
+}
+
+#[test]
+fn a_stated_claim_is_a_warning_not_a_pass() {
+    let m = resolve(
+        &with(
+            r#"
+[[claims]]
+id = "boot-a-committed"
+oracle_class = "boot-count"
+remedy = "roll back to slot A"
+status = "stated"
+"#,
+        ),
+        "t",
+    )
+    .unwrap();
+    let r = validate(&m);
+    assert!(r.has("CLAIM-STATED"), "{:#?}", r.findings);
+    assert!(r.is_ok(), "a warning must not block: {:#?}", r.findings);
+}
+
+#[test]
+fn a_not_demonstrated_claim_is_honest_and_passes() {
+    let m = resolve(
+        &with(
+            r#"
+[[claims]]
+id = "boot-a-committed"
+oracle_class = "boot-count"
+remedy = "roll back to slot A"
+status = "not-demonstrated"
+"#,
+        ),
+        "t",
+    )
+    .unwrap();
+    let r = validate(&m);
+    assert!(!r.has("CLAIM-NO-FALSIFIER"), "{:#?}", r.findings);
+    assert!(!r.has("CLAIM-STATED"), "{:#?}", r.findings);
+    assert!(r.is_ok(), "{:#?}", r.findings);
+}
+
+#[test]
+fn two_claims_that_disagree_are_a_tension_with_a_discriminator() {
+    // Doc 23 §2.4: a tension is two facts that cannot both be true, named with the cheapest
+    // discriminator. One claim says the boot is demonstrated, another says the same id is not
+    // demonstrated — the same subject cannot be both.
+    let m = resolve(
+        &with(
+            r#"
+[[claims]]
+id = "boot-a-committed"
+oracle_class = "boot-count"
+falsifier = "the counter advances"
+remedy = "roll back"
+status = "demonstrated"
+
+[[claims]]
+id = "boot-a-committed"
+oracle_class = "boot-count"
+falsifier = "the counter advances"
+remedy = "roll back"
+status = "not-demonstrated"
+"#,
+        ),
+        "t",
+    )
+    .unwrap();
+    let r = validate(&m);
+    assert!(r.has("CLAIM-TENSION"), "{:#?}", r.findings);
+    assert!(
+        !r.has("CLAIM-DUP"),
+        "a disagreement is a tension, not a duplicate: {:#?}",
+        r.findings
+    );
+}
+
+#[test]
+fn the_same_claim_declared_twice_is_a_duplicate_not_a_tension() {
+    let m = resolve(
+        &with(
+            r#"
+[[claims]]
+id = "boot-a-committed"
+oracle_class = "boot-count"
+falsifier = "the counter advances"
+remedy = "roll back"
+status = "demonstrated"
+
+[[claims]]
+id = "boot-a-committed"
+oracle_class = "boot-count"
+falsifier = "the counter advances"
+remedy = "roll back"
+status = "demonstrated"
+"#,
+        ),
+        "t",
+    )
+    .unwrap();
+    let r = validate(&m);
+    assert!(r.has("CLAIM-DUP"), "{:#?}", r.findings);
+    assert!(!r.has("CLAIM-TENSION"), "{:#?}", r.findings);
+}
+
+#[test]
+fn a_demonstrated_claim_with_no_falsifier_is_refused_at_apply_and_writes_nothing() {
+    // The judge is enforcement, not a report: a claim marked `demonstrated` with no falsifier
+    // must refuse the apply — doc 23 §2.1 exists precisely so the check cannot be skipped at the
+    // one place it would actually take effect. `apply` refuses an invalid generation, and
+    // `validate` now grades claims, so the two must meet here.
+    let old = resolve_value(DESK_MINIMAL, "old").unwrap();
+    let new = resolve_value(
+        &with(
+            r#"
+[[claims]]
+id = "boot-a-committed"
+oracle_class = "boot-count"
+remedy = "roll back to slot A"
+status = "demonstrated"
+"#,
+        ),
+        "new",
+    )
+    .unwrap();
+    let target = scratch("claim-no-falsifier");
+
+    let err = apply(&old, &new, &target, None)
+        .expect_err("a demonstrated claim with no falsifier must be refused, not reported");
+    assert!(
+        matches!(err, Error::Refused(_)),
+        "expected a refusal: {err}"
+    );
+    assert!(
+        err.to_string().contains("CLAIM-NO-FALSIFIER"),
+        "the refusal must name the claim rule: {err}"
+    );
+
+    assert_eq!(
+        read(&target),
+        SENTINEL,
+        "a refused apply wrote to the target"
+    );
+    assert!(leftovers(&target).is_empty(), "{:?}", leftovers(&target));
+}

@@ -334,6 +334,10 @@ pub fn risk_rule_of(path: &str) -> Option<Risk> {
         ("/capsules[*]/name", Risk::ReversibleLocal),
         ("/capsules[*]/runtime", Risk::ReversibleLocal),
         ("/services[*]/name", Risk::ReversibleLocal),
+        // 4 — a claim asserts what is *verified*. Marking one `demonstrated` (or dropping its
+        // falsifier) is the exact hole the claim judge exists to close, so claims get the same
+        // "the AI cannot do it alone" tier as boot and healing. Doc 23 §2.1.
+        ("/claims", Risk::SecurityCritical),
     ];
     RULES
         .iter()

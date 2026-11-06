@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
 
+use crate::claim::{Claim, ClaimStatus};
 use crate::model::{
     IntentClass, KernelVariant, MANIFEST_VERSION, Manifest, Profile, ReplicaKind, Runtime,
 };
@@ -66,8 +67,98 @@ pub fn validate(m: &Manifest) -> Report {
     let mut r = Report::default();
     structure(m, &mut r);
     invariants(m, &mut r);
+    claims(m, &mut r);
     advisories(m, &mut r);
     r
+}
+
+/// The claim judge (doc 27 §2.1): grade every claim the Conductor makes.
+///
+/// A claim is only as strong as the falsifier it names:
+/// - `demonstrated` with no falsifier is an **error** — it is not demonstrated.
+/// - `stated` is a **warning** — a statement is not a demonstration.
+/// - `not-demonstrated` is honest and passes.
+/// - an empty id, a duplicate id, or an empty remedy is a **warning**.
+fn claims(m: &Manifest, r: &mut Report) {
+    // The tension register (doc 27 §2.4): facts that cannot both be true. Two claims with one
+    // id are two statements about the same subject, so when they disagree that is a tension with
+    // a discriminator, not a silent overwrite.
+    let mut seen: HashMap<String, &Claim> = HashMap::new();
+    for c in &m.claims {
+        let path = format!("/claims[{}]", c.id);
+        if c.id.trim().is_empty() {
+            r.error("CLAIM-ID", "/claims", "a claim needs a non-empty id");
+        }
+        match seen.get(&c.id) {
+            None => {
+                seen.insert(c.id.clone(), c);
+            }
+            Some(first) if **first == *c => {
+                r.warn("CLAIM-DUP", &path, "the same claim is declared twice");
+            }
+            Some(first) => {
+                r.warn(
+                    "CLAIM-TENSION",
+                    &path,
+                    format!(
+                        "two claims share this id but disagree on {diff} — a fact that cannot be \
+                         both true. Re-check the falsifier; only one holds.",
+                        diff = claim_diff(first, c)
+                    ),
+                );
+            }
+        }
+        if c.remedy.trim().is_empty() {
+            r.warn(
+                "CLAIM-REMEDY",
+                &path,
+                "a claim should name its remedy — what to do when the falsifier fires",
+            );
+        }
+        match c.status {
+            ClaimStatus::Demonstrated => {
+                let has_falsifier = c.falsifier.as_deref().is_some_and(|f| !f.trim().is_empty());
+                if !has_falsifier {
+                    r.error(
+                        "CLAIM-NO-FALSIFIER",
+                        &path,
+                        format!(
+                            "a claim marked demonstrated must name its falsifier (oracle class {}); \
+                             without one it is NOT_DEMONSTRATED, never demonstrated",
+                            c.oracle_class.as_str()
+                        ),
+                    );
+                }
+            }
+            ClaimStatus::Stated => {
+                r.warn(
+                    "CLAIM-STATED",
+                    &path,
+                    "a stated claim is a statement, not a demonstration — name a falsifier and check it",
+                );
+            }
+            ClaimStatus::NotDemonstrated => {
+                // Honest about being unproven: no finding.
+            }
+        }
+    }
+}
+
+/// The first field on which two claims differ, as the tension's discriminator (doc 27 §2.4).
+fn claim_diff(a: &Claim, b: &Claim) -> String {
+    if a.status != b.status {
+        format!("status ({} vs {})", a.status.as_str(), b.status.as_str())
+    } else if a.oracle_class != b.oracle_class {
+        format!(
+            "oracle_class ({} vs {})",
+            a.oracle_class.as_str(),
+            b.oracle_class.as_str()
+        )
+    } else if a.falsifier != b.falsifier {
+        "the falsifier".to_string()
+    } else {
+        "the remedy".to_string()
+    }
 }
 
 fn structure(m: &Manifest, r: &mut Report) {
