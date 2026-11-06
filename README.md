@@ -51,6 +51,7 @@ needs, then gets out of the way.
 24. [The Phone Arm](docs/24-phone-arm.md): a third line — MorpheOS on handsets that must make calls; ModemManager over QMI, call audio through UCM, the Flow phone profile, and VoLTE as M0 before anything else
 25. [Linux Phone Builds](docs/25-linux-phone-builds.md): what the field gives us — Mobian as the Debian-native device layer, postmarketOS as the reference, Droidian as the fallback
 26. [The Secure Arm](docs/26-secure-arm.md): the hardened build beside the everyday one — its own image, its own kernel, its own attack suite; the controls X1–X8 and K1–K3, the order they are built in, and the proof each one owes
+27. [Verification Discipline](docs/27-verification-discipline.md): the pacland method ported to the Conductor — every claim carries an oracle class, falsifier and remedy, and the five graders + a tension register
 
 ## The big reframe
 
