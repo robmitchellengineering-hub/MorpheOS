@@ -499,7 +499,42 @@ status = "not-demonstrated"
 }
 
 #[test]
-fn two_claims_with_one_id_are_a_tension_not_a_silent_overwrite() {
+fn two_claims_that_disagree_are_a_tension_with_a_discriminator() {
+    // Doc 23 §2.4: a tension is two facts that cannot both be true, named with the cheapest
+    // discriminator. One claim says the boot is demonstrated, another says the same id is not
+    // demonstrated — the same subject cannot be both.
+    let m = resolve(
+        &with(
+            r#"
+[[claims]]
+id = "boot-a-committed"
+oracle_class = "boot-count"
+falsifier = "the counter advances"
+remedy = "roll back"
+status = "demonstrated"
+
+[[claims]]
+id = "boot-a-committed"
+oracle_class = "boot-count"
+falsifier = "the counter advances"
+remedy = "roll back"
+status = "not-demonstrated"
+"#,
+        ),
+        "t",
+    )
+    .unwrap();
+    let r = validate(&m);
+    assert!(r.has("CLAIM-TENSION"), "{:#?}", r.findings);
+    assert!(
+        !r.has("CLAIM-DUP"),
+        "a disagreement is a tension, not a duplicate: {:#?}",
+        r.findings
+    );
+}
+
+#[test]
+fn the_same_claim_declared_twice_is_a_duplicate_not_a_tension() {
     let m = resolve(
         &with(
             r#"
@@ -523,6 +558,7 @@ status = "demonstrated"
     .unwrap();
     let r = validate(&m);
     assert!(r.has("CLAIM-DUP"), "{:#?}", r.findings);
+    assert!(!r.has("CLAIM-TENSION"), "{:#?}", r.findings);
 }
 
 #[test]

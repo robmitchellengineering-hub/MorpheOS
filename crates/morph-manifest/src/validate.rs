@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
 
-use crate::claim::ClaimStatus;
+use crate::claim::{Claim, ClaimStatus};
 use crate::model::{
     IntentClass, KernelVariant, MANIFEST_VERSION, Manifest, Profile, ReplicaKind, Runtime,
 };
@@ -80,18 +80,33 @@ pub fn validate(m: &Manifest) -> Report {
 /// - `not-demonstrated` is honest and passes.
 /// - an empty id, a duplicate id, or an empty remedy is a **warning**.
 fn claims(m: &Manifest, r: &mut Report) {
-    let mut seen = HashSet::new();
+    // The tension register (doc 23 §2.4): facts that cannot both be true. Two claims with one
+    // id are two statements about the same subject, so when they disagree that is a tension with
+    // a discriminator, not a silent overwrite.
+    let mut seen: HashMap<String, &Claim> = HashMap::new();
     for c in &m.claims {
         let path = format!("/claims[{}]", c.id);
         if c.id.trim().is_empty() {
             r.error("CLAIM-ID", "/claims", "a claim needs a non-empty id");
         }
-        if !seen.insert(c.id.clone()) {
-            r.warn(
-                "CLAIM-DUP",
-                &path,
-                "two claims share this id — a tension to resolve, not a silent overwrite",
-            );
+        match seen.get(&c.id) {
+            None => {
+                seen.insert(c.id.clone(), c);
+            }
+            Some(first) if **first == *c => {
+                r.warn("CLAIM-DUP", &path, "the same claim is declared twice");
+            }
+            Some(first) => {
+                r.warn(
+                    "CLAIM-TENSION",
+                    &path,
+                    format!(
+                        "two claims share this id but disagree on {diff} — a fact that cannot be \
+                         both true. Re-check the falsifier; only one holds.",
+                        diff = claim_diff(first, c)
+                    ),
+                );
+            }
         }
         if c.remedy.trim().is_empty() {
             r.warn(
@@ -126,6 +141,23 @@ fn claims(m: &Manifest, r: &mut Report) {
                 // Honest about being unproven: no finding.
             }
         }
+    }
+}
+
+/// The first field on which two claims differ, as the tension's discriminator (doc 23 §2.4).
+fn claim_diff(a: &Claim, b: &Claim) -> String {
+    if a.status != b.status {
+        format!("status ({} vs {})", a.status.as_str(), b.status.as_str())
+    } else if a.oracle_class != b.oracle_class {
+        format!(
+            "oracle_class ({} vs {})",
+            a.oracle_class.as_str(),
+            b.oracle_class.as_str()
+        )
+    } else if a.falsifier != b.falsifier {
+        "the falsifier".to_string()
+    } else {
+        "the remedy".to_string()
     }
 }
 
