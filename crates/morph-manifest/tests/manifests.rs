@@ -524,3 +524,44 @@ status = "demonstrated"
     let r = validate(&m);
     assert!(r.has("CLAIM-DUP"), "{:#?}", r.findings);
 }
+
+#[test]
+fn a_demonstrated_claim_with_no_falsifier_is_refused_at_apply_and_writes_nothing() {
+    // The judge is enforcement, not a report: a claim marked `demonstrated` with no falsifier
+    // must refuse the apply — doc 23 §2.1 exists precisely so the check cannot be skipped at the
+    // one place it would actually take effect. `apply` refuses an invalid generation, and
+    // `validate` now grades claims, so the two must meet here.
+    let old = resolve_value(DESK_MINIMAL, "old").unwrap();
+    let new = resolve_value(
+        &with(
+            r#"
+[[claims]]
+id = "boot-a-committed"
+oracle_class = "boot-count"
+remedy = "roll back to slot A"
+status = "demonstrated"
+"#,
+        ),
+        "new",
+    )
+    .unwrap();
+    let target = scratch("claim-no-falsifier");
+
+    let err = apply(&old, &new, &target, None)
+        .expect_err("a demonstrated claim with no falsifier must be refused, not reported");
+    assert!(
+        matches!(err, Error::Refused(_)),
+        "expected a refusal: {err}"
+    );
+    assert!(
+        err.to_string().contains("CLAIM-NO-FALSIFIER"),
+        "the refusal must name the claim rule: {err}"
+    );
+
+    assert_eq!(
+        read(&target),
+        SENTINEL,
+        "a refused apply wrote to the target"
+    );
+    assert!(leftovers(&target).is_empty(), "{:?}", leftovers(&target));
+}
