@@ -51,7 +51,7 @@ Rob's sentence, broken into the claims it makes, and whether each is defensible 
 | "bare metal pacland proofs of all fundamentals, able to derive anything" | a native proof/derivation engine (not an LLM) that can formally verify and re-derive foundations | **at-risk.** "able to derive anything" trips the D15 crank filter. Defensible version: *verifies its own critical kernels + a growing tower of proved theorems* |
 | "highly optimised lightweight LLM … frontier-level intelligence at speed within 32 GB RAM" | a model that is frontier *for the machine's own work* fits in 32–64 GB | **not true as stated, true as re-scoped.** Frontier-general models are 100s of GB. Reachable: frontier-at-a-task, or a distilled/quantised/MoE model with **verified** compression |
 | "base 64 GB → tiers to 1 TB … more intelligence or separate models" | RAM = the lever: bigger resident model, more resident models, near-unlimited context | **true and falsifiable** — this is the cleanest part of the whole vision |
-| "yes no engine pacland" | pacland runs **natively as a proof engine**, not as a prompt through an LLM | **correct, and it is the differentiator** — the deterministic spine (D12) is exactly "no engine", the generative AI is separate |
+| "yes no engine pacland" | pacland runs **natively as a proof engine**, not as a prompt through an LLM — this engine is named **SEXTANT** (the yes/no engine on a simulated quantum computer, "Phantom") | **correct, and it is the differentiator** — the deterministic spine (D12) is exactly "no engine", the generative AI is separate |
 
 The one-line honest summary: **"AI-first OS × AI-first hardware" is a real, defensible product; "derive
 anything" and "frontier intelligence in 32 GB" are the two phrases that would get us filtered as cranks
@@ -91,7 +91,7 @@ sentence. This is the tier story to sell.
 deferred engines ("does the structure compress", D17-2) and has the formal spine. The move is **verified
 model compression** — compress a model and *prove the compression preserves behaviour within a bound*, rather
 than trusting a perplexity number. Nobody sells that today. That is where the estate's four instruments
-converge on one machine: MorpheOS (the OS), pacland (the proof the compression is safe), VVS (the certificate
+converge on one machine: MorpheOS (the OS), pacland (**SEXTANT** — the proof the compression is safe), VVS (the certificate
 a buyer can check), AirMatrix (the physical-world proof in the audio/transport domain).
 
 ---
