@@ -1248,6 +1248,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "morph-verify"
+version = "0.1.0"
+
+[[package]]
 name = "morphd"
 version = "0.1.0"
 dependencies = [
