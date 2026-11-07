@@ -121,6 +121,14 @@ pub const CATALOG: &[Claim] = &[
         verdict: Verdict::Forced,
     },
     Claim {
+        id: "mera-hyperbolic",
+        claim: "the MERA causal cone is a discrete hyperbolic space (Gromov 0-hyperbolic)",
+        oracle_class: "kernel-checked (Lean)",
+        falsifier: "a four-point violation of the 0-hyperbolicity condition, or sub-exponential volume growth",
+        remedy: "QM.Hyperbolic.treeDist_four_point + QM.MERA.causalConeDoubles + QM.MERA.ballVolumeExponential",
+        verdict: Verdict::Forced,
+    },
+    Claim {
         id: "coupling-free",
         claim: "the gravitational coupling G is not derived",
         oracle_class: "kernel-checked (Lean)",
