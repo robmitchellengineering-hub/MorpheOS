@@ -1,9 +1,11 @@
 //! SEXTANT — the claim registry (doc 27 §2.1), ported from pacland's yes/no engine.
 //!
 //! Every kernel-checked claim carries an **oracle class**, a **falsifier**, and its physics
-//! **verdict** (FORCED / FREE / IMPOSSIBLE). The *compute* lives in pacland's SEXTANT (Phantom:
-//! numpy/Stim/Quimb); this crate is the typed registry the Conductor consumes to know what is
-//! provable and what each claim's falsifier is — before any run.
+//! **verdict** (FORCED / FREE / IMPOSSIBLE). The registry *names* each claim's falsifier; the
+//! [`verify`] module *runs* the first of them natively in Rust (no numpy/Stim/Quimb) — the seed
+//! of the "claims + falsifiers as a native service" that the Conductor can invoke.
+
+pub mod verify;
 
 /// The physics verdict: what the kernel-checked theorem says about the claim.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
