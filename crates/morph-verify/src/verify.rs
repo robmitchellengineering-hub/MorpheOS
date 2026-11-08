@@ -92,13 +92,13 @@ fn det4(m: [[f64; 4]; 4]) -> f64 {
     for c in 0..4 {
         let mut sub = [[0.0; 3]; 3];
         let mut sr = 0;
-        for r in 1..4 {
+        for row in &m[1..] {
             let mut sc = 0;
-            for cc in 0..4 {
+            for (cc, &val) in row.iter().enumerate() {
                 if cc == c {
                     continue;
                 }
-                sub[sr][sc] = m[r][cc];
+                sub[sr][sc] = val;
                 sc += 1;
             }
             sr += 1;
