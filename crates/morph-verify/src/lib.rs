@@ -216,6 +216,46 @@ pub const CATALOG: &[Claim] = &[
         remedy: "SM.ParameterCount",
         verdict: Verdict::Free,
     },
+    Claim {
+        id: "mitchell-uniqueness",
+        claim: "the D3 tadpole FᵀJH is the unique bilinear symplectic invariant of the flux",
+        oracle_class: "kernel-checked (Lean) + exact-symbolic",
+        falsifier: "a second bilinear symplectic invariant",
+        remedy: "Mitchell.mitchell_uniqueness_n1 + General.mitchell_uniqueness",
+        verdict: Verdict::Forced,
+    },
+    Claim {
+        id: "constraint-first",
+        claim: "every duality-invariant exact polynomial in the flux is a function of the tadpole",
+        oracle_class: "kernel-checked (Lean) + exact-symbolic",
+        falsifier: "an invariant polynomial not a function of FᵀJH",
+        remedy: "DegreeOne.no_linear_invariant_n1 + DegreeThree.no_cubic_invariant + DegreeFour.quartic_is_N_sq",
+        verdict: Verdict::Forced,
+    },
+    Claim {
+        id: "completeness",
+        claim: "no exact invariant selector can single out a vacuum",
+        oracle_class: "kernel-checked (Lean)",
+        falsifier: "a second exact, duality-invariant selector",
+        remedy: "Transitivity.transitivity_n1 + Transitivity.symp_iff_det_eq_one",
+        verdict: Verdict::Forced,
+    },
+    Claim {
+        id: "pr-box",
+        claim: "the PR box saturates the non-signaling CHSH bound at 4",
+        oracle_class: "kernel-checked (Lean)",
+        falsifier: "a non-signaling box exceeding CHSH = 4",
+        remedy: "Foundations.PRBox.prbox_chsh",
+        verdict: Verdict::Forced,
+    },
+    Claim {
+        id: "sm-index",
+        claim: "N_gen is a protected topological index",
+        oracle_class: "kernel-checked (Lean)",
+        falsifier: "an anomaly that un-protects the index",
+        remedy: "SM.Index.index_free + SM.Index.index_protected",
+        verdict: Verdict::Forced,
+    },
 ];
 
 #[cfg(test)]
