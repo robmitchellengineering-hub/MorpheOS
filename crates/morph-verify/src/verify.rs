@@ -47,6 +47,84 @@ pub fn clifford_normalizes_pauli() -> bool {
     })
 }
 
+/// The singlet CHSH correlator for measurement angles `a`, `b` (radians): `⟨ab⟩ = −cos(a − b)`.
+fn correlator(a: f64, b: f64) -> f64 {
+    -(a - b).cos()
+}
+
+/// **The Tsirelson falsifier** (kernel-checked as `QM.Tsirelson`). Evaluate the CHSH value
+/// `E(A,B) + E(A,B') + E(A',B) − E(A',B')` for the maximally entangled singlet at the optimal
+/// settings (0, π/2, π/4, −π/4) — the falsifying experiment is a state exceeding `2√2`; the singlet
+/// reaches exactly `2√2`.
+pub fn chsh_tsirelson_value() -> f64 {
+    use std::f64::consts::FRAC_PI_2;
+    use std::f64::consts::FRAC_PI_4;
+    let (a, ap, b, bp) = (0.0, FRAC_PI_2, FRAC_PI_4, -FRAC_PI_4);
+    (correlator(a, b) + correlator(a, bp) + correlator(ap, b) - correlator(ap, bp)).abs()
+}
+
+/// **The Bell falsifier** (kernel-checked as `QM.CHSH`). Enumerate all deterministic
+/// local-hidden-variable strategies (each observable ±1) and return the largest |CHSH value| — the
+/// falsifying experiment is a classical strategy exceeding 2; none does.
+pub fn chsh_classical_bound() -> i32 {
+    let mut max_abs = 0;
+    for a in [-1, 1] {
+        for ap in [-1, 1] {
+            for b in [-1, 1] {
+                for bp in [-1, 1] {
+                    let s: i32 = a * b + a * bp + ap * b - ap * bp;
+                    max_abs = max_abs.max(s.abs());
+                }
+            }
+        }
+    }
+    max_abs
+}
+
+fn det3(m: [[f64; 3]; 3]) -> f64 {
+    m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+        + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
+}
+
+fn det4(m: [[f64; 4]; 4]) -> f64 {
+    let mut det = 0.0;
+    for c in 0..4 {
+        let mut sub = [[0.0; 3]; 3];
+        let mut sr = 0;
+        for r in 1..4 {
+            let mut sc = 0;
+            for cc in 0..4 {
+                if cc == c {
+                    continue;
+                }
+                sub[sr][sc] = m[r][cc];
+                sc += 1;
+            }
+            sr += 1;
+        }
+        let cof = if c % 2 == 0 { 1.0 } else { -1.0 };
+        det += cof * m[0][c] * det3(sub);
+    }
+    det
+}
+
+/// **The matchgate falsifier** (kernel-checked as `pfaffian2_sq_eq_det` / `pfaffian4_sq_eq_det`).
+/// The falsifying experiment is an antisymmetric matrix whose determinant is *not* the square of
+/// its Pfaffian. For the 4×4 case, compute the determinant independently (cofactor expansion) and
+/// check it equals `(a·f − b·e + c·d)²`.
+pub fn matchgate_pfaffian_sq_eq_det() -> bool {
+    let (a, b, c, d, e, f) = (1.0f64, 2.0, 3.0, 4.0, 5.0, 6.0);
+    let m = [
+        [0.0, a, b, c],
+        [-a, 0.0, d, e],
+        [-b, -d, 0.0, f],
+        [-c, -e, -f, 0.0],
+    ];
+    let pf = a * f - b * e + c * d;
+    (det4(m) - pf * pf).abs() < 1e-9
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -70,5 +148,20 @@ mod tests {
         assert_eq!(conj_s(Pauli::X), Pauli::Y);
         assert_eq!(conj_s(Pauli::Z), Pauli::Z);
         assert_eq!(conj_s(Pauli::I), Pauli::I);
+    }
+
+    #[test]
+    fn tsirelson_bound_is_2_sqrt_2() {
+        assert!((chsh_tsirelson_value() - 2.0 * 2.0f64.sqrt()).abs() < 1e-9);
+    }
+
+    #[test]
+    fn classical_bound_is_2() {
+        assert_eq!(chsh_classical_bound(), 2);
+    }
+
+    #[test]
+    fn matchgate_pfaffian_squares_to_det() {
+        assert!(matchgate_pfaffian_sq_eq_det());
     }
 }
