@@ -89,12 +89,23 @@ five graders, a tension register, constraint-first, and "NOT_DEMONSTRATED" — i
 portable artifact, and it lands on the Conductor, the Manifest and self-healing
 directly.
 
-## 5. First concrete slice — proposed, not built
+## 5. First concrete slice — implemented (this change)
 
-The smallest real piece, designed here: a **claim type** in Rust —
-`{ id, oracle_class, falsifier, remedy, status }` — with a **judge** that refuses a
-claim marked `demonstrated` with no falsifier, and a **tension register** that flags
-two claims with one id that disagree. It is task **E22** in the build plan, and it
-waits there as `proposed` — the repo rule that "work no doc-20 task asks for waits
-as proposed, and a new idea is added as a proposed task in a `plan/` PR, not built".
-A tested spike of the slice exists in a branch and is not merged.
+The smallest real piece, now landed: a **claim type** in Rust —
+`{ id, oracle_class, falsifier, remedy, status }` in `crates/morph-manifest/src/claim.rs`,
+and a **judge** in `validate.rs` that grades every claim on the Manifest:
+
+- `demonstrated` with no falsifier → **error** (`CLAIM-NO-FALSIFIER`) — it is
+  not demonstrated.
+- `stated` → **warning** (`CLAIM-STATED`) — a statement is not a demonstration.
+- `not-demonstrated` → passes (honest about being unproven).
+- empty/duplicate id, empty remedy → **warning** (a tension, not a silent overwrite).
+
+`claims` is a `#[serde(default)]` field on the `Manifest`, so existing manifests
+are unchanged. The risk table classifies `/claims` as security-critical (marking
+something "demonstrated" is exactly the hole the judge closes). The judge's key
+rule is mutation-tested: break "no falsifier → error" and
+`a_demonstrated_claim_without_a_falsifier_is_refused` fails.
+
+Still `proposed` (not built): the five graders, the tension register on Strata,
+and wiring the judge into `morphd` so it actually refuses a claim at apply time.

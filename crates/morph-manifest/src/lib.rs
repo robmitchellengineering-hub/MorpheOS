@@ -7,12 +7,14 @@
 //! `morphd` applies only Manifests that pass validation, and the AI layer can
 //! only propose new generations, which go through [`plan::plan_values`].
 
+pub mod claim;
 pub mod layer;
 pub mod model;
 pub mod plan;
 pub mod store;
 pub mod validate;
 
+pub use claim::{Claim, ClaimStatus, OracleClass};
 pub use layer::{resolve, resolve_value};
 pub use model::Manifest;
 pub use plan::{Applied, Plan, Risk, apply, plan_values};
