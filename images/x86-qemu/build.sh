@@ -71,6 +71,8 @@ MORPH_HEAL=${MORPH_HEAL:-$REPO/target/release/morph-heal}
 MORPH_MANIFEST=${MORPH_MANIFEST:-$REPO/target/release/morph-manifest}
 MORPH_D=${MORPH_D:-$REPO/target/release/morphd}
 MORPH_AUTOUPDATE=${MORPH_AUTOUPDATE:-$REPO/target/release/morph-autoupdate}
+SEXTANT=${SEXTANT:-$REPO/target/release/sextant}
+QUANTUM=${QUANTUM:-$REPO/target/release/quantum}
 SDBOOT_EFI=${SDBOOT_EFI:-/usr/lib/systemd/boot/efi/systemd-bootx64.efi}
 FLOW_COMPOSITOR=${FLOW_COMPOSITOR:-$REPO/target/release/flow-compositor}
 SOLID_WINDOW=${SOLID_WINDOW:-$REPO/target/release/solid-window}
@@ -86,6 +88,9 @@ fi
 
 [ -x "$MORPH_BOOT" ] || { echo "missing $MORPH_BOOT: run cargo build --release -p morph-boot" >&2; exit 1; }
 [ -x "$STRATA" ] || { echo "missing $STRATA: run cargo build --release -p strata" >&2; exit 1; }
+# The quantum path (D43) is built by the caller (see scripts/build-quantum.sh) — not required at
+# image time, so a bare build.sh run without them still produces a bootable image (it just carries
+# no sextant/quantum until they are built).
 [ -f "$SDBOOT_EFI" ] || { echo "missing $SDBOOT_EFI: install systemd-boot-efi" >&2; exit 1; }
 mkdir -p "$WORK"
 
@@ -378,6 +383,13 @@ make_root() {
     install -D -m 0644 /dev/null "$dir/usr/lib/morpheos/release"
     echo "$RELEASE" > "$dir/usr/lib/morpheos/release"
     install -m 0755 "$STRATA" "$dir/usr/bin/strata"
+    # The quantum path (D43): the proof engine and the compute, as commands on the machine.
+    if [ -x "$SEXTANT" ] && [ -x "$QUANTUM" ]; then
+        install -m 0755 "$SEXTANT" "$dir/usr/bin/sextant"
+        install -m 0755 "$QUANTUM" "$dir/usr/bin/quantum"
+    else
+        echo "note: sextant/quantum not built — run scripts/build-quantum.sh first to ship them"
+    fi
     # The Manifest applier (doc 20, S11): makes the current generation real at every boot.
     install -m 0755 "$MORPH_D" "$dir/usr/bin/morphd"
     # A COMPILER IN THE IMAGE, on the images a person gets. Rob, 2026-10-31: "build yourself properly from
