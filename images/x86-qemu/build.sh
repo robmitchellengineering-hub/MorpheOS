@@ -521,6 +521,8 @@ PARTLABEL=esp    /efi             vfat   umask=0077,nofail  0  0
 tmpfs            /tmp             tmpfs  mode=1777          0  0
 # Everything that must outlive an update lives on the shared data partition.
 PARTLABEL=data   /persist         ext4   defaults           0  2
+# The work partition: the machine's large writable place for build trees and logs.
+PARTLABEL=work   /persist/work    ext4   defaults,nofail   0  2
 /persist/home    /home            none   bind,x-systemd.requires-mounts-for=/persist  0  0
 /persist/strata  /var/lib/strata  none   bind,x-systemd.requires-mounts-for=/persist  0  0
 # State systemd's own services keep in /var/lib/systemd (their StateDirectory), which the
@@ -1042,6 +1044,13 @@ fi
 if [ "$HARDWARE" = 1 ]; then
     DATA_MB=${MORPH_DATA_MB:-4096}
 fi
+# A work partition for the person-facing (stick) image: the machine's only large writable
+# place for build trees and logs, because /persist is the (smaller) data partition. Default
+# 100 GiB on a stick; self-test scenarios keep WORK_MB=0 so their disks stay small for CI.
+WORK_MB=0
+if [ "$HARDWARE" = 1 ]; then
+    WORK_MB=${MORPH_WORK_MB:-102400}
+fi
 rm -f "$WORK/esp.img"
 mkfs.vfat -F 32 -n ESP -C "$WORK/esp.img" $((ESP_MB * 1024)) >/dev/null
 mcopy -s -i "$WORK/esp.img" "$ESPDIR"/* ::/
@@ -1103,10 +1112,14 @@ if [ "$HARDWARE" = 1 ]; then
     "$MORPH_UPDATE" --payload "$RPAY" --key "$UPDATE_KEY" sign
     mcopy -i "$WORK/esp.img" "$RPAY/BLAKE3SUMS" "$RPAY/BLAKE3SUMS.sig" "::/morpheos/recovery/"
 fi
+if [ "$WORK_MB" -gt 0 ]; then
+    rm -f "$WORK/work.img"
+    mkfs.ext4 -q -L work "$WORK/work.img" "${WORK_MB}M"
+fi
 
 DISK="$WORK/disk-$SCENARIO.img"
 rm -f "$DISK"
-truncate -s $((1 + ESP_MB + 2 * ROOT_MB + DATA_MB + RECOVERY_MB + 1))M "$DISK"
+truncate -s $((1 + ESP_MB + 2 * ROOT_MB + DATA_MB + RECOVERY_MB + WORK_MB + 1))M "$DISK"
 {
     echo "label: gpt"
     echo "start=1MiB, size=${ESP_MB}MiB, type=uefi, name=esp"
@@ -1115,6 +1128,9 @@ truncate -s $((1 + ESP_MB + 2 * ROOT_MB + DATA_MB + RECOVERY_MB + 1))M "$DISK"
     echo "size=${DATA_MB}MiB, type=linux, name=data"
     if [ "$HARDWARE" = 1 ]; then
         echo "size=${ROOT_MB}MiB, type=4f68bce3-e8cd-4db1-96e7-fbcaf984b709, name=recovery"
+    fi
+    if [ "$WORK_MB" -gt 0 ]; then
+        echo "size=${WORK_MB}MiB, type=linux, name=work"
     fi
 } | sfdisk -q "$DISK"
 dd if="$WORK/esp.img" of="$DISK" bs=1M seek=1 conv=notrunc status=none
@@ -1125,5 +1141,8 @@ dd if="$WORK/root-b.img" of="$DISK" bs=1M seek=$((1 + ESP_MB + ROOT_MB)) conv=no
 dd if="$WORK/data.img" of="$DISK" bs=1M seek=$((1 + ESP_MB + 2 * ROOT_MB)) conv=notrunc,sparse status=none
 if [ "$HARDWARE" = 1 ]; then
     dd if="$WORK/recovery.img" of="$DISK" bs=1M seek=$((1 + ESP_MB + 2 * ROOT_MB + DATA_MB)) conv=notrunc,sparse status=none
+fi
+if [ "$WORK_MB" -gt 0 ]; then
+    dd if="$WORK/work.img" of="$DISK" bs=1M seek=$((1 + ESP_MB + 2 * ROOT_MB + DATA_MB + RECOVERY_MB)) conv=notrunc,sparse status=none
 fi
 echo "$DISK"
