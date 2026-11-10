@@ -7,6 +7,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::claim::Claim;
+
 /// Manifest format version this crate understands.
 pub const MANIFEST_VERSION: u32 = 1;
 
@@ -25,6 +27,10 @@ pub struct Manifest {
     pub services: Vec<Service>,
     #[serde(default)]
     pub capsules: Vec<Capsule>,
+    /// Claims the Conductor makes about the machine, each carrying the
+    /// verification discipline (doc 23 §2.1). Validated by the claim judge.
+    #[serde(default)]
+    pub claims: Vec<Claim>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

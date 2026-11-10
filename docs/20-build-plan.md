@@ -182,7 +182,7 @@ compositor's `Uid:` line from `/proc/<pid>/status`, and the owner of `/run/flow/
 to the ESP. `test-shell.sh` reads them with `mtype` and requires a non-zero uid that is the
 same as the one in the image's `/etc/passwd`.
 
-**Rob decided, 2026-11-04:** *"Do a"* — option A of [doc 28](../docs/28-accounts.md). One ordinary
+**Rob decided, 2026-11-04:** *"Do a"* — option A of [doc 31](../docs/31-accounts.md). One ordinary
 user `morph`, uid 1000, no password, with the shell running as it and the Wi-Fi picker staying root. The status
 is `in progress` until the shell scenario passes with that in the image.
 
@@ -959,6 +959,18 @@ internal disk (E7):
 6. **Rob's decisions:** when to run it, and on which machine (the reference laptop from E6).
 7. **Size:** M for the builder (the payloads and their VM test, the demo, the runbook). One
    PR for the media and their test, and one for the demo and the runbook. Then Rob's session.
+
+### E22 · The verification discipline on every Conductor claim · proposed
+
+**What:** a `Claim` type in `morph-manifest` — `{ id, oracle_class, falsifier, remedy, status }` —
+with a **judge** that refuses a claim marked `demonstrated` with no falsifier, and a **tension
+register** that flags two claims with one id that disagree. The first slice of the pacland
+verification discipline, ported to the Conductor. [Doc 27](27-verification-discipline.md) is the
+note; a tested spike of the slice exists in a branch and is not merged.
+
+**Done when:** `morphd` refuses to apply a Manifest whose claim is marked `demonstrated` with no
+falsifier — a test through `apply` proves the refusal writes nothing, and breaking the judge's
+rule fails it. The five graders and a Strata tension register are follow-up tasks, not this one.
 
 ## M2 · Safe to hand to someone
 

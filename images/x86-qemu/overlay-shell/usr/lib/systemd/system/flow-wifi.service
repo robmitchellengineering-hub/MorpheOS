@@ -1,6 +1,6 @@
 [Unit]
 Description=The Wi-Fi picker (root, because joining a network needs NetworkManager's polkit check)
-Documentation=https://github.com/robmitchellengineering-hub/MorpheOS/blob/main/docs/28-accounts.md
+Documentation=https://github.com/robmitchellengineering-hub/MorpheOS/blob/main/docs/31-accounts.md
 Requires=flow-shell.service NetworkManager.service
 After=flow-shell.service NetworkManager.service
 PartOf=flow-shell.service
