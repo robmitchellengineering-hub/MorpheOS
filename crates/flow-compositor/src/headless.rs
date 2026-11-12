@@ -1235,7 +1235,7 @@ impl Server {
             .add_keyboard(XkbConfig::default(), 200, 25)
             .map_err(|e| format!("creating the keyboard (is xkb-data installed?): {e}"))?;
         let pointer = seat.add_pointer();
-        let state = App {
+        let mut state = App {
             compositor_state: CompositorState::new::<App>(&dh),
             xdg_shell_state: XdgShellState::new::<App>(&dh),
             shm_state: ShmState::new::<App>(&dh, vec![]),
