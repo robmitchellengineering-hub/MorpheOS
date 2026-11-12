@@ -744,7 +744,7 @@ EOF
             || { echo "seatd is not installed in $dir: the shell could not take the seat" >&2; exit 1; }
     fi
     if [ "$HARDWARE" = 1 ]; then
-        for unit in morph-banner morph-hwreport; do
+        for unit in morph-banner morph-hwreport morpheos-audio-share; do
             ln -sf "/usr/lib/systemd/system/$unit.service" \
                 "$dir/etc/systemd/system/multi-user.target.wants/$unit.service"
         done
