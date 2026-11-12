@@ -1337,21 +1337,18 @@ it (note 5). Neither blocks the VM proof.
    3. The initramfs hook and the harness-side wipe scenario.
    4. The in-machine wipe and the corrupt-recovery refusal.
 
-### S5 · Accounts and admin (A9) · proposed
+### S5 · Accounts and admin (A9) · open
 
 **What:** an ordinary account a person logs in as, a locked root, and admin actions only
-through `morphd` transactions with the `.rob` mark (A9, ADRs 0011 and 0012). Rob chooses the
-model first. Three are laid out below, and drafted for his answer as
-[ADR 0020](adr/0020-account-model.md) (Proposed).
+through `morphd` transactions with the `.rob` mark (A9, ADRs 0011 and 0012). The model is
+decided: one owner, a password chosen at first boot, in a user database on `/persist`, with
+the shell's own login and lock screen ([ADR 0020](adr/0020-account-model.md), Accepted).
 
-**Done when:** Rob has decided the account model, and a VM scenario
+**Done when:** a VM scenario
 (`images/x86-qemu/test-accounts.sh`) logs in as the user with the model's credentials, typed on
 the VM's keyboard. As that user it cannot write the slots: writing `/dev/vda2`, `/dev/vda3` or
 `/efi/loader/loader.conf` fails. Read off the disk afterwards, slot B and `loader.conf` are
 byte-identical to before (a control taken before boot), and root's password is locked.
-
-**Ask Rob to open:** E11's first half (the shell not as root) waits on the account model,
-drafted for his answer as [ADR 0020](adr/0020-account-model.md).
 
 **Notes:**
 
