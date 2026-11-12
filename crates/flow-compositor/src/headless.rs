@@ -1275,12 +1275,11 @@ impl Server {
             .args(["get-volume", "@DEFAULT_AUDIO_SINK@"])
             .env("XDG_RUNTIME_DIR", "/run/user/0")
             .output()
+            && o.status.success()
         {
-            if o.status.success() {
-                let text = String::from_utf8_lossy(&o.stdout);
-                if let Some(v) = text.split_whitespace().find_map(|t| t.parse::<f32>().ok()) {
-                    state.volume = v.clamp(0.0, 1.0);
-                }
+            let text = String::from_utf8_lossy(&o.stdout);
+            if let Some(v) = text.split_whitespace().find_map(|t| t.parse::<f32>().ok()) {
+                state.volume = v.clamp(0.0, 1.0);
             }
         }
         Ok(Self {
