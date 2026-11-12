@@ -251,6 +251,106 @@ fn icosahedron_edges() -> Vec<(usize, usize)> {
     edges
 }
 
+/// The icosahedron's 20 triangular faces, derived rather than listed: a face is the only triple
+/// of vertices whose three pairwise distances are all the minimal (edge) length. The 1-skeleton of
+/// an icosahedron contains exactly those twenty triangles, so the derivation is exact and cannot
+/// drift from [`icosahedron_edges`].
+#[must_use]
+fn icosahedron_faces(edges: &[(usize, usize)]) -> Vec<(usize, usize, usize)> {
+    let mut linked = [[false; 12]; 12];
+    for &(a, b) in edges {
+        linked[a][b] = true;
+        linked[b][a] = true;
+    }
+    let mut faces = Vec::with_capacity(20);
+    for a in 0..12 {
+        for b in a + 1..12 {
+            if !linked[a][b] {
+                continue;
+            }
+            for c in b + 1..12 {
+                if linked[a][c] && linked[b][c] {
+                    faces.push((a, b, c));
+                }
+            }
+        }
+    }
+    faces
+}
+
+/// The mesh the design actually draws: `IcosahedronGeometry(GEOMESH_R, 1)` in `login.html` is the
+/// twelve-vertex solid **subdivided once** — 42 vertices and 120 edges. The bare solid is 30 edges
+/// and reads as sparse next to it: Rob, on seeing the boot on a 2012 MacBook, "the center geomesh
+/// has less sides than the original shape it looks sparse and not good".
+///
+/// Subdividing once splits each of the twenty faces into four by its edge midpoints, and every new
+/// vertex is pushed back onto the same sphere, which is what Three.js does.
+#[must_use]
+fn subdivided_icosahedron() -> (Vec<V3>, Vec<(usize, usize)>) {
+    let v = icosahedron_vertices();
+    let edges = icosahedron_edges();
+    let faces = icosahedron_faces(&edges);
+
+    let mut verts: Vec<V3> = v.to_vec();
+    let mut midpoints: std::collections::HashMap<(usize, usize), usize> =
+        std::collections::HashMap::new();
+    let mut midpoint_of = |a: usize, b: usize, verts: &mut Vec<V3>| -> usize {
+        let key = if a < b { (a, b) } else { (b, a) };
+        if let Some(&idx) = midpoints.get(&key) {
+            return idx;
+        }
+        let pa = v[a];
+        let pb = v[b];
+        let mid = V3 {
+            x: (pa.x + pb.x) / 2.0,
+            y: (pa.y + pb.y) / 2.0,
+            z: (pa.z + pb.z) / 2.0,
+        }
+        .normalize()
+        .scale(GEOMESH_R);
+        verts.push(mid);
+        let idx = verts.len() - 1;
+        midpoints.insert(key, idx);
+        idx
+    };
+
+    let mut out_edges: Vec<(usize, usize)> = Vec::with_capacity(120);
+    let mut push_edge = |a: usize, b: usize, out: &mut Vec<(usize, usize)>| {
+        if !out
+            .iter()
+            .any(|&(x, y)| (x == a && y == b) || (x == b && y == a))
+        {
+            out.push((a, b));
+        }
+    };
+    for &(a, b, c) in &faces {
+        let ab = midpoint_of(a, b, &mut verts);
+        let bc = midpoint_of(b, c, &mut verts);
+        let ca = midpoint_of(c, a, &mut verts);
+        for (x, y) in [
+            (a, ab),
+            (ab, b),
+            (b, bc),
+            (bc, c),
+            (c, ca),
+            (ca, a),
+            (ab, bc),
+            (bc, ca),
+            (ca, ab),
+        ] {
+            push_edge(x, y, &mut out_edges);
+        }
+    }
+    (verts, out_edges)
+}
+
+/// The geomesh, built once: 42 vertices and 120 edges, matching the design.
+#[must_use]
+fn geomesh() -> &'static (Vec<V3>, Vec<(usize, usize)>) {
+    static MESH: std::sync::OnceLock<(Vec<V3>, Vec<(usize, usize)>)> = std::sync::OnceLock::new();
+    MESH.get_or_init(subdivided_icosahedron)
+}
+
 /// The mesh's spin, as `login.html` sets `geomesh.rotation` (Three.js `XYZ` Euler, so the
 /// Y rotation is applied first, then X).
 #[must_use]
@@ -622,8 +722,10 @@ fn draw_rings(canvas: &mut Canvas<'_>, cam: &Cam, t: f32) {
 /// the edge being drawn.
 fn draw_geomesh(canvas: &mut Canvas<'_>, cam: &Cam, t: f32) {
     let (p, k) = progress(t);
-    let verts = icosahedron_vertices();
-    let edges = icosahedron_edges();
+    // The design draws the subdivided solid (120 edges), not the bare one (30): the bare mesh is
+    // visibly sparse on a big screen. The count is taken from the mesh rather than written as
+    // `30.0`, so the draw-in timing follows whatever detail the mesh has.
+    let (verts, edges) = geomesh();
     let rot_y = -t * (0.3 + 0.55 * (1.0 - k));
     let rot_x = (t * 0.35).sin() * 0.2;
     let scale = mesh_scale(t);
@@ -633,7 +735,8 @@ fn draw_geomesh(canvas: &mut Canvas<'_>, cam: &Cam, t: f32) {
         .collect();
 
     let colour = Colour::rgb(mesh_colour(p).0, mesh_colour(p).1, mesh_colour(p).2);
-    let drawn = (30.0 * k).floor() as usize;
+    let total = edges.len() as f32;
+    let drawn = (total * k).floor() as usize;
     for (idx, &(a, b)) in edges.iter().enumerate() {
         if idx >= drawn {
             break;
@@ -644,9 +747,9 @@ fn draw_geomesh(canvas: &mut Canvas<'_>, cam: &Cam, t: f32) {
     }
     // The hot tip on the edge still being drawn, until the mesh is complete.
     if p < 1.0
-        && let Some(&(a, b)) = edges.get((30.0 * k).floor() as usize)
+        && let Some(&(a, b)) = edges.get((total * k).floor() as usize)
     {
-        let f = 30.0 * k - (30.0 * k).floor();
+        let f = total * k - (total * k).floor();
         if let (Some(pa), Some(pb)) = (projected[a], projected[b]) {
             let (tx, ty) = (pa.0 + (pb.0 - pa.0) * f, pa.1 + (pb.1 - pa.1) * f);
             canvas.disc(tx, ty, 2.5, (0xea, 0xf6, 0xff), 0.95);
