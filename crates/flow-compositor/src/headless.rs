@@ -130,6 +130,9 @@ struct App {
     screen: (i32, i32),
     /// Where the pointer is, for a client that asks to be moved from it (its title bar).
     pointer: (i32, i32),
+    /// The volume the bar's Volume button shows and steps, 0.0 (muted) to 1.0 (full). It is
+    /// set on the default sink through the audio server's PipeWire socket.
+    volume: f32,
     next_id: u32,
 }
 
@@ -851,6 +854,19 @@ impl Server {
             self.open_wifi();
             return;
         }
+        // The bar's Volume button steps the volume, and neither it nor its release reaches a
+        // window.
+        if pressed
+            && button == BTN_LEFT
+            && self
+                .state
+                .wm
+                .on_volume_button(self.pointer_at.x as i32, self.pointer_at.y as i32)
+        {
+            self.drag_button = Some(button);
+            self.step_volume();
+            return;
+        }
         if pressed && button == BTN_LEFT {
             let at = self.pointer_at;
             let with_super = self.keyboard.modifier_state().logo;
@@ -982,6 +998,28 @@ impl Server {
                     None
                 }
             })
+    }
+
+    /// Step the volume to the next of the four levels (muted, a third, two thirds, full) and
+    /// set it on the default sink, so the bar's Volume button does not just redraw itself.
+    fn step_volume(&mut self) {
+        const LEVELS: [f32; 4] = [0.0, 1.0 / 3.0, 2.0 / 3.0, 1.0];
+        let next = LEVELS
+            .iter()
+            .find(|&&l| l > self.state.volume + 0.01)
+            .copied()
+            .unwrap_or(LEVELS[0]);
+        self.state.volume = next;
+        let v = format!("{next:.2}");
+        // The audio server runs as root while the shell runs as the person; point wpctl at
+        // root's runtime dir, as the read at startup does.
+        let set = std::process::Command::new("wpctl")
+            .args(["set-volume", "@DEFAULT_AUDIO_SINK@", &v])
+            .env("XDG_RUNTIME_DIR", "/run/user/0")
+            .output();
+        if !matches!(set, Ok(ref o) if o.status.success()) {
+            eprintln!("flow-compositor: could not set the volume to {v}");
+        }
     }
 
     /// Open the file view (the bar's Files button, Super+E). There is only ever one: one
@@ -1221,6 +1259,7 @@ impl Server {
             asked: Vec::new(),
             screen: (width as i32, height as i32),
             pointer: (width as i32 / 2, height as i32 / 2),
+            volume: 1.0,
             next_id: 0,
         };
         state.output.create_global::<App>(&dh);
@@ -1228,6 +1267,22 @@ impl Server {
         let listener =
             ListeningSocket::bind(socket).map_err(|e| format!("binding socket {socket}: {e}"))?;
         eprintln!("flow-compositor: listening on {socket}");
+        // Read the volume the audio server has now, so the button shows it (best-effort: the
+        // button still steps it if the read fails). The audio server runs as root while the
+        // shell runs as the person, so the PipeWire socket is reached by pointing wpctl at
+        // root's runtime dir.
+        if let Ok(o) = std::process::Command::new("wpctl")
+            .args(["get-volume", "@DEFAULT_AUDIO_SINK@"])
+            .env("XDG_RUNTIME_DIR", "/run/user/0")
+            .output()
+        {
+            if o.status.success() {
+                let text = String::from_utf8_lossy(&o.stdout);
+                if let Some(v) = text.split_whitespace().find_map(|t| t.parse::<f32>().ok()) {
+                    state.volume = v.clamp(0.0, 1.0);
+                }
+            }
+        }
         Ok(Self {
             display,
             listener,
@@ -1464,28 +1519,44 @@ fn render(
             let rect =
                 |(x, y, w, h): (i32, i32, i32, i32)| Rectangle::new((x, y).into(), (w, h).into());
             let (bx, by, bw, _) = wm::wifi_button(sw, sh);
+            let (vx, vy, _, _) = wm::volume_button(sw, sh);
             let (fx, fy, fw, _) = wm::files_button(sw, sh);
             let (barx, bary, barw, _) = wm::bar(sw, sh);
             // The bar: near-black, with a 1px hairline along its top edge (the divider between
-            // it and the windows), two raised button regions at a consistent inset, and a
-            // hairline between them. The Wi-Fi button is three rising bars; Files is a folder.
+            // it and the windows), three raised button regions at a consistent inset, and a
+            // hairline between each pair. The Wi-Fi button is three rising bars; Volume is a
+            // speaker with four level bars; Files is a folder.
             let mut parts = vec![
                 (rect(wm::bar(sw, sh)), colour(palette::BAR)),
                 (rect((barx, bary, barw, 1)), colour(palette::BAR_DIVIDER)),
                 (rect(wm::wifi_button(sw, sh)), colour(palette::BAR_BUTTON)),
+                (rect(wm::volume_button(sw, sh)), colour(palette::BAR_BUTTON)),
                 (rect(wm::files_button(sw, sh)), colour(palette::BAR_BUTTON)),
             ];
-            // The hairline between the buttons, centred in the gap between them.
-            let gap_x = fx + fw + (bx - (fx + fw)) / 2;
-            parts.push((
-                rect((gap_x, fy + 6, 1, bw - 12)),
-                colour(palette::BAR_DIVIDER),
-            ));
+            // A hairline centred in each gap between the three buttons.
+            for (left_right, right_left) in [(fx + fw, vx), (vx + wm::BUTTON, bx)] {
+                let gap_x = left_right + (right_left - left_right) / 2;
+                parts.push((
+                    rect((gap_x, fy + 6, 1, bw - 12)),
+                    colour(palette::BAR_DIVIDER),
+                ));
+            }
             // Wi-Fi: three bars, 3 px wide and 3 px apart, rising to the right, bottom-aligned
             // and centred in the button.
             for (i, h) in [6, 11, 16].into_iter().enumerate() {
                 let x = bx + 5 + 6 * i as i32;
                 parts.push((rect((x, by + 20 - h, 3, h)), colour(palette::BAR_ICON)));
+            }
+            // Volume: a speaker wedge on the left and four level bars to its right; the bars
+            // fill to the current volume (0 bars = muted, 4 = full), the rest stay dim.
+            parts.push((rect((vx + 3, vy + 9, 5, 6)), colour(palette::BAR_ICON)));
+            parts.push((rect((vx + 3, vy + 11, 3, 2)), colour(palette::BAR_ICON)));
+            let bars = (state.volume * 4.0).round().clamp(0.0, 4.0) as i32;
+            for i in 0..4 {
+                let h = 5 + 4 * i;
+                let x = vx + 11 + 4 * i;
+                let c = if i < bars { palette::BAR_ICON } else { palette::BAR_DIVIDER };
+                parts.push((rect((x, vy + 20 - h, 3, h)), colour(c)));
             }
             // Files: a folder — a tab above the left of a body, both inset from the button.
             parts.push((rect((fx + 4, fy + 8, 16, 12)), colour(palette::BAR_ICON)));
