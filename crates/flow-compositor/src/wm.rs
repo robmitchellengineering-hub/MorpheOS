@@ -828,18 +828,39 @@ mod tests {
     }
 
     #[test]
-    fn the_files_button_sits_left_of_the_wifi_button_and_goes_with_fullscreen() {
+    fn the_volume_button_sits_left_of_the_wifi_button_and_goes_with_fullscreen() {
         let mut m = Manager::default();
         m.set_screen(640, 480);
-        // Wi-Fi at (608, 452); Files one button (24) plus a gap (8) to its left.
-        assert_eq!(files_button(640, 480), (576, 452, 24, 24));
-        assert!(m.on_files_button(576, 452) && m.on_files_button(599, 475));
-        assert!(!m.on_files_button(575, 460) && !m.on_files_button(600, 460));
-        assert!(!m.on_wifi_button(576, 460), "Files is not the Wi-Fi button");
+        // Wi-Fi at (608, 452); Volume one button (24) plus a gap (8) to its left.
+        assert_eq!(volume_button(640, 480), (576, 452, 24, 24));
+        assert!(m.on_volume_button(576, 452) && m.on_volume_button(599, 475));
+        assert!(!m.on_volume_button(575, 460) && !m.on_volume_button(600, 460));
+        assert!(!m.on_wifi_button(576, 460), "Volume is not the Wi-Fi button");
         m.sync(&[win(1, 100, 50)]);
         m.set_fullscreen(1, true);
         assert!(
-            !m.on_files_button(588, 460),
+            !m.on_volume_button(588, 460),
+            "no bar over a fullscreen window"
+        );
+        assert!(
+            !Manager::default().on_volume_button(0, 0),
+            "no screen, no button"
+        );
+    }
+
+    #[test]
+    fn the_files_button_sits_left_of_the_volume_button_and_goes_with_fullscreen() {
+        let mut m = Manager::default();
+        m.set_screen(640, 480);
+        // Volume at (576, 452); Files one button (24) plus a gap (8) to its left.
+        assert_eq!(files_button(640, 480), (544, 452, 24, 24));
+        assert!(m.on_files_button(544, 452) && m.on_files_button(567, 475));
+        assert!(!m.on_files_button(543, 460) && !m.on_files_button(568, 460));
+        assert!(!m.on_volume_button(544, 460), "Files is not the Volume button");
+        m.sync(&[win(1, 100, 50)]);
+        m.set_fullscreen(1, true);
+        assert!(
+            !m.on_files_button(556, 460),
             "no bar over a fullscreen window"
         );
         assert!(
