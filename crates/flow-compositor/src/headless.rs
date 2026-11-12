@@ -1555,7 +1555,11 @@ fn render(
             for i in 0..4 {
                 let h = 5 + 4 * i;
                 let x = vx + 11 + 4 * i;
-                let c = if i < bars { palette::BAR_ICON } else { palette::BAR_DIVIDER };
+                let c = if i < bars {
+                    palette::BAR_ICON
+                } else {
+                    palette::BAR_DIVIDER
+                };
                 parts.push((rect((x, vy + 20 - h, 3, h)), colour(c)));
             }
             // Files: a folder — a tab above the left of a body, both inset from the button.

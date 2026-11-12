@@ -835,7 +835,10 @@ mod tests {
         assert_eq!(volume_button(640, 480), (576, 452, 24, 24));
         assert!(m.on_volume_button(576, 452) && m.on_volume_button(599, 475));
         assert!(!m.on_volume_button(575, 460) && !m.on_volume_button(600, 460));
-        assert!(!m.on_wifi_button(576, 460), "Volume is not the Wi-Fi button");
+        assert!(
+            !m.on_wifi_button(576, 460),
+            "Volume is not the Wi-Fi button"
+        );
         m.sync(&[win(1, 100, 50)]);
         m.set_fullscreen(1, true);
         assert!(
@@ -856,7 +859,10 @@ mod tests {
         assert_eq!(files_button(640, 480), (544, 452, 24, 24));
         assert!(m.on_files_button(544, 452) && m.on_files_button(567, 475));
         assert!(!m.on_files_button(543, 460) && !m.on_files_button(568, 460));
-        assert!(!m.on_volume_button(544, 460), "Files is not the Volume button");
+        assert!(
+            !m.on_volume_button(544, 460),
+            "Files is not the Volume button"
+        );
         m.sync(&[win(1, 100, 50)]);
         m.set_fullscreen(1, true);
         assert!(
