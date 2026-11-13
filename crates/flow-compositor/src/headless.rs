@@ -1649,7 +1649,7 @@ fn render(
                     ),
                     (rect((sx, sy, sw, sh)), colour(palette::BAR_DIVIDER)),
                 ];
-                let level = (f32::from(sh) * state.volume).round() as i32;
+                let level = (sh as f32 * state.volume).round() as i32;
                 if level > 0 {
                     slider.push((
                         rect((sx, sy + sh - level, sw, level)),
