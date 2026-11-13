@@ -11,7 +11,7 @@ Wants=user@0.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/bin/sh -c 'for i in $(seq 1 240); do [ -S /run/user/0/pipewire-0 ] && break; sleep 0.25; done; chmod o+rwx /run/user/0/pipewire-0 /run/user/0/pipewire-0-manager /run/user/0/pulse 2>/dev/null || true; XDG_RUNTIME_DIR=/run/user/0 wpctl set-volume @DEFAULT_AUDIO_SINK@ 1.0 2>/dev/null || true'
+ExecStart=/bin/sh -c 'for i in $(seq 1 240); do [ -S /run/user/0/pipewire-0 ] && break; sleep 0.25; done; chmod o+x /run/user/0; chmod o+rwx /run/user/0/pipewire-0 /run/user/0/pipewire-0-manager /run/user/0/pulse 2>/dev/null || true; for i in $(seq 1 240); do XDG_RUNTIME_DIR=/run/user/0 wpctl set-volume @DEFAULT_AUDIO_SINK@ 1.0 2>/dev/null && break; sleep 0.25; done'
 
 [Install]
 WantedBy=multi-user.target
