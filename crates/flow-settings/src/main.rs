@@ -27,9 +27,8 @@ mod client {
     use std::io::Write;
     use std::os::fd::AsFd;
 
-    use flow_login::account::Account;
-    use flow_login::login::{Action, Input, Login, Status};
     use flow_shell::Frame;
+    use flow_settings::settings::{Action, Input, Settings};
     use wayland_client::protocol::{
         wl_buffer, wl_compositor, wl_keyboard, wl_pointer, wl_registry, wl_seat, wl_shm,
         wl_shm_pool, wl_surface,
