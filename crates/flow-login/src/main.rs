@@ -111,11 +111,14 @@ mod client {
             _: &Connection,
             qh: &QueueHandle<Self>,
         ) {
-            if let wl_seat::Event::Capabilities { capabilities } = event {
-                if capabilities.contains(wl_seat::Capability::Keyboard) {
+            if let wl_seat::Event::Capabilities {
+                capabilities: WEnum::Value(caps),
+            } = event
+            {
+                if caps.contains(wl_seat::Capability::Keyboard) {
                     seat.get_keyboard(qh, ());
                 }
-                if capabilities.contains(wl_seat::Capability::Pointer) {
+                if caps.contains(wl_seat::Capability::Pointer) {
                     seat.get_pointer(qh, ());
                 }
             }
