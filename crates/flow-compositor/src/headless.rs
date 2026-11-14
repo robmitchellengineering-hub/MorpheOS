@@ -1656,16 +1656,28 @@ fn render(
                     .draw_solid(r, &[Rectangle::from_size(r.size)], c)
                     .map_err(err("drawing the bar"))?;
             }
-            // The clock, on the left of the bar: the machine's local time, drawn the way the
-            // shell's own clients draw text (the bitmap font, no engine).
+            // The clock, on the left of the bar: the machine's local time, drawn with the
+            // shell's own bitmap font (the compositor's frame has rectangles, no text).
             let clock = clock_text(state.started_at, elapsed);
-            frame.text(
-                &clock,
-                12,
-                bary + (32 - flow_shell::GLYPH_H * 2) / 2,
-                2,
-                palette::TEXT,
-            );
+            let clock_colour = colour(palette::TEXT);
+            let clock_scale = 2i32;
+            let clock_x = 12i32;
+            let clock_y = bary + (32 - flow_shell::GLYPH_H as i32 * clock_scale) / 2;
+            for (i, ch) in clock.chars().enumerate() {
+                let cx = clock_x + i as i32 * flow_shell::GLYPH_ADVANCE as i32 * clock_scale;
+                for (col, byte) in flow_shell::font::glyph(ch).iter().enumerate() {
+                    for row in 0..flow_shell::GLYPH_H as i32 {
+                        if byte & (1 << row) != 0 {
+                            let px = cx + col as i32 * clock_scale;
+                            let py = clock_y + row * clock_scale;
+                            let r = rect((px, py, clock_scale, clock_scale));
+                            frame
+                                .draw_solid(r, &[Rectangle::from_size(r.size)], clock_colour)
+                                .map_err(err("drawing the clock"))?;
+                        }
+                    }
+                }
+            }
             // The volume slider, above the Volume button when it is open: a track with the
             // filled part below the pointer's volume (top = full, bottom = mute).
             if state.volume_slider_open {
