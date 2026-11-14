@@ -16,7 +16,10 @@ pub enum Input {
     Tab,
     Char(char),
     /// A press at a point in the window.
-    Click { x: u32, y: u32 },
+    Click {
+        x: u32,
+        y: u32,
+    },
 }
 
 /// What the window is asked to do, handed to its worker (the account store).
@@ -24,9 +27,15 @@ pub enum Input {
 pub enum Action {
     None,
     /// First boot: make the account with this name and password.
-    Create { name: String, password: String },
+    Create {
+        name: String,
+        password: String,
+    },
     /// Later boot: check this name and password.
-    SignIn { name: String, password: String },
+    SignIn {
+        name: String,
+        password: String,
+    },
     Quit,
 }
 
@@ -106,7 +115,11 @@ impl Login {
                 name: saved_name.unwrap_or_default().to_string(),
                 password: String::new(),
                 confirm: String::new(),
-                field: if first_boot { Field::Name } else { Field::Password },
+                field: if first_boot {
+                    Field::Name
+                } else {
+                    Field::Password
+                },
                 status: Status::Idle,
             },
         }
@@ -115,7 +128,9 @@ impl Login {
     /// A key or a click; what the worker should do about it, if anything.
     pub fn handle(&mut self, input: Input) -> Action {
         match input {
-            Input::Escape => return Action::Quit,
+            // Esc clears the field in hand rather than quitting: the screen must not be
+            // skippable — it exits only when a sign-in or account creation succeeds.
+            Input::Escape => self.clear_field(),
             Input::Char(c) if !c.is_control() => {
                 self.type_char(c);
             }
@@ -157,6 +172,18 @@ impl Login {
             Field::Confirm => &mut m.confirm,
         };
         value.pop();
+        m.status = Status::Idle;
+    }
+
+    /// Esc clears the field in hand (a soft reset), never the whole screen.
+    fn clear_field(&mut self) {
+        let m = &mut self.mode;
+        let value = match m.field {
+            Field::Name => &mut m.name,
+            Field::Password => &mut m.password,
+            Field::Confirm => &mut m.confirm,
+        };
+        value.clear();
         m.status = Status::Idle;
     }
 
@@ -282,7 +309,13 @@ impl Login {
             } else {
                 shown
             };
-            text(frame, &shown, rect.x + 14, centre(rect.y, FIELD_H), colours::TEXT);
+            text(
+                frame,
+                &shown,
+                rect.x + 14,
+                centre(rect.y, FIELD_H),
+                colours::TEXT,
+            );
             if i + 1 < rows.len() {
                 frame.fill_rect(
                     Rect::new(PAD, top + FIELD_H + FIELD_GAP / 2 - 1, 360, 1),
@@ -415,7 +448,13 @@ mod tests {
     }
 
     #[test]
-    fn escape_quits() {
-        assert_eq!(first_boot().handle(Input::Escape), Action::Quit);
+    fn escape_clears_the_field_in_hand_and_never_quits() {
+        let mut l = first_boot();
+        for c in "morph".chars() {
+            let _ = l.handle(Input::Char(c));
+        }
+        // Esc clears the name, and the screen is still up (no Action::Quit exists now).
+        assert_eq!(l.handle(Input::Escape), Action::None);
+        assert!(l.mode.name.is_empty());
     }
 }
