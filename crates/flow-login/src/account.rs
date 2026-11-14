@@ -8,8 +8,10 @@
 
 use sha2::{Digest, Sha256};
 
-/// Where the account file lives, on the data partition.
-pub const ACCOUNT_PATH: &str = "/persist/account";
+/// Where the account file lives: in the person's home, which is bind-mounted from the data
+/// partition, so it outlives a reboot and an update. (The full root-managed user database,
+/// `libnss-extrausers` on `/persist`, is S5's first pull request; this store plugs into it.)
+pub const ACCOUNT_PATH: &str = "/home/morph/.account";
 
 /// A created account: its name and the salt and hash the password is checked against.
 #[derive(Debug, Clone, PartialEq, Eq)]
