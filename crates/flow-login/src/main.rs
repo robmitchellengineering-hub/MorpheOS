@@ -301,8 +301,8 @@ mod client {
         if let Some((w, h)) = std::env::args()
             .skip(1)
             .find(|a| a.starts_with("--size="))
-            .and_then(|a| a.strip_prefix("--size="))
-            .and_then(|s| s.split_once('x'))
+            .and_then(|a| a.strip_prefix("--size=").map(str::to_string))
+            .and_then(|s| s.split_once('x').map(|(w, h)| (w.to_string(), h.to_string())))
             .and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?)))
         {
             size = (w, h);
