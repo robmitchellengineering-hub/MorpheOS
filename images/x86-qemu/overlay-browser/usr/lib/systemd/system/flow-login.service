@@ -1,0 +1,21 @@
+[Unit]
+Description=The sign-in screen: first-boot account setup and login (doc 20 S5)
+Documentation=https://github.com/robmitchellengineering-hub/MorpheOS/blob/main/docs/20-build-plan.md
+Requires=flow-shell.service
+After=flow-shell.service
+# The browser waits for a signed-in screen (its After= below), so a first boot goes:
+# compositor, then this window, then Firefox once the person is in.
+
+[Service]
+Type=oneshot
+User=morph
+Group=morph
+Environment=XDG_RUNTIME_DIR=/run/flow WAYLAND_DISPLAY=wayland-0
+# The window shows once the compositor has bound its socket; wait rather than guess.
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 300); do [ -S /run/flow/wayland-0 ] && exit 0; sleep 0.1; done; exit 1'
+ExecStart=/usr/bin/flow-login
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

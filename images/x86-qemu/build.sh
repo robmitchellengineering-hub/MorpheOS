@@ -84,6 +84,10 @@ FLOW_WIFI=${FLOW_WIFI:-$REPO/target/release/flow-wifi}
 FLOW_MOUNT=${FLOW_MOUNT:-$REPO/target/release/flow-mount}
 FLOW_TIMELINE=${FLOW_TIMELINE:-$REPO/target/release/flow-timeline}
 FLOW_NOTICE=${FLOW_NOTICE:-$REPO/target/release/flow-notice}
+FLOW_LOGIN=${FLOW_LOGIN:-$REPO/target/release/flow-login}
+# The sign-in screen (S5) gates the browser on the person-facing image. The CI scenarios boot
+# `plain` and expect Firefox without a login, so it is opt-in per build: MORPH_LOGIN=1.
+MORPH_LOGIN=${MORPH_LOGIN:-0}
 if [ "$SHELL_UI" = 1 ]; then
     for b in "$FLOW_COMPOSITOR" "$SOLID_WINDOW" "$FLOW_WIFI" "$FLOW_MOUNT" "$FLOW_TIMELINE" "$FLOW_NOTICE"; do
         [ -x "$b" ] || { echo "missing $b: run cargo build --release -p flow-compositor -p flow-wifi -p flow-files -p flow-timeline -p flow-notice" >&2; exit 1; }
@@ -629,6 +633,7 @@ EOF
         install -m 0755 "$FLOW_MOUNT" "$dir/usr/bin/flow-mount"
         install -m 0755 "$FLOW_TIMELINE" "$dir/usr/bin/flow-timeline"
         install -m 0755 "$FLOW_NOTICE" "$dir/usr/bin/flow-notice"
+        install -m 0755 "$FLOW_LOGIN" "$dir/usr/bin/flow-login"
         # The shell scenario shows the demonstration window; the browser scenario, Firefox;
         # the wifi scenario, Firefox plus the Wi-Fi picker (E14: once the picker joins,
         # Firefox must come online). Where there is NetworkManager, the picker opens by
@@ -644,6 +649,10 @@ EOF
             full-disk) apps="" ;;
             config-rollback) apps="" ;;
         esac
+        # The sign-in screen, only on a person-facing build (MORPH_LOGIN=1): it gates the
+        # browser, whose unit waits on it. CI builds leave it off so their Firefox tests boot
+        # straight into the browser.
+        if [ "$MORPH_LOGIN" = 1 ]; then apps="flow-login $apps"; fi
         case "$SCENARIO" in plain|browser|wifi) cp -a "$HERE/overlay-network/." "$dir/" ;; esac
         case "$SCENARIO" in plain|browser|wifi) cp -a "$HERE/overlay-browser/." "$dir/" ;; esac
         # The splash's music (E19). Enabled only where the shell draws: the splash IS the

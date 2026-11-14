@@ -1,7 +1,7 @@
 [Unit]
 Description=Firefox on the Flow shell (doc 20 E4)
 Requires=flow-shell.service
-After=flow-shell.service
+After=flow-shell.service flow-login.service
 # The system root is read-only. Firefox's profile and cache go on the data partition, but
 # outside /home: Strata versions every file under /home, and a browser rewrites its profile
 # databases and cache all the time, which would fill the store with nothing a person wrote.
