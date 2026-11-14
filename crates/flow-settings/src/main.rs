@@ -274,21 +274,13 @@ mod client {
             let code = xkb::Keycode::new(key + 8);
             let sym = st.key_get_one_sym(code).raw();
             use xkb::keysyms as k;
-            Some(match sym {
-                k::KEY_Up => Input::Up,
-                k::KEY_Down => Input::Down,
-                k::KEY_Return | k::KEY_KP_Enter => Input::Enter,
-                k::KEY_Escape => Input::Escape,
-                k::KEY_BackSpace => Input::Backspace,
-                k::KEY_Tab | k::KEY_ISO_Left_Tab => Input::Tab,
-                _ => {
-                    let mut chars = st.key_get_utf8(code).chars().collect::<Vec<_>>();
-                    match (chars.pop(), chars.is_empty()) {
-                        (Some(c), true) if !c.is_control() => Input::Char(c),
-                        _ => return None,
-                    }
-                }
-            })
+            match sym {
+                k::KEY_Up => Some(Input::Up),
+                k::KEY_Down => Some(Input::Down),
+                k::KEY_Return | k::KEY_KP_Enter => Some(Input::Enter),
+                k::KEY_Escape => Some(Input::Escape),
+                _ => None,
+            }
         }
     }
 
