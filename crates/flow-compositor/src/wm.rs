@@ -53,9 +53,10 @@ pub fn bar(screen_w: i32, screen_h: i32) -> (i32, i32, i32, i32) {
     (0, screen_h - BAR_HEIGHT, screen_w, BAR_HEIGHT)
 }
 
-/// The Wi-Fi button on that screen, as (x, y, w, h).
+/// The Power button on that screen, as (x, y, w, h): the rightmost button, so the machine
+/// can be suspended from the bar (doc 20, D3).
 #[must_use]
-pub fn wifi_button(screen_w: i32, screen_h: i32) -> (i32, i32, i32, i32) {
+pub fn power_button(screen_w: i32, screen_h: i32) -> (i32, i32, i32, i32) {
     (
         screen_w - BUTTON_INSET - BUTTON,
         screen_h - BAR_HEIGHT + (BAR_HEIGHT - BUTTON) / 2,
@@ -64,12 +65,28 @@ pub fn wifi_button(screen_w: i32, screen_h: i32) -> (i32, i32, i32, i32) {
     )
 }
 
-/// The Files button on that screen: the same square, one button's gap to the Wi-Fi button's
+/// The Wi-Fi button on that screen, as (x, y, w, h): one button's gap to the Power button's
+/// left.
+#[must_use]
+pub fn wifi_button(screen_w: i32, screen_h: i32) -> (i32, i32, i32, i32) {
+    let (px, py, _, _) = power_button(screen_w, screen_h);
+    (px - BUTTON_INSET - BUTTON, py, BUTTON, BUTTON)
+}
+
+/// The Volume button on that screen: the same square, one button's gap to the Wi-Fi button's
+/// left, so the volume steps from the bar beside the Wi-Fi picker.
+#[must_use]
+pub fn volume_button(screen_w: i32, screen_h: i32) -> (i32, i32, i32, i32) {
+    let (wx, wy, _, _) = wifi_button(screen_w, screen_h);
+    (wx - BUTTON_INSET - BUTTON, wy, BUTTON, BUTTON)
+}
+
+/// The Files button on that screen: the same square, one button's gap to the Volume button's
 /// left, so the file view (E17) opens from the bar the way the picker does (doc 20, E20).
 #[must_use]
 pub fn files_button(screen_w: i32, screen_h: i32) -> (i32, i32, i32, i32) {
-    let (wx, wy, _, _) = wifi_button(screen_w, screen_h);
-    (wx - BUTTON_INSET - BUTTON, wy, BUTTON, BUTTON)
+    let (vx, vy, _, _) = volume_button(screen_w, screen_h);
+    (vx - BUTTON_INSET - BUTTON, vy, BUTTON, BUTTON)
 }
 
 /// The largest a window may be on a screen of `screen_w` x `screen_h`: the screen less a
@@ -323,11 +340,33 @@ impl Manager {
             && (by..by + bh).contains(&y)
     }
 
+    /// Whether a point is on the bar's Volume button. The bar is not there while a window is
+    /// fullscreen, so neither is the button.
+    #[must_use]
+    pub fn on_volume_button(&self, x: i32, y: i32) -> bool {
+        let (bx, by, bw, bh) = volume_button(self.screen.0, self.screen.1);
+        self.fullscreen.is_none()
+            && self.screen.1 > 0
+            && (bx..bx + bw).contains(&x)
+            && (by..by + bh).contains(&y)
+    }
+
     /// Whether a point is on the bar's Files button. The bar is not there while a window is
     /// fullscreen, so neither is the button.
     #[must_use]
     pub fn on_files_button(&self, x: i32, y: i32) -> bool {
         let (bx, by, bw, bh) = files_button(self.screen.0, self.screen.1);
+        self.fullscreen.is_none()
+            && self.screen.1 > 0
+            && (bx..bx + bw).contains(&x)
+            && (by..by + bh).contains(&y)
+    }
+
+    /// Whether a point is on the bar's Power button. The bar is not there while a window is
+    /// fullscreen, so neither is the button.
+    #[must_use]
+    pub fn on_power_button(&self, x: i32, y: i32) -> bool {
+        let (bx, by, bw, bh) = power_button(self.screen.0, self.screen.1);
         self.fullscreen.is_none()
             && self.screen.1 > 0
             && (bx..bx + bw).contains(&x)
@@ -788,18 +827,42 @@ mod tests {
     }
 
     #[test]
-    fn the_wifi_button_sits_at_the_right_of_the_bar_and_goes_with_fullscreen() {
+    fn the_power_button_sits_at_the_right_of_the_bar_and_goes_with_fullscreen() {
         let mut m = Manager::default();
         m.set_screen(640, 480);
         assert_eq!(bar(640, 480), (0, 448, 640, 32));
-        assert_eq!(wifi_button(640, 480), (608, 452, 24, 24));
-        assert!(m.on_wifi_button(608, 452) && m.on_wifi_button(631, 475));
-        assert!(!m.on_wifi_button(607, 460) && !m.on_wifi_button(632, 460));
-        assert!(!m.on_wifi_button(620, 451) && !m.on_wifi_button(620, 476));
+        assert_eq!(power_button(640, 480), (608, 452, 24, 24));
+        assert!(m.on_power_button(608, 452) && m.on_power_button(631, 475));
+        assert!(!m.on_power_button(607, 460) && !m.on_power_button(632, 460));
+        assert!(!m.on_power_button(620, 451) && !m.on_power_button(620, 476));
         m.sync(&[win(1, 100, 50)]);
         m.set_fullscreen(1, true);
         assert!(
-            !m.on_wifi_button(620, 460),
+            !m.on_power_button(620, 460),
+            "no bar over a fullscreen window"
+        );
+        assert!(
+            !Manager::default().on_power_button(0, 0),
+            "no screen, no button"
+        );
+    }
+
+    #[test]
+    fn the_wifi_button_sits_left_of_the_power_button_and_goes_with_fullscreen() {
+        let mut m = Manager::default();
+        m.set_screen(640, 480);
+        assert_eq!(wifi_button(640, 480), (576, 452, 24, 24));
+        assert!(m.on_wifi_button(576, 452) && m.on_wifi_button(599, 475));
+        assert!(!m.on_wifi_button(575, 460) && !m.on_wifi_button(600, 460));
+        assert!(!m.on_wifi_button(588, 451) && !m.on_wifi_button(588, 476));
+        assert!(
+            !m.on_power_button(576, 460),
+            "Wi-Fi is not the Power button"
+        );
+        m.sync(&[win(1, 100, 50)]);
+        m.set_fullscreen(1, true);
+        assert!(
+            !m.on_wifi_button(588, 460),
             "no bar over a fullscreen window"
         );
         assert!(
@@ -809,18 +872,43 @@ mod tests {
     }
 
     #[test]
-    fn the_files_button_sits_left_of_the_wifi_button_and_goes_with_fullscreen() {
+    fn the_volume_button_sits_left_of_the_wifi_button_and_goes_with_fullscreen() {
         let mut m = Manager::default();
         m.set_screen(640, 480);
-        // Wi-Fi at (608, 452); Files one button (24) plus a gap (8) to its left.
-        assert_eq!(files_button(640, 480), (576, 452, 24, 24));
-        assert!(m.on_files_button(576, 452) && m.on_files_button(599, 475));
-        assert!(!m.on_files_button(575, 460) && !m.on_files_button(600, 460));
-        assert!(!m.on_wifi_button(576, 460), "Files is not the Wi-Fi button");
+        assert_eq!(volume_button(640, 480), (544, 452, 24, 24));
+        assert!(m.on_volume_button(544, 452) && m.on_volume_button(567, 475));
+        assert!(!m.on_volume_button(543, 460) && !m.on_volume_button(568, 460));
+        assert!(
+            !m.on_wifi_button(544, 460),
+            "Volume is not the Wi-Fi button"
+        );
         m.sync(&[win(1, 100, 50)]);
         m.set_fullscreen(1, true);
         assert!(
-            !m.on_files_button(588, 460),
+            !m.on_volume_button(556, 460),
+            "no bar over a fullscreen window"
+        );
+        assert!(
+            !Manager::default().on_volume_button(0, 0),
+            "no screen, no button"
+        );
+    }
+
+    #[test]
+    fn the_files_button_sits_left_of_the_volume_button_and_goes_with_fullscreen() {
+        let mut m = Manager::default();
+        m.set_screen(640, 480);
+        assert_eq!(files_button(640, 480), (512, 452, 24, 24));
+        assert!(m.on_files_button(512, 452) && m.on_files_button(535, 475));
+        assert!(!m.on_files_button(511, 460) && !m.on_files_button(536, 460));
+        assert!(
+            !m.on_volume_button(512, 460),
+            "Files is not the Volume button"
+        );
+        m.sync(&[win(1, 100, 50)]);
+        m.set_fullscreen(1, true);
+        assert!(
+            !m.on_files_button(524, 460),
             "no bar over a fullscreen window"
         );
         assert!(

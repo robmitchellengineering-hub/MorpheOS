@@ -278,12 +278,13 @@ fn a_person_chooses_a_network_types_its_password_and_joins_it() {
 fn the_bars_button_and_super_w_open_one_picker() {
     let dir = runtime_dir("bar");
     let f: Vec<PathBuf> = (0..5).map(|i| dir.join(format!("{i}.ppm"))).collect();
-    // On a 640 x 480 screen the button is the 24 x 24 square at (608, 452) (wm::wifi_button).
+    // On a 640 x 480 screen the button is the 24 x 24 square at (576, 452) (wm::wifi_button),
+    // one gap left of the Power button.
     const KEY_LEFTMETA: u32 = 125;
     let script = format!(
         "settle 500\nframe {f0}\n\
-         click 620 464\nsettle 2500\nframe {f1}\n\
-         click 620 464\nsettle 1000\nframe {f2}\n\
+         click 588 464\nsettle 2500\nframe {f1}\n\
+         click 588 464\nsettle 1000\nframe {f2}\n\
          key {KEY_ESC}\nsettle 1000\nframe {f3}\n\
          key {KEY_LEFTMETA} {w}\nsettle 2500\nframe {f4}\n",
         f0 = f[0].display(),

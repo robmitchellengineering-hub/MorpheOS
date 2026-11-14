@@ -19,7 +19,7 @@ use crate::GLYPH_W;
 /// One glyph: five bytes, one per column, bit 0 the top row.
 ///
 /// Kept as a `[u8; 5]` so a caller indexes columns by position rather than by bit math.
-pub(crate) fn glyph(ch: char) -> [u8; GLYPH_W as usize] {
+pub fn glyph(ch: char) -> [u8; GLYPH_W as usize] {
     let c = ch as u32;
     let Some(offset) = c.checked_sub(0x20) else {
         return [0; GLYPH_W as usize];

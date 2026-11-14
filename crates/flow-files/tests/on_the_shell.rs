@@ -170,13 +170,14 @@ fn the_bars_button_and_super_e_open_one_file_view() {
     let dir = runtime_dir("bar");
     std::fs::write(dir.join("hello.txt"), "hello").unwrap();
     let f: Vec<PathBuf> = (0..5).map(|i| dir.join(format!("{i}.ppm"))).collect();
-    // On a 640x480 screen the Files button is the 24x24 square at (576, 452) (wm::files_button).
+    // On a 640x480 screen the Files button is the 24x24 square at (512, 452) (wm::files_button),
+    // one gap left of the Volume button.
     const KEY_LEFTMETA: u32 = 125;
     const KEY_E: u32 = 18;
     let script = format!(
         "settle 500\nframe {f0}\n\
-         click 588 464\nsettle 2500\nframe {f1}\n\
-         click 588 464\nsettle 1000\nframe {f2}\n\
+         click 524 464\nsettle 2500\nframe {f1}\n\
+         click 524 464\nsettle 1000\nframe {f2}\n\
          close\nsettle 1000\nframe {f3}\n\
          key {KEY_LEFTMETA} {KEY_E}\nsettle 2500\nframe {f4}\n",
         f0 = f[0].display(),

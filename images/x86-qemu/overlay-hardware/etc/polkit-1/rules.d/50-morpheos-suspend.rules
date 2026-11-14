@@ -1,0 +1,9 @@
+// D3: the shell (running as the person, "morph") may suspend the machine, so the bar's
+// Power button works without a root prompt. Physical presence is already the gate.
+polkit.addRule(function(action, subject) {
+    if ((action.id == "org.freedesktop.login1.suspend" ||
+         action.id == "org.freedesktop.login1.suspend-multiple-sessions") &&
+        subject.user == "morph") {
+        return polkit.Result.YES;
+    }
+});

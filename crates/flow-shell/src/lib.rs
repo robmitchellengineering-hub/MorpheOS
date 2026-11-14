@@ -51,7 +51,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-mod font;
+pub mod font;
 mod input;
 mod png;
 mod shelf;

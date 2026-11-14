@@ -130,6 +130,17 @@ struct App {
     screen: (i32, i32),
     /// Where the pointer is, for a client that asks to be moved from it (its title bar).
     pointer: (i32, i32),
+    /// The volume the bar's Volume button shows, 0.0 (muted) to 1.0 (full). It is set on the
+    /// default sink through the audio server's PipeWire socket.
+    volume: f32,
+    /// Whether the volume slider the Volume button opens is showing, so the bar draws it.
+    volume_slider_open: bool,
+    /// The newest window, remembered so the server gives it the keyboard before it has
+    /// drawn a frame (a sign-in screen must take typing immediately).
+    pending_keyboard: Option<WlSurface>,
+    /// The wall-clock time the compositor started, so the bar's clock reads the machine's
+    /// local time even though the render only knows how long it has been running.
+    started_at: std::time::SystemTime,
     next_id: u32,
 }
 
@@ -179,6 +190,10 @@ impl XdgShellHandler for App {
             state.bounds = Some((max_w, max_h).into());
         });
         surface.send_configure();
+        // Remember the newest window so the server hands it the keyboard straight away,
+        // rather than waiting for its first frame and the next refresh: a sign-in screen
+        // must take typing the moment it shows.
+        self.pending_keyboard = Some(surface.wl_surface().clone());
     }
 
     // POPUPS (menus, dropdowns, tooltips). A popup is placed by its positioner relative to its
@@ -596,6 +611,47 @@ pub const FILES_APP_ID: &str = "morpheos.files";
 /// The left mouse button's code (linux/input-event-codes.h `BTN_LEFT`).
 pub const BTN_LEFT: u32 = 0x110;
 
+/// The volume slider the bar's Volume button opens: a vertical track above the button. Its
+/// top is full volume, its bottom is mute. Returns (x, y, w, h).
+fn volume_slider(vx: i32, vy: i32) -> (i32, i32, i32, i32) {
+    (vx + 8, vy - 52, 8, 48)
+}
+
+/// The volume the pointer's y reads on a slider rect: 1.0 at the top (full) down to 0.0 at
+/// the bottom (mute).
+fn volume_at(y: f64, rect: (i32, i32, i32, i32)) -> f32 {
+    let (_, ry, _, rh) = rect;
+    (((ry + rh) as f64 - y) / f64::from(rh)).clamp(0.0, 1.0) as f32
+}
+
+/// The bar's clock, the machine's local time as "HH:MM" at `started_at + elapsed`.
+fn clock_text(started_at: std::time::SystemTime, elapsed: std::time::Duration) -> String {
+    let secs = started_at
+        .checked_add(elapsed)
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as libc::time_t)
+        .unwrap_or(0);
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    if unsafe { libc::localtime_r(&secs, &mut tm) }.is_null() {
+        return "--:--".to_string();
+    }
+    format!("{:02}:{:02}", tm.tm_hour, tm.tm_min)
+}
+
+/// The battery's charge for the bar, as "87%" (or "87%+" while charging), read from sysfs.
+/// `None` on a machine with no battery (a desktop, or a VM).
+fn battery_text() -> Option<String> {
+    let cap = std::fs::read_to_string("/sys/class/power_supply/BAT0/capacity").ok()?;
+    let cap: u32 = cap.trim().parse().ok()?;
+    let status = std::fs::read_to_string("/sys/class/power_supply/BAT0/status").ok()?;
+    let charging = status.trim() == "Charging";
+    Some(if charging {
+        format!("{cap}%+")
+    } else {
+        format!("{cap}%")
+    })
+}
+
 /// Everything the event loop needs to keep clients moving.
 pub struct Server {
     display: Display<App>,
@@ -613,6 +669,8 @@ pub struct Server {
     /// shell's too, not the window's.
     drag_button: Option<u32>,
     resize_button: Option<u32>,
+    /// Whether the pointer is dragging the volume slider (a drag sets the volume, 0..=1).
+    volume_dragging: bool,
     /// When the server started (frame-callback timestamps count from it), and when the
     /// visible surfaces were last told their frame was shown.
     started: Instant,
@@ -651,6 +709,14 @@ impl Server {
             .dispatch_clients(&mut self.state)
             .map_err(|e| format!("dispatching: {e}"))?;
         self.state.refresh();
+        // A window just appeared: give it the keyboard before its first frame, so a sign-in
+        // screen takes typing the moment it shows.
+        if let Some(surface) = self.state.pending_keyboard.take() {
+            let serial = SERIAL_COUNTER.next_serial();
+            self.keyboard
+                .set_focus(&mut self.state, Some(surface), serial);
+            self.keyboard_on = None;
+        }
         // Reap the pickers that have closed, or each stays a zombie.
         self.launched
             .retain_mut(|c| matches!(c.try_wait(), Ok(None)));
@@ -769,6 +835,11 @@ impl Server {
         self.pointer_at = (x, y).into();
         self.pointer_moved = true;
         self.state.pointer = (x as i32, y as i32);
+        if self.volume_dragging {
+            let (vx, vy, _, _) = wm::volume_button(self.width as i32, self.height as i32);
+            let v = volume_at(y, volume_slider(vx, vy));
+            self.set_volume(v);
+        }
         if self.state.wm.dragging() {
             self.state.wm.drag_to(x as i32, y as i32);
         }
@@ -812,6 +883,11 @@ impl Server {
     /// A mouse button. Pressing focuses the window under the pointer (the Classic feel:
     /// click to focus), and the window gets the button either way.
     pub fn pointer_button(&mut self, button: u32, pressed: bool, time: u32) {
+        // A volume-slider drag ends on release; the slider stays open until a click elsewhere.
+        if !pressed && self.volume_dragging {
+            self.volume_dragging = false;
+            return;
+        }
         // A move the shell started: its buttons are the shell's, not the window's (E9).
         if !pressed && self.drag_button == Some(button) {
             self.drag_button = None;
@@ -851,9 +927,58 @@ impl Server {
             self.open_wifi();
             return;
         }
+        // The bar's Volume button opens the slider and starts dragging it: the pointer's place
+        // on the slider is the volume right away. The press and its release are the shell's,
+        // not the window's.
+        if pressed
+            && button == BTN_LEFT
+            && self
+                .state
+                .wm
+                .on_volume_button(self.pointer_at.x as i32, self.pointer_at.y as i32)
+        {
+            self.state.dismiss_popups();
+            self.drag_button = Some(button);
+            self.open_volume_slider();
+            return;
+        }
+        // The bar's Power button suspends the machine (doc 20, D3): the press and its release
+        // are the shell's, not the window's.
+        if pressed
+            && button == BTN_LEFT
+            && self
+                .state
+                .wm
+                .on_power_button(self.pointer_at.x as i32, self.pointer_at.y as i32)
+        {
+            self.state.dismiss_popups();
+            self.drag_button = Some(button);
+            self.suspend();
+            return;
+        }
+        // A press on the open slider drags it from there (a slider already open, but the drag
+        // had been released).
+        if pressed
+            && button == BTN_LEFT
+            && self.state.volume_slider_open
+            && self.pointer_on_volume_slider()
+        {
+            self.drag_button = Some(button);
+            self.volume_dragging = true;
+            return;
+        }
         if pressed && button == BTN_LEFT {
             let at = self.pointer_at;
             let with_super = self.keyboard.modifier_state().logo;
+            // A press anywhere else closes the volume slider (it is not a window, so it does
+            // not otherwise go away).
+            if self.state.volume_slider_open
+                && !self.pointer_on_volume_slider()
+                && !self.state.wm.on_volume_button(at.x as i32, at.y as i32)
+            {
+                self.state.volume_slider_open = false;
+                self.volume_dragging = false;
+            }
             if self.state.popup_at(at.x as i32, at.y as i32).is_none() {
                 // A corner press resizes; an edge press moves.
                 if let Some((id, corner)) = self.state.wm.corner_at(at.x as i32, at.y as i32)
@@ -982,6 +1107,51 @@ impl Server {
                     None
                 }
             })
+    }
+
+    /// Set the volume on the default sink through the audio server's PipeWire socket, and
+    /// record it for the bar to draw. The audio server runs as root while the shell runs as
+    /// the person, so wpctl is pointed at root's runtime dir, as the startup read does.
+    fn set_volume(&mut self, v: f32) {
+        self.state.volume = v.clamp(0.0, 1.0);
+        let v = format!("{:.2}", self.state.volume);
+        let set = std::process::Command::new("wpctl")
+            .args(["set-volume", "@DEFAULT_AUDIO_SINK@", &v])
+            .env("XDG_RUNTIME_DIR", "/run/user/0")
+            .output();
+        if !matches!(set, Ok(ref o) if o.status.success()) {
+            eprintln!("flow-compositor: could not set the volume to {v}");
+        }
+    }
+
+    /// Suspend the machine to RAM (doc 20, D3), from the bar's Power button. Best-effort:
+    /// the shell keeps running if the suspend is refused, so a failed suspend is not a
+    /// broken shell.
+    fn suspend(&mut self) {
+        let set = std::process::Command::new("systemctl")
+            .args(["suspend"])
+            .output();
+        if !matches!(set, Ok(ref o) if o.status.success()) {
+            eprintln!("flow-compositor: could not suspend");
+        }
+    }
+
+    /// Whether the pointer is on the volume slider's track (a press there re-grabs the drag).
+    fn pointer_on_volume_slider(&self) -> bool {
+        let (vx, vy, _, _) = wm::volume_button(self.width as i32, self.height as i32);
+        let (sx, sy, sw, sh) = volume_slider(vx, vy);
+        let (x, y) = (self.pointer_at.x as i32, self.pointer_at.y as i32);
+        x >= sx && x < sx + sw && y >= sy && y < sy + sh
+    }
+
+    /// The bar's Volume button: open the slider and start dragging it, so the pointer's place
+    /// on it is the volume right away (a click at 70% sets 70%, then dragging follows it).
+    fn open_volume_slider(&mut self) {
+        self.state.volume_slider_open = true;
+        self.volume_dragging = true;
+        let (vx, vy, _, _) = wm::volume_button(self.width as i32, self.height as i32);
+        let v = volume_at(self.pointer_at.y, volume_slider(vx, vy));
+        self.set_volume(v);
     }
 
     /// Open the file view (the bar's Files button, Super+E). There is only ever one: one
@@ -1197,7 +1367,7 @@ impl Server {
             .add_keyboard(XkbConfig::default(), 200, 25)
             .map_err(|e| format!("creating the keyboard (is xkb-data installed?): {e}"))?;
         let pointer = seat.add_pointer();
-        let state = App {
+        let mut state = App {
             compositor_state: CompositorState::new::<App>(&dh),
             xdg_shell_state: XdgShellState::new::<App>(&dh),
             shm_state: ShmState::new::<App>(&dh, vec![]),
@@ -1221,6 +1391,10 @@ impl Server {
             asked: Vec::new(),
             screen: (width as i32, height as i32),
             pointer: (width as i32 / 2, height as i32 / 2),
+            volume: 1.0,
+            volume_slider_open: false,
+            pending_keyboard: None,
+            started_at: std::time::SystemTime::now(),
             next_id: 0,
         };
         state.output.create_global::<App>(&dh);
@@ -1228,6 +1402,21 @@ impl Server {
         let listener =
             ListeningSocket::bind(socket).map_err(|e| format!("binding socket {socket}: {e}"))?;
         eprintln!("flow-compositor: listening on {socket}");
+        // Read the volume the audio server has now, so the button shows it (best-effort: the
+        // button still steps it if the read fails). The audio server runs as root while the
+        // shell runs as the person, so the PipeWire socket is reached by pointing wpctl at
+        // root's runtime dir.
+        if let Ok(o) = std::process::Command::new("wpctl")
+            .args(["get-volume", "@DEFAULT_AUDIO_SINK@"])
+            .env("XDG_RUNTIME_DIR", "/run/user/0")
+            .output()
+            && o.status.success()
+        {
+            let text = String::from_utf8_lossy(&o.stdout);
+            if let Some(v) = text.split_whitespace().find_map(|t| t.parse::<f32>().ok()) {
+                state.volume = v.clamp(0.0, 1.0);
+            }
+        }
         Ok(Self {
             display,
             listener,
@@ -1240,6 +1429,7 @@ impl Server {
             keyboard_on: None,
             drag_button: None,
             resize_button: None,
+            volume_dragging: false,
             started: Instant::now(),
             last_frames: Instant::now(),
             width,
@@ -1464,36 +1654,123 @@ fn render(
             let rect =
                 |(x, y, w, h): (i32, i32, i32, i32)| Rectangle::new((x, y).into(), (w, h).into());
             let (bx, by, bw, _) = wm::wifi_button(sw, sh);
+            let (vx, vy, _, _) = wm::volume_button(sw, sh);
             let (fx, fy, fw, _) = wm::files_button(sw, sh);
+            let (px, py, _, _) = wm::power_button(sw, sh);
             let (barx, bary, barw, _) = wm::bar(sw, sh);
             // The bar: near-black, with a 1px hairline along its top edge (the divider between
-            // it and the windows), two raised button regions at a consistent inset, and a
-            // hairline between them. The Wi-Fi button is three rising bars; Files is a folder.
+            // it and the windows), four raised button regions at a consistent inset, and a
+            // hairline between each pair. The Wi-Fi button is three rising bars; Volume is a
+            // speaker with a level meter; Files is a folder; Power is a power glyph.
             let mut parts = vec![
                 (rect(wm::bar(sw, sh)), colour(palette::BAR)),
                 (rect((barx, bary, barw, 1)), colour(palette::BAR_DIVIDER)),
                 (rect(wm::wifi_button(sw, sh)), colour(palette::BAR_BUTTON)),
+                (rect(wm::volume_button(sw, sh)), colour(palette::BAR_BUTTON)),
                 (rect(wm::files_button(sw, sh)), colour(palette::BAR_BUTTON)),
+                (rect(wm::power_button(sw, sh)), colour(palette::BAR_BUTTON)),
             ];
-            // The hairline between the buttons, centred in the gap between them.
-            let gap_x = fx + fw + (bx - (fx + fw)) / 2;
-            parts.push((
-                rect((gap_x, fy + 6, 1, bw - 12)),
-                colour(palette::BAR_DIVIDER),
-            ));
+            // A hairline centred in each gap between the four buttons.
+            for (left_right, right_left) in
+                [(fx + fw, vx), (vx + wm::BUTTON, bx), (bx + wm::BUTTON, px)]
+            {
+                let gap_x = left_right + (right_left - left_right) / 2;
+                parts.push((
+                    rect((gap_x, fy + 6, 1, bw - 12)),
+                    colour(palette::BAR_DIVIDER),
+                ));
+            }
             // Wi-Fi: three bars, 3 px wide and 3 px apart, rising to the right, bottom-aligned
             // and centred in the button.
             for (i, h) in [6, 11, 16].into_iter().enumerate() {
                 let x = bx + 5 + 6 * i as i32;
                 parts.push((rect((x, by + 20 - h, 3, h)), colour(palette::BAR_ICON)));
             }
+            // Volume: a speaker — a cone on the left (three slivers widening toward the body),
+            // a driver box on the right — with a level meter underneath. Nothing like the
+            // Wi-Fi's rising bars.
+            let muted = state.volume < 0.01;
+            let speaker = if muted {
+                palette::BAR_DIVIDER
+            } else {
+                palette::BAR_ICON
+            };
+            for (x, y, h) in [
+                (vx + 2, vy + 11, 2),
+                (vx + 4, vy + 10, 4),
+                (vx + 6, vy + 9, 6),
+            ] {
+                parts.push((rect((x, y, 2, h)), colour(speaker)));
+            }
+            parts.push((rect((vx + 8, vy + 8, 5, 8)), colour(speaker)));
+            parts.push((rect((vx + 3, vy + 19, 18, 3)), colour(palette::BAR_DIVIDER)));
+            let fill = (18.0 * state.volume).round() as i32;
+            if fill > 0 {
+                parts.push((rect((vx + 3, vy + 19, fill, 3)), colour(palette::BAR_ICON)));
+            }
             // Files: a folder — a tab above the left of a body, both inset from the button.
             parts.push((rect((fx + 4, fy + 8, 16, 12)), colour(palette::BAR_ICON)));
             parts.push((rect((fx + 4, fy + 5, 8, 4)), colour(palette::BAR_ICON)));
+            // Power: the power glyph — a vertical line into a "U" arc, inset from the button.
+            parts.push((rect((px + 10, py + 4, 2, 8)), colour(palette::BAR_ICON)));
+            parts.push((rect((px + 7, py + 9, 2, 6)), colour(palette::BAR_ICON)));
+            parts.push((rect((px + 15, py + 9, 2, 6)), colour(palette::BAR_ICON)));
+            parts.push((rect((px + 7, py + 15, 10, 2)), colour(palette::BAR_ICON)));
             for (r, c) in parts {
                 frame
                     .draw_solid(r, &[Rectangle::from_size(r.size)], c)
                     .map_err(err("drawing the bar"))?;
+            }
+            // The clock and battery, on the left of the bar: the machine's local time and
+            // charge, drawn with the shell's own bitmap font (the compositor's frame has
+            // rectangles, no text).
+            let mut bar_text = clock_text(state.started_at, elapsed);
+            if let Some(battery) = battery_text() {
+                bar_text.push_str("  ");
+                bar_text.push_str(&battery);
+            }
+            let text_colour = colour(palette::TEXT);
+            let text_scale = 2i32;
+            let text_x = 12i32;
+            let text_y = bary + (32 - flow_shell::GLYPH_H as i32 * text_scale) / 2;
+            for (i, ch) in bar_text.chars().enumerate() {
+                let cx = text_x + i as i32 * flow_shell::GLYPH_ADVANCE as i32 * text_scale;
+                for (col, byte) in flow_shell::font::glyph(ch).iter().enumerate() {
+                    for row in 0..flow_shell::GLYPH_H as i32 {
+                        if byte & (1 << row) != 0 {
+                            let px = cx + col as i32 * text_scale;
+                            let py = text_y + row * text_scale;
+                            let r = rect((px, py, text_scale, text_scale));
+                            frame
+                                .draw_solid(r, &[Rectangle::from_size(r.size)], text_colour)
+                                .map_err(err("drawing the bar text"))?;
+                        }
+                    }
+                }
+            }
+            // The volume slider, above the Volume button when it is open: a track with the
+            // filled part below the pointer's volume (top = full, bottom = mute).
+            if state.volume_slider_open {
+                let (sx, sy, sw, sh) = volume_slider(vx, vy);
+                let mut slider = vec![
+                    (
+                        rect((sx - 1, sy - 1, sw + 2, sh + 2)),
+                        colour(palette::BAR_BUTTON),
+                    ),
+                    (rect((sx, sy, sw, sh)), colour(palette::BAR_DIVIDER)),
+                ];
+                let level = (sh as f32 * state.volume).round() as i32;
+                if level > 0 {
+                    slider.push((
+                        rect((sx, sy + sh - level, sw, level)),
+                        colour(palette::BAR_ICON),
+                    ));
+                }
+                for (r, c) in slider {
+                    frame
+                        .draw_solid(r, &[Rectangle::from_size(r.size)], c)
+                        .map_err(err("drawing the volume slider"))?;
+                }
             }
         }
         if let Some((x, y)) = cursor {
