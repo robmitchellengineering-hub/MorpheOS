@@ -84,6 +84,7 @@ FLOW_WIFI=${FLOW_WIFI:-$REPO/target/release/flow-wifi}
 FLOW_MOUNT=${FLOW_MOUNT:-$REPO/target/release/flow-mount}
 FLOW_TIMELINE=${FLOW_TIMELINE:-$REPO/target/release/flow-timeline}
 FLOW_NOTICE=${FLOW_NOTICE:-$REPO/target/release/flow-notice}
+FLOW_SETTINGS=${FLOW_SETTINGS:-$REPO/target/release/flow-settings}
 if [ "$SHELL_UI" = 1 ]; then
     for b in "$FLOW_COMPOSITOR" "$SOLID_WINDOW" "$FLOW_WIFI" "$FLOW_MOUNT" "$FLOW_TIMELINE" "$FLOW_NOTICE"; do
         [ -x "$b" ] || { echo "missing $b: run cargo build --release -p flow-compositor -p flow-wifi -p flow-files -p flow-timeline -p flow-notice" >&2; exit 1; }
@@ -166,7 +167,7 @@ BUILD_LIB_CHECK="libudev wayland-client xkbcommon libinput libseat pixman-1 gbm 
 # `node -e`; on 2026-11-04 the node came up, pulled its queue, and reported "no command and no task" for every
 # job because the image had no Node at all - a machine that looks like a node and can never run anything.
 NODE_PKGS=nodejs
-BROWSER_PKGS="$BASE_PKGS,$DEV_PKGS,${BUILD_LIBS// /,},$NODE_PKGS,firefox,fonts-dejavu-core,network-manager,wpasupplicant,systemd-resolved,libgl1-mesa-dri,libegl-mesa0,libgbm1,libglx-mesa0,pipewire,pipewire-pulse,wireplumber,alsa-ucm-conf,tailscale"
+BROWSER_PKGS="$BASE_PKGS,$DEV_PKGS,${BUILD_LIBS// /,},$NODE_PKGS,firefox,fonts-dejavu-core,network-manager,wpasupplicant,systemd-resolved,libgl1-mesa-dri,libegl-mesa0,libgbm1,libglx-mesa0,pipewire,pipewire-pulse,wireplumber,alsa-ucm-conf,tailscale,power-profiles-daemon"
 BROWSER_KEY="$BROWSER_PKGS,(linux-modules-extra)"
 # The person-facing images are the ones that carry DEV_PKGS (see the compiler assertion below).
 INSTALLS_DEV_PKGS=0
@@ -629,6 +630,7 @@ EOF
         install -m 0755 "$FLOW_MOUNT" "$dir/usr/bin/flow-mount"
         install -m 0755 "$FLOW_TIMELINE" "$dir/usr/bin/flow-timeline"
         install -m 0755 "$FLOW_NOTICE" "$dir/usr/bin/flow-notice"
+        install -m 0755 "$FLOW_SETTINGS" "$dir/usr/bin/flow-settings"
         # The shell scenario shows the demonstration window; the browser scenario, Firefox;
         # the wifi scenario, Firefox plus the Wi-Fi picker (E14: once the picker joins,
         # Firefox must come online). Where there is NetworkManager, the picker opens by

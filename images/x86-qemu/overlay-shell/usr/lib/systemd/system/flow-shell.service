@@ -37,7 +37,7 @@ Environment=XDG_RUNTIME_DIR=/run/flow LIBSEAT_BACKEND=seatd
 # itself, so it says what it found on this unit's output.
 # The Wi-Fi picker is NOT launched from here any more: a child of this unit would run as morph, and joining a
 # network needs NetworkManager's polkit check, which means root. It is flow-wifi.service, started alongside.
-ExecStart=/usr/bin/flow-compositor --socket wayland-0 --drm auto
+ExecStart=/usr/bin/flow-compositor --socket wayland-0 --drm auto --launch-wifi flow-wifi --launch-settings flow-settings
 StandardOutput=journal+console
 StandardError=journal+console
 

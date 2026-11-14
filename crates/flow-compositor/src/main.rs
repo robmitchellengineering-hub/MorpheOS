@@ -66,6 +66,7 @@ fn main() -> std::process::ExitCode {
             drm: flag("--drm").map(Into::into),
             launch_wifi: flag("--launch-wifi"),
             launch_files: flag("--launch-files"),
+            launch_settings: flag("--launch-settings"),
             wait_for: num("--wait-for", 1)? as usize,
             timeout: std::time::Duration::from_secs(num("--timeout", 30)?),
             width: num("--width", 800)? as u32,

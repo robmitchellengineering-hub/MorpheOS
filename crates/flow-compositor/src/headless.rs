@@ -99,6 +99,8 @@ pub struct Options {
     pub launch_wifi: Option<String>,
     /// The command that opens the file view, from the bar's Files button or Super+E (E20).
     pub launch_files: Option<String>,
+    /// The command that opens the Settings window, from Super+I (D1).
+    pub launch_settings: Option<String>,
     /// Render the boot splash (E19) at this many seconds after the compositor started,
     /// instead of the shell. `None` renders the shell; `Some(0)` is the first instant.
     pub splash: Option<f32>,
@@ -585,6 +587,7 @@ enum Shortcut {
     Fullscreen,
     Wifi,
     Files,
+    Settings,
 }
 
 /// The Wi-Fi picker's `app_id`, by which the shell finds one already open.
@@ -592,6 +595,8 @@ pub const WIFI_APP_ID: &str = "morpheos.wifi";
 
 /// The file view's `app_id`, by which the shell finds one already open.
 pub const FILES_APP_ID: &str = "morpheos.files";
+/// The Settings window's `app_id`, by which the shell finds one already open.
+pub const SETTINGS_APP_ID: &str = "morpheos.settings";
 
 /// The left mouse button's code (linux/input-event-codes.h `BTN_LEFT`).
 pub const BTN_LEFT: u32 = 0x110;
@@ -625,6 +630,7 @@ pub struct Server {
     socket: String,
     launch_wifi: Option<Vec<String>>,
     launch_files: Option<Vec<String>>,
+    launch_settings: Option<Vec<String>>,
     launched: Vec<std::process::Child>,
 }
 
@@ -952,6 +958,8 @@ impl Server {
                         FilterResult::Intercept(Shortcut::Wifi)
                     } else if modifiers.logo && plain == Some(Keysym::e.raw()) {
                         FilterResult::Intercept(Shortcut::Files)
+                    } else if modifiers.logo && plain == Some(Keysym::i.raw()) {
+                        FilterResult::Intercept(Shortcut::Settings)
                     } else {
                         FilterResult::Forward
                     }
@@ -979,6 +987,10 @@ impl Server {
                 }
                 Shortcut::Files => {
                     self.open_files();
+                    None
+                }
+                Shortcut::Settings => {
+                    self.open_settings();
                     None
                 }
             })
@@ -1013,6 +1025,34 @@ impl Server {
                 "flow-compositor: could not open the file view ({}): {e}",
                 cmd[0]
             ),
+        }
+    }
+
+    /// Open the Settings window (Super+I, D1). There is only ever one: one already on the
+    /// screen comes to the front.
+    fn open_settings(&mut self) {
+        if let Some(id) = self.state.window_with_app_id(SETTINGS_APP_ID) {
+            self.state.wm.activate(id);
+            self.apply_focus();
+            return;
+        }
+        let Some(cmd) = &self.launch_settings else {
+            eprintln!("flow-compositor: no Settings window to open (no --launch-settings)");
+            return;
+        };
+        if !self.launched.is_empty() {
+            return;
+        }
+        match std::process::Command::new(&cmd[0])
+            .args(&cmd[1..])
+            .env("WAYLAND_DISPLAY", &self.socket)
+            .spawn()
+        {
+            Ok(child) => {
+                eprintln!("flow-compositor: opening Settings");
+                self.launched.push(child);
+            }
+            Err(e) => eprintln!("flow-compositor: could not open Settings ({}): {e}", cmd[0]),
         }
     }
 
@@ -1247,6 +1287,7 @@ impl Server {
             socket: socket.to_string(),
             launch_wifi: None,
             launch_files: None,
+            launch_settings: None,
             launched: Vec::new(),
         })
     }
@@ -1287,6 +1328,11 @@ pub fn run(opts: &Options) -> Result<(), String> {
         .filter(|c| !c.is_empty());
     server.launch_files = opts
         .launch_files
+        .as_deref()
+        .map(|c| c.split_whitespace().map(str::to_string).collect::<Vec<_>>())
+        .filter(|c| !c.is_empty());
+    server.launch_settings = opts
+        .launch_settings
         .as_deref()
         .map(|c| c.split_whitespace().map(str::to_string).collect::<Vec<_>>())
         .filter(|c| !c.is_empty());
