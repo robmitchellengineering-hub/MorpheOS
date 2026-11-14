@@ -217,7 +217,7 @@ impl Login {
     fn field_at(&self, x: u32, y: u32) -> Option<Field> {
         for (i, field) in self.field_rows().iter().enumerate() {
             let top = BRAND_H + 40 + i as u32 * (FIELD_H + FIELD_GAP);
-            if y >= top && y < top + FIELD_H && x >= PAD && x < PAD + 360 {
+            if (top..top + FIELD_H).contains(&y) && (PAD..PAD + 360).contains(&x) {
                 return Some(*field);
             }
         }
