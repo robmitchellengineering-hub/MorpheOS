@@ -53,15 +53,24 @@ pub fn bar(screen_w: i32, screen_h: i32) -> (i32, i32, i32, i32) {
     (0, screen_h - BAR_HEIGHT, screen_w, BAR_HEIGHT)
 }
 
-/// The Wi-Fi button on that screen, as (x, y, w, h).
+/// The Power button on that screen, as (x, y, w, h): the rightmost button, so the machine
+/// can be suspended from the bar (doc 20, D3).
 #[must_use]
-pub fn wifi_button(screen_w: i32, screen_h: i32) -> (i32, i32, i32, i32) {
+pub fn power_button(screen_w: i32, screen_h: i32) -> (i32, i32, i32, i32) {
     (
         screen_w - BUTTON_INSET - BUTTON,
         screen_h - BAR_HEIGHT + (BAR_HEIGHT - BUTTON) / 2,
         BUTTON,
         BUTTON,
     )
+}
+
+/// The Wi-Fi button on that screen, as (x, y, w, h): one button's gap to the Power button's
+/// left.
+#[must_use]
+pub fn wifi_button(screen_w: i32, screen_h: i32) -> (i32, i32, i32, i32) {
+    let (px, py, _, _) = power_button(screen_w, screen_h);
+    (px - BUTTON_INSET - BUTTON, py, BUTTON, BUTTON)
 }
 
 /// The Volume button on that screen: the same square, one button's gap to the Wi-Fi button's
@@ -347,6 +356,17 @@ impl Manager {
     #[must_use]
     pub fn on_files_button(&self, x: i32, y: i32) -> bool {
         let (bx, by, bw, bh) = files_button(self.screen.0, self.screen.1);
+        self.fullscreen.is_none()
+            && self.screen.1 > 0
+            && (bx..bx + bw).contains(&x)
+            && (by..by + bh).contains(&y)
+    }
+
+    /// Whether a point is on the bar's Power button. The bar is not there while a window is
+    /// fullscreen, so neither is the button.
+    #[must_use]
+    pub fn on_power_button(&self, x: i32, y: i32) -> bool {
+        let (bx, by, bw, bh) = power_button(self.screen.0, self.screen.1);
         self.fullscreen.is_none()
             && self.screen.1 > 0
             && (bx..bx + bw).contains(&x)

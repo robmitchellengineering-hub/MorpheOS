@@ -913,6 +913,20 @@ impl Server {
             self.open_volume_slider();
             return;
         }
+        // The bar's Power button suspends the machine (doc 20, D3): the press and its release
+        // are the shell's, not the window's.
+        if pressed
+            && button == BTN_LEFT
+            && self
+                .state
+                .wm
+                .on_power_button(self.pointer_at.x as i32, self.pointer_at.y as i32)
+        {
+            self.state.dismiss_popups();
+            self.drag_button = Some(button);
+            self.suspend();
+            return;
+        }
         // A press on the open slider drags it from there (a slider already open, but the drag
         // had been released).
         if pressed
@@ -1078,6 +1092,18 @@ impl Server {
             .output();
         if !matches!(set, Ok(ref o) if o.status.success()) {
             eprintln!("flow-compositor: could not set the volume to {v}");
+        }
+    }
+
+    /// Suspend the machine to RAM (doc 20, D3), from the bar's Power button. Best-effort:
+    /// the shell keeps running if the suspend is refused, so a failed suspend is not a
+    /// broken shell.
+    fn suspend(&mut self) {
+        let set = std::process::Command::new("systemctl")
+            .args(["suspend"])
+            .output();
+        if !matches!(set, Ok(ref o) if o.status.success()) {
+            eprintln!("flow-compositor: could not suspend");
         }
     }
 
@@ -1600,20 +1626,24 @@ fn render(
             let (bx, by, bw, _) = wm::wifi_button(sw, sh);
             let (vx, vy, _, _) = wm::volume_button(sw, sh);
             let (fx, fy, fw, _) = wm::files_button(sw, sh);
+            let (px, py, _, _) = wm::power_button(sw, sh);
             let (barx, bary, barw, _) = wm::bar(sw, sh);
             // The bar: near-black, with a 1px hairline along its top edge (the divider between
-            // it and the windows), three raised button regions at a consistent inset, and a
+            // it and the windows), four raised button regions at a consistent inset, and a
             // hairline between each pair. The Wi-Fi button is three rising bars; Volume is a
-            // speaker with four level bars; Files is a folder.
+            // speaker with a level meter; Files is a folder; Power is a power glyph.
             let mut parts = vec![
                 (rect(wm::bar(sw, sh)), colour(palette::BAR)),
                 (rect((barx, bary, barw, 1)), colour(palette::BAR_DIVIDER)),
                 (rect(wm::wifi_button(sw, sh)), colour(palette::BAR_BUTTON)),
                 (rect(wm::volume_button(sw, sh)), colour(palette::BAR_BUTTON)),
                 (rect(wm::files_button(sw, sh)), colour(palette::BAR_BUTTON)),
+                (rect(wm::power_button(sw, sh)), colour(palette::BAR_BUTTON)),
             ];
-            // A hairline centred in each gap between the three buttons.
-            for (left_right, right_left) in [(fx + fw, vx), (vx + wm::BUTTON, bx)] {
+            // A hairline centred in each gap between the four buttons.
+            for (left_right, right_left) in
+                [(fx + fw, vx), (vx + wm::BUTTON, bx), (bx + wm::BUTTON, px)]
+            {
                 let gap_x = left_right + (right_left - left_right) / 2;
                 parts.push((
                     rect((gap_x, fy + 6, 1, bw - 12)),
@@ -1651,6 +1681,11 @@ fn render(
             // Files: a folder — a tab above the left of a body, both inset from the button.
             parts.push((rect((fx + 4, fy + 8, 16, 12)), colour(palette::BAR_ICON)));
             parts.push((rect((fx + 4, fy + 5, 8, 4)), colour(palette::BAR_ICON)));
+            // Power: the power glyph — a vertical line into a "U" arc, inset from the button.
+            parts.push((rect((px + 10, py + 4, 2, 8)), colour(palette::BAR_ICON)));
+            parts.push((rect((px + 7, py + 9, 2, 6)), colour(palette::BAR_ICON)));
+            parts.push((rect((px + 15, py + 9, 2, 6)), colour(palette::BAR_ICON)));
+            parts.push((rect((px + 7, py + 15, 10, 2)), colour(palette::BAR_ICON)));
             for (r, c) in parts {
                 frame
                     .draw_solid(r, &[Rectangle::from_size(r.size)], c)
