@@ -3,7 +3,7 @@
 //! first boot), and every input turns into at most one [`Action`] for the window's worker.
 //! So all of it is tested anywhere Rust runs.
 
-use flow_shell::{Colour, Frame, GLYPH_ADVANCE, GLYPH_H, Rect};
+use flow_shell::{Colour, Frame, GLYPH_H, Rect};
 
 /// A key or a click, already decoded from the keyboard's layout.
 #[derive(Debug, Clone, PartialEq, Eq)]
