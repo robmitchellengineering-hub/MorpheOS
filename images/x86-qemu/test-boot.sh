@@ -141,7 +141,25 @@ fi
 # The same parse the other scenarios use — the file holds one JSON record per boot, not the
 # `<slot>/<phase>/<action>` summary this prints. Reading it as if it were already summarised was
 # the second bug this check found in itself.
-history=$(mtype -i "$DISK@@1M" ::/morph-boot/history.jsonl 2>/dev/null |
+# NOT `history=$(mtype ... | sed ...)`. Under `set -e` a failing mtype kills the script at this line with no
+# message at all: the run ends after the console check, exit 1, and the failing assertion is never named —
+# which is how this test failed twice on 2026-11-04 while every assertion it printed had passed. Read it
+# tolerantly, then say what is missing.
+history_raw=$(mtype -i "$DISK@@1M" ::/morph-boot/history.jsonl 2>/dev/null || true)
+if [ -z "$history_raw" ]; then
+    echo "    FAIL  the ESP has no /morph-boot/history.jsonl - the boot decision was not recorded"
+    # SAY WHAT IS THERE. The first version of this failure named only the absence, and an absence is not a
+    # diagnosis: the next step was a guess about which unit writes the file. This lists what the ESP does hold
+    # and what boot-check said, so the failure explains itself in one run instead of three.
+    echo "    the ESP holds:"
+    mdir -i "$DISK@@1M" ::/ 2>&1 | sed 's/^/      /' | head -20
+    echo "    /morph-boot on the ESP:"
+    mdir -i "$DISK@@1M" ::/morph-boot 2>&1 | sed 's/^/      /' | head -20
+    echo "    what boot-check said (from the console log):"
+    grep -aoE 'morph-boot-check:[^\r]*' "$LOG" 2>/dev/null | tail -5 | sed 's/^/      /'
+    fail=1
+fi
+history=$(printf '%s\n' "$history_raw" |
     sed -nE 's/.*"booted":"([ab])".*"phase":"([a-z]+)".*"action":"([a-z-]+)".*/\1\/\2\/\3/p')
 echo "    boots:   $(echo "$history" | tr '\n' ' ')"
 if [ -z "$history" ]; then

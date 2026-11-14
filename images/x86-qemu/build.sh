@@ -27,10 +27,15 @@
 # systemd-boot-efi, and built morph-boot and strata binaries
 # (cargo build --release -p morph-boot -p strata).
 set -euo pipefail
+# A SILENT EXIT IS A WALL. Under `set -e`, a failing command ends the script with no message, and the operator is
+# left inferring which of a hundred lines did it across a 90-minute CI cycle (that is how the shell scenario failed
+# on 2026-11-05: "slot b: 717 MiB" and then nothing). This trap says the line and the failing command, so the next
+# failure is a sentence instead of a guess.
+trap 'echo "build.sh: FAILED at line $LINENO: $BASH_COMMAND" >&2' ERR
 
 WORK=${1:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
 SCENARIO=${2:?usage: build.sh <workdir> <good|unhealthy|crash|ransomware>}
-case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell|browser|wifi|broken-shell|hung-shell|recovery|manifest|autoupdate|rewind|full-disk|config-rollback) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
+case "$SCENARIO" in good|unhealthy|crash|ransomware|plain|shell|browser|wifi|broken-shell|hung-shell|recovery|manifest|autoupdate|rewind|full-disk|config-rollback|install) ;; *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;; esac
 # `plain` is the one that leaves the CI harness behind and is meant to be booted by a person:
 # the Flow shell drawing the screen and taking the keyboard and mouse, Firefox on a local
 # start page, NetworkManager, and the Wi-Fi picker when there is no network (doc 20, E4 and
@@ -71,6 +76,7 @@ MORPH_HEAL=${MORPH_HEAL:-$REPO/target/release/morph-heal}
 MORPH_MANIFEST=${MORPH_MANIFEST:-$REPO/target/release/morph-manifest}
 MORPH_D=${MORPH_D:-$REPO/target/release/morphd}
 MORPH_AUTOUPDATE=${MORPH_AUTOUPDATE:-$REPO/target/release/morph-autoupdate}
+MORPH_INSTALL=${MORPH_INSTALL:-$REPO/target/release/morph-install}
 SDBOOT_EFI=${SDBOOT_EFI:-/usr/lib/systemd/boot/efi/systemd-bootx64.efi}
 FLOW_COMPOSITOR=${FLOW_COMPOSITOR:-$REPO/target/release/flow-compositor}
 SOLID_WINDOW=${SOLID_WINDOW:-$REPO/target/release/solid-window}
@@ -78,6 +84,10 @@ FLOW_WIFI=${FLOW_WIFI:-$REPO/target/release/flow-wifi}
 FLOW_MOUNT=${FLOW_MOUNT:-$REPO/target/release/flow-mount}
 FLOW_TIMELINE=${FLOW_TIMELINE:-$REPO/target/release/flow-timeline}
 FLOW_NOTICE=${FLOW_NOTICE:-$REPO/target/release/flow-notice}
+FLOW_LOGIN=${FLOW_LOGIN:-$REPO/target/release/flow-login}
+# The sign-in screen (S5) gates the browser on the person-facing image. The CI scenarios boot
+# `plain` and expect Firefox without a login, so it is opt-in per build: MORPH_LOGIN=1.
+MORPH_LOGIN=${MORPH_LOGIN:-0}
 if [ "$SHELL_UI" = 1 ]; then
     for b in "$FLOW_COMPOSITOR" "$SOLID_WINDOW" "$FLOW_WIFI" "$FLOW_MOUNT" "$FLOW_TIMELINE" "$FLOW_NOTICE"; do
         [ -x "$b" ] || { echo "missing $b: run cargo build --release -p flow-compositor -p flow-wifi -p flow-files -p flow-timeline -p flow-notice" >&2; exit 1; }
@@ -105,7 +115,7 @@ mkdir -p "$WORK"
 # installed, by name, in a hook; the firmware stays the chosen sets below. The extra modules
 # also carry mac80211_hwsim, the simulated Wi-Fi the E5 test connects through.
 BASE="$WORK/rootfs-base"
-BASE_PKGS=systemd-sysv,udev,kmod,linux-image-virtual,initramfs-tools,systemd-boot,dosfstools,libpixman-1-0,libxkbcommon0,libinput10,libseat1,seatd,pciutils,usbutils,pci.ids,usb.ids,linux-firmware-amd-graphics,linux-firmware-intel-graphics,linux-firmware-intel-wireless,linux-firmware-mediatek,linux-firmware-realtek,linux-firmware-broadcom-wireless,firmware-sof-signed,firmware-b43-installer,openssh-server,git,curl,ca-certificates,alsa-utils
+BASE_PKGS=systemd-sysv,udev,kmod,linux-image-virtual,initramfs-tools,systemd-boot,dosfstools,fdisk,e2fsprogs,libpixman-1-0,libxkbcommon0,libinput10,libseat1,seatd,pciutils,usbutils,pci.ids,usb.ids,linux-firmware-amd-graphics,linux-firmware-intel-graphics,linux-firmware-intel-wireless,linux-firmware-mediatek,linux-firmware-realtek,linux-firmware-broadcom-wireless,firmware-sof-signed,firmware-b43-installer,openssh-server,git,curl,ca-certificates,alsa-utils
 MODULES_EXTRA_HOOK='chroot "$1" sh -c "apt-get install -y -q linux-modules-extra-\$(ls /usr/lib/modules | sort -V | tail -1)"'
 BASE_KEY="$BASE_PKGS,(linux-modules-extra)"
 if [ "$(cat "$BASE/.complete" 2>/dev/null)" != "$BASE_KEY" ]; then
@@ -147,7 +157,20 @@ TAILSCALE_KEY_URL=https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg
 # gcc + binutils + libc6-dev + make is ~200 MB, which is why it goes in the person-facing images rather
 # than every test scenario.
 DEV_PKGS=build-essential,pkg-config
-BROWSER_PKGS="$BASE_PKGS,$DEV_PKGS,firefox,fonts-dejavu-core,network-manager,wpasupplicant,systemd-resolved,libgl1-mesa-dri,libegl-mesa0,libgbm1,libglx-mesa0,pipewire,pipewire-pulse,wireplumber,alsa-ucm-conf,tailscale"
+# THE DEVELOPMENT LIBRARIES A WORKSPACE BUILD NEEDS. Measured on 2026-11-01: `cargo build --workspace` on a
+# person-facing image stopped at libudev-sys because the image had build-essential and pkg-config and NOT ONE of
+# the libraries the compositor stack links. A machine that can compile a toy crate and not its own OS is not a
+# build node, and calling it one was wrong.
+#
+# The names are the pkg-config names the crates ask for; the assertion below checks each one is IN the image, so
+# a package rename or a silently dropped dependency fails the build instead of failing a person's compile.
+BUILD_LIBS="libudev-dev libwayland-dev libxkbcommon-dev libinput-dev libseat-dev libpixman-1-dev libgbm-dev libdrm-dev libx11-dev libxkbcommon-x11-dev"
+BUILD_LIB_CHECK="libudev wayland-client xkbcommon libinput libseat pixman-1 gbm libdrm x11"
+# NODE, BECAUSE THE MESH AGENT CANNOT PARSE A JOB WITHOUT IT. scripts/node.sh reads every job with
+# `node -e`; on 2026-11-04 the node came up, pulled its queue, and reported "no command and no task" for every
+# job because the image had no Node at all - a machine that looks like a node and can never run anything.
+NODE_PKGS=nodejs
+BROWSER_PKGS="$BASE_PKGS,$DEV_PKGS,${BUILD_LIBS// /,},$NODE_PKGS,firefox,fonts-dejavu-core,network-manager,wpasupplicant,systemd-resolved,libgl1-mesa-dri,libegl-mesa0,libgbm1,libglx-mesa0,pipewire,pipewire-pulse,wireplumber,alsa-ucm-conf,tailscale"
 BROWSER_KEY="$BROWSER_PKGS,(linux-modules-extra)"
 # The person-facing images are the ones that carry DEV_PKGS (see the compiler assertion below).
 INSTALLS_DEV_PKGS=0
@@ -316,6 +339,27 @@ make_root() {
             echo "could not install $src into $dir" >&2; exit 1; }
     done
     ln -sf ../etc/os-release "$dir/usr/lib/os-release" 2>/dev/null || true
+    # ── THE PERSON'S ACCOUNT (E11; Rob chose option A on 2026-11-04) ──────────────────────────────────────────
+    # One ordinary user, uid 1000, no password. The shell runs as it; the Wi-Fi picker keeps root (see
+    # flow-wifi.service). The uid is FIXED and written straight into /etc/passwd because /etc/passwd lives in the
+    # read-only slot: every future image must agree with the one a stick already carries, or /persist/home/morph
+    # becomes a directory owned by a stranger. `useradd` is not installed (no `passwd` package), and a fixed line is
+    # deterministic anyway.
+    grep -q '^morph:' "$dir/etc/passwd" 2>/dev/null ||
+        printf 'morph:x:1000:1000:MorpheOS user:/persist/home/morph:/bin/bash\n' >> "$dir/etc/passwd"
+    grep -q '^morph:' "$dir/etc/group" 2>/dev/null ||
+        printf 'morph:x:1000:\n' >> "$dir/etc/group"
+    # seatd's socket is group `video` (its unit runs `seatd -g video`), so a non-root compositor opens DRM and
+    # input through the seat daemon — which is what makes running as morph possible at all.
+    grep -q '^video:.*\bmorph\b' "$dir/etc/group" 2>/dev/null || sed -i '/^video:/ s/$/,morph/' "$dir/etc/group"
+    # A stick that is UPDATED keeps its old data partition, so the boot has to put the home right even when the
+    # filesystem was made before the user existed.
+    mkdir -p "$dir/etc/tmpfiles.d"
+    printf 'd /persist/home/morph 0700 morph morph -\n' > "$dir/etc/tmpfiles.d/morph-home.conf"
+    printf 'd /persist/browser 0755 morph morph -\n' > "$dir/etc/tmpfiles.d/morph-browser.conf"
+    # (The check that the shell unit runs as morph lives with the shell overlay below, not here: this function runs
+    # for every slot BEFORE the shell overlay is applied, so looking for the unit at this point fails the build on a
+    # correct tree. It did, twice, before this line existed to explain it.)
     # The base's /etc/pam.d/login prints the Ubuntu legal notice TWICE at login. It carries
     # two motd lines: `pam_motd.so motd=/run/motd.dynamic` (the welcome + help + legal notice,
     # kept) and `pam_motd.so noupdate` (the DEFAULT motd). Because /etc/motd was never created
@@ -360,6 +404,9 @@ make_root() {
     # The updater and the keys it accepts, in the image's own read-only root: an update
     # medium's own binary could check nothing, so the machine verifies with these (S2).
     install -m 0755 "$MORPH_UPDATE" "$dir/usr/bin/morph-update"
+    # E7: the installer the machine uses to lay out its own internal disk. Not built for the test scenarios (its
+    # write path needs a real target disk), but the binary must be there for a person to run.
+    if [ -x "$MORPH_INSTALL" ]; then install -m 0755 "$MORPH_INSTALL" "$dir/usr/bin/morph-install"; fi
     install -D -m 0644 "$UPDATE_KEY.pub" "$dir/usr/share/morpheos/update-keys/build.pub"
     # The unattended-update entry point (doc 20, S3): the timer runs this, in the image's own
     # read-only root, with its own trusted keys.
@@ -390,6 +437,31 @@ make_root() {
     if [ "${INSTALLS_DEV_PKGS:-0}" = 1 ]; then
         for tool in /usr/bin/gcc /usr/bin/ld /usr/bin/make; do
             [ -x "$dir$tool" ] || { echo "missing $tool: the machine could not build on itself" >&2; exit 1; }
+        done
+        # The mesh agent's job parser is `node -e`. Without it every job reads as empty and the node answers
+        # "no command and no task" while looking perfectly healthy — measured on the reference laptop.
+        [ -x "$dir/usr/bin/node" ] || {
+            echo "missing /usr/bin/node: the robmesh agent cannot parse a job without it" >&2
+            exit 1
+        }
+        # E7: the installer's tools. A machine that can lay out its own internal disk needs sfdisk (fdisk) and
+        # mkfs.ext4 (e2fsprogs) — dosfstools already provides mkfs.vfat. Asserted, not assumed, because an installer
+        # whose tools are missing is a machine that silently cannot install itself.
+        for tool in /usr/sbin/sfdisk /usr/sbin/mkfs.ext4; do
+            [ -x "$dir$tool" ] || { echo "missing $tool: morph-install cannot lay out a disk without it" >&2; exit 1; }
+        done
+        # And the libraries the workspace links against. Present as .pc files, which is what pkg-config and the
+        # crates' build scripts actually look for — a package that installed only a runtime library would pass a
+        # `dpkg -l` check and still fail the build.
+        for lib in $BUILD_LIB_CHECK; do
+            found=0
+            for pc in "$dir"/usr/lib/*/pkgconfig/"$lib".pc "$dir"/usr/share/pkgconfig/"$lib".pc; do
+                [ -f "$pc" ] && found=1
+            done
+            [ "$found" = 1 ] || {
+                echo "missing $lib.pc: a workspace build would stop at this library" >&2
+                exit 1
+            }
         done
     fi
     # SSH in, so the mesh can drive this machine over the network (E6: no stick, no console
@@ -453,6 +525,8 @@ PARTLABEL=esp    /efi             vfat   umask=0077,nofail  0  0
 tmpfs            /tmp             tmpfs  mode=1777          0  0
 # Everything that must outlive an update lives on the shared data partition.
 PARTLABEL=data   /persist         ext4   defaults           0  2
+# The work partition: the machine's large writable place for build trees and logs.
+PARTLABEL=work   /persist/work    ext4   defaults,nofail   0  2
 /persist/home    /home            none   bind,x-systemd.requires-mounts-for=/persist  0  0
 /persist/strata  /var/lib/strata  none   bind,x-systemd.requires-mounts-for=/persist  0  0
 # State systemd's own services keep in /var/lib/systemd (their StateDirectory), which the
@@ -507,6 +581,29 @@ EOF
     fi
     if [ "$SHELL_UI" = 1 ]; then
         cp -a "$HERE/overlay-shell/." "$dir/"
+        # E11's verification, in the SHELL image only and never in `plain`: a unit that records the compositor's real
+        # uid, the Wayland socket's owner and what the unit asked for, onto the ESP where the harness can read it.
+        # The task says to write this while the compositor still runs as root and watch it go red - which is what it
+        # does today: today's answer is uid 0, and the check reports it rather than pretending otherwise.
+        # NOW the unit exists. If it ever drifts back to root, the build says so rather than shipping a root
+        # session that looks fixed - the whole of E11 rests on this line.
+        grep -q '^User=morph' "$dir/usr/lib/systemd/system/flow-shell.service" 2>/dev/null || {
+            echo "flow-shell.service does not set User=morph: the shell would run as root (E11)" >&2; exit 1; }
+        [ -f "$dir/usr/lib/systemd/system/flow-wifi.service" ] || {
+            echo "flow-wifi.service is missing: the picker would not start, and it must stay root (E11)" >&2; exit 1; }
+        cp -a "$HERE/overlay-shell-test/." "$dir/"
+        # E7: a test-only overlay whose unit runs the installer at boot and records the verdict to the ESP.
+        # Copied only for the `install` scenario, never into a person's image.
+        if [ "$SCENARIO" = install ]; then
+            cp -a "$HERE/overlay-install-test/." "$dir/"
+            ln -sf /usr/lib/systemd/system/morph-install-test.service \
+                "$dir/etc/systemd/system/multi-user.target.wants/morph-install-test.service"
+        fi
+        # The picker keeps root (NetworkManager needs polkit), so it is a unit of its own (E11).
+        ln -sf /usr/lib/systemd/system/flow-wifi.service \
+            "$dir/etc/systemd/system/multi-user.target.wants/flow-wifi.service"
+        ln -sf /usr/lib/systemd/system/morph-session-facts.service \
+            "$dir/etc/systemd/system/multi-user.target.wants/morph-session-facts.service"
         # WHAT THE MACHINE CALLS ITSELF, installed with the shell because this is the image a person
         # boots. Ubuntu's os-release made every tool report "Ubuntu 24.04.5 LTS", so MorpheOS was
         # indistinguishable from its base (Rob, 2026-10-31). ID_LIKE keeps apt working: this IS a
@@ -536,6 +633,7 @@ EOF
         install -m 0755 "$FLOW_MOUNT" "$dir/usr/bin/flow-mount"
         install -m 0755 "$FLOW_TIMELINE" "$dir/usr/bin/flow-timeline"
         install -m 0755 "$FLOW_NOTICE" "$dir/usr/bin/flow-notice"
+        install -m 0755 "$FLOW_LOGIN" "$dir/usr/bin/flow-login"
         # The shell scenario shows the demonstration window; the browser scenario, Firefox;
         # the wifi scenario, Firefox plus the Wi-Fi picker (E14: once the picker joins,
         # Firefox must come online). Where there is NetworkManager, the picker opens by
@@ -551,6 +649,10 @@ EOF
             full-disk) apps="" ;;
             config-rollback) apps="" ;;
         esac
+        # The sign-in screen, only on a person-facing build (MORPH_LOGIN=1): it gates the
+        # browser, whose unit waits on it. CI builds leave it off so their Firefox tests boot
+        # straight into the browser.
+        if [ "$MORPH_LOGIN" = 1 ]; then apps="flow-login $apps"; fi
         case "$SCENARIO" in plain|browser|wifi) cp -a "$HERE/overlay-network/." "$dir/" ;; esac
         case "$SCENARIO" in plain|browser|wifi) cp -a "$HERE/overlay-browser/." "$dir/" ;; esac
         # The splash's music (E19). Enabled only where the shell draws: the splash IS the
@@ -604,6 +706,42 @@ EOF
             done
             [ -n "$ts_unit" ] || { echo "tailscaled.service is missing from the image: the tailscale package did not install it" >&2; exit 1; }
             ln -sf "$ts_unit" "$dir/etc/systemd/system/multi-user.target.wants/tailscaled.service"
+
+            # THE NODE AGENT. A robmesh node is a loop that pulls work, not a machine someone can ssh into.
+            # These three files are what make that true after a reboot: the unit, the drop-in that keeps the
+            # tailnet identity on /persist instead of a tmpfs /var, and the setup script that puts HOME, the
+            # clone, the key and the identity marker on /persist (the root is read-only).
+            #
+            # Asserted, not assumed: if the overlay did not land, the machine boots as a desktop that looks
+            # fine and never pulls a job — the exact silent failure this costs.
+            for node_file in \
+                usr/lib/morpheos/mesh-node-setup \
+                etc/systemd/system/morpheos-mesh-node.service \
+                etc/systemd/system/tailscaled.service.d/persist.conf
+            do
+                [ -f "$dir/$node_file" ] || {
+                    echo "$node_file is missing from the image: the machine would boot as a desktop, not a node" >&2
+                    exit 1
+                }
+            done
+            [ -x "$dir/usr/lib/morpheos/mesh-node-setup" ] || {
+                echo "mesh-node-setup is not executable: systemd would fail to start the node agent" >&2
+                exit 1
+            }
+            ln -sf /etc/systemd/system/morpheos-mesh-node.service \
+                "$dir/etc/systemd/system/multi-user.target.wants/morpheos-mesh-node.service"
+
+            # APT CANNOT UPDATE AN IMMUTABLE SYSTEM, SO ITS TIMERS ONLY MAKE THE BOOT DEGRADED.
+            # Measured on the reference laptop 2026-11-04: every boot reported
+            #   apt-daily-upgrade.service  failed
+            #   apt-daily.service          failed
+            # because the root is read-only - and `systemctl is-system-running` therefore said "degraded" on
+            # every single boot, which boots-check records and the boot screen paints as a failure. A machine
+            # that always says something is wrong is a machine whose reports nobody reads. Masked: the
+            # mechanism that actually updates this system is morph-autoupdate (A/B slots), not apt.
+            for unit_name in apt-daily.service apt-daily.timer apt-daily-upgrade.service apt-daily-upgrade.timer; do
+                ln -sf /dev/null "$dir/etc/systemd/system/$unit_name"
+            done
         fi
         # The root console lives on VT2 while the shell has VT1 (Ctrl+Alt+F2 reaches it).
         # Started at boot under its own name, so its drop-in applies (logind's on-demand
@@ -615,7 +753,7 @@ EOF
             || { echo "seatd is not installed in $dir: the shell could not take the seat" >&2; exit 1; }
     fi
     if [ "$HARDWARE" = 1 ]; then
-        for unit in morph-banner morph-hwreport; do
+        for unit in morph-banner morph-hwreport morpheos-audio-share; do
             ln -sf "/usr/lib/systemd/system/$unit.service" \
                 "$dir/etc/systemd/system/multi-user.target.wants/$unit.service"
         done
@@ -872,6 +1010,11 @@ DATADIR="$WORK/data"
 rm -rf "$DATADIR"
 mkdir -p "$DATADIR/home/morph/Documents" "$DATADIR/strata" "$DATADIR/morph"
 chmod 0700 "$DATADIR/strata"
+# The person's home belongs to the person (uid 1000, E11). `mkfs.ext4 -d` keeps ownership, so this is the only
+# place it can be set — after the image is written the root is read-only and the directory already belongs to
+# whoever owned it when the filesystem was made.
+chown -R 1000:1000 "$DATADIR/home/morph"
+chown -R 1000:1000 "$DATADIR/browser" 2>/dev/null || mkdir -p "$DATADIR/browser" && chown -R 1000:1000 "$DATADIR/browser"
 
 # Generation 1 (doc 20, S11): the Manifest the machine boots with. `morphd boot` converges to
 # it at every start, and a later `morphd apply` needs it as the generation to replace. The
@@ -896,6 +1039,11 @@ ESP_MB=300 ROOT_MB=2400 DATA_MB=256
 if [ "$SCENARIO" = autoupdate ]; then
     DATA_MB=2048
 fi
+# E7: the install payload's root image (slot A's system, ~700 MiB) is carried on the DATA partition, so the
+# install scenario needs room there too — same reason as autoupdate.
+if [ "$SCENARIO" = install ]; then
+    DATA_MB=2048
+fi
 # A stick-sized image must be able to hold a person's work — and, for the mesh, a toolchain and a work
 # tree, because the machine has no other writable place: the root is read-only and /persist is this
 # partition. At 256 MiB that is impossible (measured on the first real hardware node, 2026-10-30: "the
@@ -904,6 +1052,13 @@ fi
 # self-test scenarios keep their small disks for CI.
 if [ "$HARDWARE" = 1 ]; then
     DATA_MB=${MORPH_DATA_MB:-4096}
+fi
+# A work partition for the person-facing (stick) image: the machine's only large writable
+# place for build trees and logs, because /persist is the (smaller) data partition. Default
+# 100 GiB on a stick; self-test scenarios keep WORK_MB=0 so their disks stay small for CI.
+WORK_MB=0
+if [ "$HARDWARE" = 1 ]; then
+    WORK_MB=${MORPH_WORK_MB:-102400}
 fi
 rm -f "$WORK/esp.img"
 mkfs.vfat -F 32 -n ESP -C "$WORK/esp.img" $((ESP_MB * 1024)) >/dev/null
@@ -920,6 +1075,23 @@ for slot in a b; do
     rm -f "$WORK/root-$slot.img"
     mkfs.ext4 -q -L "root-$slot" -d "$WORK/root-$slot" "$WORK/root-$slot.img" "${ROOT_MB}M"
 done
+# ── E7: the install payload a person's stick carries ──────────────────────────────────────────────
+# morph-install writes the system into an internal disk with `morph-update write`, whose whole point is that
+# the write is VERIFIED (it re-reads the device and checks the digest). That needs a sealed, signed payload —
+# and the signing key is the builder's, never shipped. The payload is built, sealed and signed HERE, and carried
+# on the DATA partition at /morpheos/install/ (the running machine sees /persist/morpheos/install/): the ESP is
+# only 300 MiB and cannot hold slot A's ~700 MiB root image, the data partition can. slot A's root is the system
+# that gets installed, and its kernel/initrd are the files a fresh slot boots with.
+if [ "$HARDWARE" = 1 ] || [ "$SCENARIO" = install ]; then
+    IPAY="$DATADIR/morpheos/install"
+    rm -rf "$IPAY"; mkdir -p "$IPAY"
+    cp "$WORK/root-a.img" "$IPAY/root.img"
+    cp "$ESPDIR/morpheos/a/vmlinuz" "$IPAY/vmlinuz"
+    cp "$ESPDIR/morpheos/a/initrd.img" "$IPAY/initrd.img"
+    "$MORPH_UPDATE" --payload "$IPAY" --release "$RELEASE" seal >/dev/null
+    "$MORPH_UPDATE" --payload "$IPAY" --key "$UPDATE_KEY" sign
+fi
+
 rm -f "$WORK/data.img"
 mkfs.ext4 -q -L data -d "$DATADIR" "$WORK/data.img" "${DATA_MB}M"
 # The recovery root (S4): slot A's tree with every boot service dropped — assembled
@@ -949,10 +1121,14 @@ if [ "$HARDWARE" = 1 ]; then
     "$MORPH_UPDATE" --payload "$RPAY" --key "$UPDATE_KEY" sign
     mcopy -i "$WORK/esp.img" "$RPAY/BLAKE3SUMS" "$RPAY/BLAKE3SUMS.sig" "::/morpheos/recovery/"
 fi
+if [ "$WORK_MB" -gt 0 ]; then
+    rm -f "$WORK/work.img"
+    mkfs.ext4 -q -L work "$WORK/work.img" "${WORK_MB}M"
+fi
 
 DISK="$WORK/disk-$SCENARIO.img"
 rm -f "$DISK"
-truncate -s $((1 + ESP_MB + 2 * ROOT_MB + DATA_MB + RECOVERY_MB + 1))M "$DISK"
+truncate -s $((1 + ESP_MB + 2 * ROOT_MB + DATA_MB + RECOVERY_MB + WORK_MB + 1))M "$DISK"
 {
     echo "label: gpt"
     echo "start=1MiB, size=${ESP_MB}MiB, type=uefi, name=esp"
@@ -961,6 +1137,9 @@ truncate -s $((1 + ESP_MB + 2 * ROOT_MB + DATA_MB + RECOVERY_MB + 1))M "$DISK"
     echo "size=${DATA_MB}MiB, type=linux, name=data"
     if [ "$HARDWARE" = 1 ]; then
         echo "size=${ROOT_MB}MiB, type=4f68bce3-e8cd-4db1-96e7-fbcaf984b709, name=recovery"
+    fi
+    if [ "$WORK_MB" -gt 0 ]; then
+        echo "size=${WORK_MB}MiB, type=linux, name=work"
     fi
 } | sfdisk -q "$DISK"
 dd if="$WORK/esp.img" of="$DISK" bs=1M seek=1 conv=notrunc status=none
@@ -971,5 +1150,8 @@ dd if="$WORK/root-b.img" of="$DISK" bs=1M seek=$((1 + ESP_MB + ROOT_MB)) conv=no
 dd if="$WORK/data.img" of="$DISK" bs=1M seek=$((1 + ESP_MB + 2 * ROOT_MB)) conv=notrunc,sparse status=none
 if [ "$HARDWARE" = 1 ]; then
     dd if="$WORK/recovery.img" of="$DISK" bs=1M seek=$((1 + ESP_MB + 2 * ROOT_MB + DATA_MB)) conv=notrunc,sparse status=none
+fi
+if [ "$WORK_MB" -gt 0 ]; then
+    dd if="$WORK/work.img" of="$DISK" bs=1M seek=$((1 + ESP_MB + 2 * ROOT_MB + DATA_MB + RECOVERY_MB)) conv=notrunc,sparse status=none
 fi
 echo "$DISK"

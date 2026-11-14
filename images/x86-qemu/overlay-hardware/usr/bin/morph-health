@@ -1,0 +1,72 @@
+#!/bin/sh
+# morph-health — is this machine actually well? One command, an exit code, and the reasons.
+#
+# WHY THIS EXISTS. Doc 20, P4: "Hardware health warnings". On 2026-11-04 the reference machine reported
+# `degraded` on every boot and nothing said why: two units were failing permanently (apt's daily timers on a
+# read-only root) and the only place that showed was a journal nobody had reason to open. A machine that always
+# says something is wrong, without saying what, trains people to ignore it.
+#
+#   morph-health          human-readable; exit 0 healthy, 1 something is wrong, 2 cannot tell
+#   morph-health --json   the same facts as one object, for the shell or a probe
+#
+# It reports what it measured. It does not fix anything, and it never reports "healthy" on absence of evidence:
+# an unanswered question is `unknown`, which is why the exit code can be 2.
+set -u
+JSON=0
+[ "${1:-}" = "--json" ] && JSON=1
+
+state=$(systemctl is-system-running 2>/dev/null); [ -n "$state" ] || state=unknown
+failed=$(systemctl --failed --no-legend --plain 2>/dev/null | awk '{print $1}')
+nfailed=$(printf '%s\n' "$failed" | grep -c . 2>/dev/null || echo 0)
+
+# /persist is the only writable place, so its free space is a health fact, not a nicety.
+free_mb=$(df -Pm /persist 2>/dev/null | awk 'NR==2{print $4}')
+[ -n "${free_mb:-}" ] || free_mb=unknown
+
+# The last thing the machine decided about its own boot.
+last_boot=$(tail -1 /efi/morph-boot/history.jsonl 2>/dev/null | cut -c1-160)
+
+# Audio: the answer is "is there a sink", not "is the package installed".
+sink=$(XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/0} wpctl status 2>/dev/null |
+       sed -n '/Sinks:/,/Sources:/p' | grep -c 'Audio' 2>/dev/null || echo unknown)
+
+# Tailnet, only if this machine is a node.
+if [ -f /persist/mesh/host-id ]; then
+    node=$(cat /persist/mesh/host-id 2>/dev/null)
+    agent=$(systemctl is-active morpheos-mesh-node 2>/dev/null || echo unknown)
+    tailnet=$(tailscale ip -4 2>/dev/null | head -1); [ -n "$tailnet" ] || tailnet=not-joined
+else
+    node=""; agent=""; tailnet=""
+fi
+
+# A verdict, and the reasons behind it.
+verdict=healthy; code=0
+[ "$state" = "degraded" ] && { verdict=degraded; code=1; }
+[ "$state" = "unknown" ] && { verdict=unknown; code=2; }
+[ "$nfailed" -gt 0 ] 2>/dev/null && [ "$verdict" = healthy ] && { verdict=degraded; code=1; }
+case "${free_mb:-}" in
+    unknown) ;;
+    *) [ "$free_mb" -lt 200 ] 2>/dev/null && { verdict="low-disk"; code=1; } ;;
+esac
+
+if [ "$JSON" = 1 ]; then
+    printf '{"verdict":"%s","system":"%s","failedUnits":%s,"freeMB":"%s","sink":"%s","node":"%s","agent":"%s","tailnet":"%s","lastBoot":"%s"}\n' \
+        "$verdict" "$state" "$(printf '%s' "$nfailed" | tr -cd '0-9')" "$free_mb" "$sink" "${node:-}" "${agent:-}" "${tailnet:-}" \
+        "$(printf '%s' "${last_boot:-}" | sed 's/"/\\"/g')"
+    exit $code
+fi
+
+printf 'morph-health: %s\n' "$verdict"
+printf '  system:      %s\n' "$state"
+if [ -n "$failed" ]; then
+    printf '  failed:      %s\n' "$(printf '%s' "$failed" | tr '\n' ' ')"
+else
+    printf '  failed:      none\n'
+fi
+printf '  /persist:    %s MB free\n' "$free_mb"
+printf '  audio:       %s sink(s)\n' "$sink"
+[ -n "${last_boot:-}" ] && printf '  last boot:   %s\n' "$last_boot"
+if [ -n "$node" ]; then
+    printf '  node:        %s (agent %s, tailnet %s)\n' "$node" "$agent" "$tailnet"
+fi
+exit $code

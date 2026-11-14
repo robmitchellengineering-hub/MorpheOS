@@ -1,0 +1,48 @@
+#!/bin/sh
+# morph-volume — the volume control morphe-shell does not have yet.
+#
+# WHY THIS EXISTS. Doc 20, D2: "Sound (PipeWire) with a volume control". The plumbing was fixed on 2026-11-04 (the
+# audio units refuse root, and the session is root) and sound worked, but nothing could change the volume except
+# wpctl by hand. A shell needs one thing to call, and so does a person at a console.
+#
+#   morph-volume              print the current level and mute state
+#   morph-volume up [n]       raise by n percent (default 5)
+#   morph-volume down [n]     lower by n percent (default 5)
+#   morph-volume set <0-100>  set the level
+#   morph-volume mute         mute
+#   morph-volume unmute       unmute
+#   morph-volume toggle       flip mute
+#
+# It talks to the session's PipeWire, which runs per-user: XDG_RUNTIME_DIR must point at the session that has the
+# sink. For the console session running as root that is /run/user/0, which is the default here.
+set -u
+XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/0}
+export XDG_RUNTIME_DIR
+
+command -v wpctl >/dev/null 2>&1 || { echo "morph-volume: wpctl is not installed" >&2; exit 1; }
+SINK=${MORPH_AUDIO_SINK:-@DEFAULT_AUDIO_SINK@}
+
+
+wpctl_status() {
+    vol=$(wpctl get-volume "$SINK" 2>/dev/null) || { echo "no default sink (is PipeWire running?)" >&2; exit 1; }
+    case "$vol" in *MUTED*) ms=" muted" ;; *) ms="" ;; esac
+    lvl=$(printf '%s\n' "$vol" | awk '{print $2}')
+    pct=$(awk -v l="$lvl" 'BEGIN{printf "%.0f", l*100}')
+    printf '%s%%%s\n' "$pct" "$ms"
+}
+
+case "${1:-status}" in
+    status|"") wpctl_status ;;
+    up) wpctl set-volume "$SINK" "$(awk -v s="${2:-5}" 'BEGIN{printf "%.2f", s/100}')+" >/dev/null 2>&1; wpctl_status ;;
+    down) wpctl set-volume "$SINK" "$(awk -v s="${2:-5}" 'BEGIN{printf "%.2f", s/100}')-" >/dev/null 2>&1; wpctl_status ;;
+    set)
+        [ $# -ge 2 ] || { echo "usage: morph-volume set <0-100>" >&2; exit 2; }
+        case "$2" in ''|*[!0-9]*) echo "morph-volume: '$2' is not a number 0-100" >&2; exit 2 ;; esac
+        [ "$2" -le 100 ] || { echo "morph-volume: '$2' is above 100" >&2; exit 2; }
+        wpctl set-volume "$SINK" "$(awk -v s="$2" 'BEGIN{printf "%.2f", s/100}')" >/dev/null 2>&1; wpctl_status ;;
+    mute) wpctl set-mute "$SINK" 1 >/dev/null 2>&1; wpctl_status ;;
+    unmute) wpctl set-mute "$SINK" 0 >/dev/null 2>&1; wpctl_status ;;
+    toggle) wpctl set-mute "$SINK" toggle >/dev/null 2>&1; wpctl_status ;;
+    -h|--help|help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//' ;;
+    *) echo "usage: morph-volume [status|up [n]|down [n]|set <0-100>|mute|unmute|toggle]" >&2; exit 2 ;;
+esac

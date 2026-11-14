@@ -1,0 +1,92 @@
+#!/bin/sh
+# morph-power — what the battery is doing, and what will happen when it runs out.
+#
+# WHY THIS EXISTS. Doc 20, D3: "Suspend, resume and battery". A laptop OS that cannot say how much charge is left,
+# or warn before it dies, loses work. The reference machine is a 2012 MacBook with a real battery, so this reads
+# sysfs directly (no daemon, no D-Bus) and says what it found, including "no battery" on a desktop.
+#
+#   morph-power            percentage, state, time remaining, and the critical threshold
+#   morph-power --json     the same facts as one object
+#
+# WHAT IT DOES NOT DO: suspend. `systemctl suspend` is one command away and testing it from an SSH session drops the
+# connection, so suspend/resume is measured by a person at the machine, not claimed here.
+set -u
+JSON=0
+[ "${1:-}" = "--json" ] && JSON=1
+
+BAT=""
+for d in /sys/class/power_supply/BAT*; do
+    [ -d "$d" ] && { BAT="$d"; break; }
+done
+
+if [ -z "$BAT" ]; then
+    if [ "$JSON" = 1 ]; then
+        printf '{"battery":false,"ac":"%s"}\n' "$(cat /sys/class/power_supply/A*/online 2>/dev/null | head -1 || echo unknown)"
+    else
+        printf 'morph-power: no battery — this machine runs on mains\n'
+    fi
+    exit 0
+fi
+
+cap=$(cat "$BAT/capacity" 2>/dev/null || echo unknown)
+status=$(cat "$BAT/status" 2>/dev/null || echo unknown)
+# "Full", "Charging", "Discharging", "Not charging"
+ac=$(cat /sys/class/power_supply/A*/online 2>/dev/null | head -1)
+case "${ac:-unknown}" in
+    1) ac_state=plugged ;;
+    0) ac_state=on-battery ;;
+    *) ac_state=unknown ;;
+esac
+
+# TIME IN WHICH DIRECTION? Charging reports the rate *into* the battery, so the same division gives time to FULL,
+# not time remaining. Printing "remaining 8.0 h" on a machine plugged in at 56% is a number that means the opposite
+# of its label - caught on the reference machine 2026-11-04, which was charging and reported 8.0 h "remaining".
+remaining=""; remaining_label="remaining"
+for pair in "energy_now energy_full" "charge_now charge_full"; do
+    set -- $pair
+    now_f="$BAT/$1"; full_f="$BAT/$2"
+    [ -f "$now_f" ] && [ -f "$full_f" ] || continue
+    now=$(cat "$now_f" 2>/dev/null); full=$(cat "$full_f" 2>/dev/null)
+    power=$(cat "$BAT/power_now" 2>/dev/null || echo 0)
+    current=$(cat "$BAT/current_now" 2>/dev/null || echo 0)
+    rate=$power; [ "${rate:-0}" -gt 0 ] 2>/dev/null || rate=$current
+    if [ "${rate:-0}" -gt 0 ] 2>/dev/null; then
+        case "$status" in
+            Charging|Full)
+                remaining_label="to full"
+                # Positive only while there is room left; a full battery has no time-to-full.
+                if [ "${full:-0}" -gt "${now:-0}" ] 2>/dev/null; then
+                    remaining=$(awk -v n="$now" -v f="$full" -v r="$rate" 'BEGIN{printf "%.1f h", (f-n)/r}')
+                fi
+                ;;
+            *)
+                remaining_label="remaining"
+                [ "${now:-0}" -gt 0 ] 2>/dev/null &&
+                    remaining=$(awk -v n="$now" -v r="$rate" 'BEGIN{printf "%.1f h", n/r}')
+                ;;
+        esac
+    fi
+done
+
+# BATTERY HEALTH. `capacity` is the charge PERCENTAGE, not the battery's condition: the reference machine reports
+# 56% while its charge is 3.86 Ah of a 3.909 Ah full - i.e. it is nearly full *of a worn battery*. `*_full_design`
+# is what a new cell holds, and the ratio is the number a person needs when a laptop lasts half as long as it did.
+health=""
+for pair in "energy_full energy_full_design" "charge_full charge_full_design"; do
+    set -- $pair
+    [ -f "$BAT/$1" ] && [ -f "$BAT/$2" ] || continue
+    f=$(cat "$BAT/$1" 2>/dev/null); d=$(cat "$BAT/$2" 2>/dev/null)
+    [ "${d:-0}" -gt 0 ] 2>/dev/null &&
+        health=$(awk -v f="$f" -v d="$d" 'BEGIN{printf "%.0f", 100*f/d}')
+done
+
+if [ "$JSON" = 1 ]; then
+    printf '{"battery":true,"capacity":"%s","status":"%s","ac":"%s","health":"%s","%s":"%s"}\n' \
+        "$cap" "$status" "$ac_state" "${health:-}" "$(printf '%s' "$remaining_label" | tr ' ' '-')" "${remaining:-}"
+    exit 0
+fi
+
+printf 'morph-power: %s%% (%s, %s)\n' "$cap" "$status" "$ac_state"
+[ -n "$remaining" ] && printf '  %-12s %s\n' "$remaining_label:" "$remaining"
+[ -n "$health" ] && printf '  health:      %s%% of design capacity\n' "$health"
+printf '  critical:    suspend or warn below 5%% (the shell does not yet act on this — D3)\n'

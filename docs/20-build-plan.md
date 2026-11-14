@@ -169,7 +169,7 @@ the client gets `button 272` and `key 30`, and Ctrl+Alt+F2 never reaches it).
 **Notes:** `plain` keeps its text console until E4: a shell with nothing to run in it serves
 a person on the laptop worse than the root console it opens on.
 
-### E11 · The shell as an ordinary user, and a broken shell falls back · blocked · needs E3
+### E11 · The shell as an ordinary user, and a broken shell falls back · in progress · needs E3
 
 **What:** start the compositor in a seat session (`libseat` with `seatd` or logind) as the
 ordinary user (A9; Rob decides the account model in S5), not root. Add an image scenario
@@ -182,8 +182,16 @@ compositor's `Uid:` line from `/proc/<pid>/status`, and the owner of `/run/flow/
 to the ESP. `test-shell.sh` reads them with `mtype` and requires a non-zero uid that is the
 same as the one in the image's `/etc/passwd`.
 
-**Blocked on:** Rob's account model (S5), or his yes to the placeholder user in note 6 below.
-The status goes back to `open` in the `plan/` pull request that records his answer.
+**Rob decided, 2026-11-04:** *"Do a"* — option A of [doc 31](../docs/31-accounts.md). One ordinary
+user `morph`, uid 1000, no password, with the shell running as it and the Wi-Fi picker staying root. The status
+is `in progress` until the shell scenario passes with that in the image.
+
+**What the answer changed:** `flow-shell.service` sets `User=morph` and the build **refuses to ship** if that line
+ever disappears; `/persist/home/morph` belongs to uid 1000 (and a `tmpfiles.d` line fixes it on an updated stick,
+whose data partition predates the user); `morph` is in `video`, because seatd's socket is group `video` and that is
+how a non-root compositor opens DRM and input; and the Wi-Fi picker moved to `flow-wifi.service`, root, started
+alongside — a child of the compositor would inherit the user, and joining a network needs NetworkManager's polkit
+check. The compositor still activates the picker by app id when its window appears.
 
 **Progress:** the second half is done. `test-fallback.sh broken-shell hung-shell` trials an
 update whose shell cannot start, and one whose shell starts and never draws; each is
@@ -1980,6 +1988,13 @@ well as in the graph, and the volume control's effect.)
 8. **Size:** M. PRs: (1) `VM_AUDIO`, PipeWire in the image, the tone through the graph, both
    captures; (2) the bar's control and the volume keys.
 
+**Progress (2026-11-04): the mechanism exists and was measured on hardware, the shell control does not.**
+`morph-volume status|up|down|set|mute|unmute|toggle` changes the session's default sink and was exercised on the
+reference machine (`100% → down 20 → 80% → up 10 → 90% → muted → unmute → set 100 → 100%`). What is still missing is
+the thing a person uses: a control in the shell, and the on-screen feedback for it. The plumbing was fixed the same
+day — `pipewire`, `pipewire-pulse` and `wireplumber` refuse to run as root and this image autologins as root, so no
+application could make a sound at all until the condition was cleared.
+
 ### D3 · Suspend, resume and battery · open
 **What:** the machine suspends to RAM from the shell (a button on the bar), from the lid and
 from the power button, and comes back with the screen, the keyboard and mouse, and the network
@@ -2058,6 +2073,15 @@ back; the report also gives the battery's charge, status and design capacity. Be
    hibernate is ever wanted (recommendation: not in v1). And the run on the reference laptop.
 7. **Size:** M for the builder (PRs: the report's sections and sleep hook; the VM scenario
    and the compositor's resume; the battery mark), then Rob's run.
+
+**Progress (2026-11-04): the battery is measured; suspend is not.** `morph-power` reports charge, charging state,
+mains, the time in the direction that actually applies (to full while charging, remaining while discharging — the
+first version printed "remaining 8.0 h" on a machine that was plugged in and charging), and **battery health as a
+share of design capacity**. On the reference machine it reads: `56% (Charging, plugged) · to full 0.1 h · health 57%
+of design capacity` — the 56% is not a nearly-flat battery, it is a **worn** one: 3.86 Ah of a 3.909 Ah full, where
+a new cell held roughly twice that. Worth saying because the same number reads as two very different problems.
+Suspend and resume remain unmeasured: testing them from an SSH session drops the connection, so they need a person
+at the machine.
 
 ### D4 · Apps from Flathub (A7) · open
 **What:** Flatpak in the image, with its system installation on the data partition, so an
@@ -2559,6 +2583,14 @@ a shell warning": the fault is injected into the disk device model, so the real 
 ## M5 · Widening (ADR 0014 lane 2)
 
 Approved direction, not yet ordered. Each becomes `open` when Rob orders it.
+
+**Progress (2026-11-04): the facts exist and are one command away; the warning a person sees does not.**
+`morph-health` reports the system state, the failed units by name, `/persist`'s free space, whether an audio sink
+exists, the last boot decision, and — if the machine is a node — its id, agent state and tailnet address, with
+`--json` for the shell and an exit code of 0 healthy / 1 wrong / 2 unknown. Measured on the reference machine: it
+named `apt-daily-upgrade.service` and `apt-daily.service` as the reason the boot was `degraded`, which is exactly
+the diagnosis that took a journal read to reach by hand. What P4 still needs is the *warning*: something in the
+shell that says "this machine has a problem" without someone thinking to ask.
 
 ### W1 · Windows programs (Wine/Proton capsule) · proposed
 **What:** one Windows program runs on the shell through Wine, as a Wayland client (no X server:

@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# mesh-node-setup — make this MorpheOS machine able to be a robmesh node, idempotently.
+#
+# WHY. The root is read-only, so every part of being a node has to live on /persist: HOME, the clone, the key,
+# the ssh config, the identity marker. Doing that by hand is what was done on 2026-11-04 and it did not survive
+# a reboot; this is the same thing as a script that the boot unit runs.
+#
+#   mesh-node-setup --ensure      create everything that is missing (safe to run at every boot)
+#   mesh-node-setup --print-key   print the deploy-key line an operator adds to the repo
+#   mesh-node-setup               both, in that order
+#
+# It NEVER adds the key to the repo itself: that is a credential grant, which belongs to a person.
+set -uo pipefail
+
+REPO=robmitchellengineering-hub/harness-mesh
+# THE BUS IS THE HUB, NOT GITHUB. Measured 2026-11-04: this machine cloned from github.com and then polled a
+# LAGGING MIRROR for half an hour while its jobs sat on the hub - the orchestrator pushes to the hub, and
+# GitHub only catches up when the hub is mirrored. A node that fetches GitHub is a node that misses work.
+BUS=${MESH_BUS:-git://100.90.120.32:9418/mesh-hub.git}
+M=/persist/mesh
+KEY="$M/keys/deploy"
+
+say() { printf 'mesh-node-setup: %s\n' "$*"; }
+
+ensure() {
+    mkdir -p "$M/home/.ssh" "$M/code" "$M/keys" "$M/state" "$(dirname "$KEY")" || return 1
+    chmod 0700 "$M/keys" 2>/dev/null
+    if [ ! -f "$KEY" ]; then
+        ssh-keygen -t ed25519 -N '' -C "morpheos-a@harness-mesh-deploy" -f "$KEY" >/dev/null 2>&1 || return 1
+        say "generated a deploy key at $KEY"
+    fi
+    chmod 0600 "$KEY" 2>/dev/null
+    cat > "$M/ssh_config" <<'CFG'
+Host github.com
+  IdentityFile /persist/mesh/keys/deploy
+  IdentitiesOnly yes
+  StrictHostKeyChecking accept-new
+  UserKnownHostsFile /persist/mesh/known_hosts
+CFG
+    # The identity marker: which queue this machine owns. Weaker than the repo's own rule (it refuses to run as
+    # a different machine) because that rule is the thing that stops a node adopting another machine's work.
+    if [ ! -f "$M/host-id" ]; then
+        printf '%s\n' "${MESH_HOST:-morpheos-2012}" > "$M/host-id"
+    fi
+    # Git identity: without it `git commit` fails with "unable to auto-detect email address", the result stays
+    # staged, and the node runs the same job again on every poll - measured on 2026-11-04.
+    cat > "$M/home/.gitconfig" <<'GITCFG'
+[user]
+	name = morpheos-a
+	email = node@morpheos
+[safe]
+	directory = /persist/mesh/harness-mesh
+GITCFG
+    if [ ! -d "$M/harness-mesh/.git" ]; then
+        say "cloning the bus at $BUS"
+        if ! GIT_TERMINAL_PROMPT=0 git clone -q "$BUS" "$M/harness-mesh"; then
+            say "clone FAILED — is the hub reachable? (tailnet 100.90.120.32:9418)"
+            return 1
+        fi
+    fi
+    mkdir -p "$M/harness-mesh/local"
+    cp -f "$M/host-id" "$M/harness-mesh/local/host-id" 2>/dev/null
+    say "ready: host $(cat "$M/host-id" 2>/dev/null)"
+}
+
+print_key() {
+    [ -f "$KEY.pub" ] || { say "no key yet — run --ensure first"; return 1; }
+    printf '\nAdd this key to the repository (operator action, once):\n\n'
+    printf '  %s\n\n' "$(cat "$KEY.pub")"
+    printf '  gh repo deploy-key add <file-with-that-line> -R %s --title "%s (MorpheOS)" --allow-write\n\n' \
+        "$REPO" "$(cat "$M/host-id" 2>/dev/null || hostname)"
+}
+
+# A STICK CAN CARRY ITS OWN CLAIM. A file written to the ESP when the stick is prepared
+# (/efi/morpheos-node.conf) says which queue the machine should own and where the bus is. That turns "install
+# MorpheOS, then follow five steps on a forum post" into "boot the stick". MESH_STICK_CONF overrides the path so
+# the logic can be tested without a stick.
+from_esp() {
+    local conf="${MESH_STICK_CONF:-/efi/morpheos-node.conf}"
+    [ -f "$conf" ] || { say "no stick claim file at $conf"; return 1; }
+    say "reading $conf"
+    local want_host="" want_bus=""
+    while IFS='=' read -r k v; do
+        case "$k" in
+            host) want_host="$v" ;;
+            bus) want_bus="$v" ;;
+            ""|\#*) ;;
+        esac
+    done < "$conf"
+    [ -n "$want_host" ] || { say "the claim file has no host= line"; return 1; }
+    if [ -n "$want_bus" ]; then MESH_BUS="$want_bus"; export MESH_BUS; fi
+    if [ -f "$M/host-id" ] && [ "$(cat "$M/host-id")" != "$want_host" ]; then
+        say "this machine is already $(cat "$M/host-id" 2>/dev/null) - refusing to adopt $want_host"
+        return 1
+    fi
+    MESH_HOST="$want_host" ensure || return 1
+    say "claimed as $want_host from the stick"
+}
+
+case "${1:---both}" in
+    --ensure) ensure ;;
+    --from-esp) from_esp ;;
+    --print-key) print_key ;;
+    --both|"") ensure && print_key ;;
+    *) echo "usage: mesh-node-setup [--ensure|--print-key]" >&2; exit 2 ;;
+esac

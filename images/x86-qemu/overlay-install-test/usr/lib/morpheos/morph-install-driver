@@ -1,0 +1,44 @@
+#!/bin/sh
+# The in-image half of E7's test: run the installer against the second disk, and record what it did.
+#
+# WHY THIS RUNS INSIDE THE MACHINE. The installer must be exercised the way a person uses it — from the running
+# system, against a second disk — and the harness has no ssh key to the VM. So a test-only unit runs at boot,
+# writes the verdicts to the ESP (where the harness reads with mtype), and powers off.
+#
+# It does two things, in the order a careless mistake would be caught:
+#   1. tries to install onto the BOOT disk (/dev/vda) — this must be REFUSED; the exit status is the verdict;
+#   2. installs onto the second disk (/dev/vdb) — this must succeed; the exit status and the resulting partition
+#      table go to the ESP.
+#
+# MORPH_TEST_FINISH=poweroff is set by the scenario so systemd powers off when this unit has run.
+set -u
+OUT=/efi/morph-install-verdict.txt
+say() { printf '%s\n' "$*" | tee -a "$OUT"; }
+
+: > "$OUT" 2>/dev/null || { echo "cannot write $OUT"; exit 1; }
+say "driver: running morph-install from $(hostname)"
+
+say "--- 1. refusing the boot disk (/dev/vda) ---"
+if /usr/bin/morph-install /dev/vda >/tmp/refusal.out 2>&1; then
+    say "refusal-vda: UNEXPECTEDLY-ACCEPTED"
+else
+    rc=$?
+    say "refusal-vda: refused (exit $rc)"
+    grep -m1 -E 'holds the system|too small|removable|mounted' /tmp/refusal.out | sed 's/^/  reason: /' | tee -a "$OUT"
+fi
+
+say "--- 2. installing onto the second disk (/dev/vdb) ---"
+if /usr/bin/morph-install --yes /dev/vdb >/tmp/install.out 2>&1; then
+    say "install-vdb: ok"
+else
+    rc=$?
+    say "install-vdb: FAILED (exit $rc)"
+    tail -5 /tmp/install.out | sed 's/^/  /' | tee -a "$OUT"
+fi
+say "--- target partition table ---"
+sfdisk -J /dev/vdb 2>/dev/null | tee -a "$OUT" || say "sfdisk -J /dev/vdb failed"
+
+sync
+say "driver: done"
+# The harness knows the test is over when the VM powers itself off — same contract as the other scenarios.
+systemctl poweroff

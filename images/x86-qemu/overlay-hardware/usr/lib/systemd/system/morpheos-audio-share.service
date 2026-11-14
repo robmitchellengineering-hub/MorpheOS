@@ -1,0 +1,17 @@
+[Unit]
+Description=Open the audio server's sockets to the person and set the volume
+# PipeWire runs in root's user session (the desktop session is root), while the shell and the
+# browser run as morph — so morph's clients cannot reach the sockets in root's runtime dir,
+# and the CS4206 sink starts quiet (its volume is stored where the read-only root cannot keep
+# it). This opens the sockets and sets a sane volume; best-effort, so a failure never takes
+# the shell with it.
+After=user@0.service
+Wants=user@0.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'for i in $(seq 1 240); do [ -S /run/user/0/pipewire-0 ] && break; sleep 0.25; done; chmod o+x /run/user/0; chmod o+rwx /run/user/0/pipewire-0 /run/user/0/pipewire-0-manager /run/user/0/pulse 2>/dev/null || true; for i in $(seq 1 240); do XDG_RUNTIME_DIR=/run/user/0 wpctl set-volume @DEFAULT_AUDIO_SINK@ 1.0 2>/dev/null && break; sleep 0.25; done'
+
+[Install]
+WantedBy=multi-user.target

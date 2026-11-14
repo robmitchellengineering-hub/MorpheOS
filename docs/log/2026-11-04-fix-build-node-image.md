@@ -1,0 +1,111 @@
+# 2026-11-04 · DeepSeek · MorpheOS as a robmesh node, and twelve failures it took
+
+Making a MorpheOS machine a node on the robmesh — a machine that takes work from the mesh, runs it in its own
+environment and publishes the result — and, on the way, the twelve defects that a real machine found.
+
+**What is real now.** `morph-node status|claim|key|start|stop|build|logs` turns a machine into a node in one verb.
+The node takes jobs through its own loop and publishes results to the bus. It builds its own OS on demand:
+**Measured** on the reference laptop, `cargo build --release --workspace` → `BUILD-EXIT=0` in 3 m 56 s offline
+(vendored crates) and 6 m 33 s online. Five jobs ran through the loop, the fifth after 5 h 22 m of uptime.
+A stick can claim the machine it boots (`/efi/morpheos-node.conf` + `morpheos-claim.service`), with an optional
+single-use tailnet key that is deleted from the stick after joining.
+
+**The twelve, and each one's evidence**, in the order they bit:
+
+1. `tailscaled` asks systemd for `CacheDirectory` on a read-only root → `239/CACHE_DIRECTORY`, never starts.
+2. A full clone exceeded systemd's 90 s start timeout and was SIGTERMed — which reads exactly like a bad credential.
+3. `known_hosts` written to read-only `/root`.
+4. An **empty** `CacheDirectoryMode=` is a parse error, and systemd rejects the *whole* drop-in — silently undoing #1's fix.
+5. `Environment=GIT_SSH_COMMAND=ssh -F …` unquoted: systemd splits on spaces, so the variable became `ssh`.
+6. **No Node in the image**, and the agent parses every job with `node -e` — every job read as `no command and no task`.
+7. The clone fetched **GitHub**, a mirror that lags the **hub** the orchestrator writes to; the node polled a stale tree.
+8. **No git identity**, so `git commit` failed, results stayed staged, and jobs re-ran every poll forever.
+9. `pipewire`/`pipewire-pulse`/`wireplumber` carry `ConditionUser=!root` and the session **is root** — no application
+   could make a sound on a machine whose CS4206 codec was bound correctly all along.
+10. `apt-daily*` cannot work on an immutable root, so `is-system-running` said `degraded` on **every** boot.
+11. `boot-check`'s history defaulted to `/var/lib` — a **tmpfs** — so every boot's record was written into space that empties.
+12. `systemctl is-system-running --wait` with a 300 s default, against a test that kills the VM at 300 s: the record was
+    never written. Capped at 240 s, chosen from the two windows (300 s kill / 900 s fallback allow) rather than by taste.
+
+The last four were only visible because the boot test was made to **print what the ESP holds** and every
+`boot-check` line, instead of just "missing". A failure that names an absence sends the next person guessing.
+
+**Also picked up from the build plan while waiting:** D2's mechanism (`morph-volume`, measured through
+`100 → down 20 → 80 → up 10 → 90 → mute → set 100`), D3's battery (`morph-power`: `56% (Charging, plugged) · to full
+0.1 h · health 57% of design` — the 56% is a **worn** battery, not a flat one), P4's facts (`morph-health`), and
+E6's first hardware report (`docs/hardware/mac-2012.md`). Each records what is done **and what is not**.
+
+**Rob decides:** E11's account model — may one ordinary user `morph` (uid 1000, no password, autologin on VT1) exist
+as a placeholder until S5? The session running as root is the root cause behind #9, `/root` being unwritable and
+`/var` being a tmpfs. E11's recorder and enforcement check are built and waiting on that answer.
+
+**What is not proven, and is not claimed:** the **reboot**. Today's fixes live in the image, and on the running
+machine in `/run` and `/persist`, which a reboot clears. That a bare reboot brings the node back with nobody logged
+in needs the flashed image and one reboot at the machine.
+
+## Added while waiting for the reboot: the report now says *why* a boot failed
+
+`journalctl -b -p err` was the report's only error evidence, and on this machine it was silent about the thing that
+mattered: `apt-daily*` fails at **info**, not error, so a boot that said `degraded` had no explanation in the
+report. That is the same trap AGENTS.md records for sshd — *"`journalctl -b -p err` is not a log of what happened"* —
+and it cost a hand-reconstruction today.
+
+`hwreport` now writes `failed-units.txt` (each failed unit, plus its last 20 lines **at any priority**) and the
+summary names the units under `FAILED UNITS THIS BOOT` instead of only counting error lines. Measured on the
+reference machine, report `003`: it answers in one line —
+
+```
+apt.systemd.daily[27630]: cannot create /var/lib/apt//daily_lock: Read-only file system
+apt-daily-upgrade.service: Failed with result 'exit-code'
+```
+
+— which is the diagnosis that took a journal read by hand this morning. `scripts/verify-hwreport.sh` still passes
+(it names missing firmware, and says `none` when there is none).
+
+## Option A, chosen mid-session ("Do a")
+
+Rob decided E11's account model: one ordinary user `morph` (uid 1000, no password), the shell running as it, the
+Wi-Fi picker staying root. Implemented in this branch, and the plan's E11 now records the decision and reads
+`in progress` until the shell scenario passes with it.
+
+Why it matters beyond tidiness: **the session running as root was the root cause of four separate problems** found
+today — audio that could never work (`pipewire` refuses root), a boot history written into a tmpfs, `/root` being
+unusable for keys, and `apt-daily*` failing on an immutable root so every boot said `degraded`. Option A removes the
+cause instead of working around each symptom.
+
+Two parts could not simply follow the user:
+- the **Wi-Fi picker** — a child of the compositor inherits its user, and joining a network needs NetworkManager's
+  polkit check, which is root-only here (polkit is not in the image). It is `flow-wifi.service`, root, started
+  alongside; the compositor still activates it by app id when its window appears.
+- the **uid** — written straight into `/etc/passwd`, because that file lives in the read-only slot and every future
+  image must agree with the one a stick already carries. `useradd` is not installed; a fixed line is deterministic.
+
+The risk taken knowingly: the shell test asserts the picker is *on the screen, in front*, and a picker started by
+its own unit may map without being activated. If that assertion goes red, the fix is activation — not a return to
+root.
+
+## E7's write path and the install harness (2026-11-05, continued)
+
+**The installer can now do the destructive half**, after the refusals pass and with `--yes`: sfdisk the
+layout (script generated in sectors — emitting MiB/GiB would be a silent off-by-512, and the test asserts the
+sizes sum to disk-minus-1MiB, the GPT alignment gap), mkfs the ESP/data/slots, copy the boot tree, `bootctl
+install`, write both slots via `morph-update install`. Each step is guarded and reports its own failure — a
+silent "install failed" is how a person spends an evening guessing which of nine steps it was.
+
+`morph-install` is shipped next to `morph-update`, and `fdisk` + `e2fsprogs` joined BASE_PKGS (dosfstools was
+already there for mkfs.vfat). The build asserts sfdisk and mkfs.ext4 exist — an installer whose tools are
+missing is a machine that silently cannot install itself.
+
+**The harness scenario** is `test-install.sh` + an in-image driver (`morph-install-test.service`): it boots the
+install image with a blank 40 GiB second disk, the driver runs `morph-install` at boot and records the verdict to
+the ESP, and the harness checks the boot disk was refused, the target got esp/root-a/root-b/data, and the boot
+disk's partition table and both slots hash unchanged. Wired into `images.yml`, gated like every other scenario.
+
+**E11 got its last red pixel green.** The non-root shell broke exactly one thing — Firefox, left as root while the
+compositor's Wayland socket became owned by `morph` (0 px of its start page). Doc 28's option A already said "the
+shell *and Firefox* run as morph"; that is now true, and Firefox renders again. The shell scenario then failed in
+`build.sh` silently (slot b, then nothing) — an ERR trap is now in place so the next failure names its line.
+
+**The node's toolchain was wiped by the flash** (it lives on /persist), and a first rustup download was reset by
+the network; retried, it installed rustc 1.99.0, MorpheOS was cloned to /persist/mesh/code, and
+`cargo test -p morph-install` = 11/11 on the node.

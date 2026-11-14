@@ -1,0 +1,18 @@
+[package]
+name = "flow-login"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "MorpheOS: the sign-in screen on the Flow shell — first-boot account setup and login"
+
+[dependencies]
+flow-shell = { path = "../flow-shell" }
+sha2 = "0.10"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# The window: a plain Wayland client, as flow-wifi is, with the compositor's own keymap.
+wayland-client = "0.31.11"
+wayland-protocols = { version = "0.32.9", features = ["client"] }
+xkbcommon = "0.8.0"
+rustix = { version = "1.1.5", features = ["event"] }

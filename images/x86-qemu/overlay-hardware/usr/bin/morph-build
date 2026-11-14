@@ -1,0 +1,53 @@
+#!/bin/sh
+# morph-build — compile MorpheOS on this machine, with no network.
+#
+# WHY THIS FILE IS ON /persist AND NOT IN /etc: the root is read-only, so a shell hook cannot live there on a
+# running machine; /persist is the only writable place. The durable version is an image overlay
+# (images/x86-qemu/overlay-hardware/etc/profile.d/), which only takes effect after a flash — this is what works
+# now, and it is one command either way.
+#
+#   morph-build              whole workspace, release
+#   morph-build <crate>      one crate, release
+#
+# It uses the standalone toolchain installed from the tarball (rustc/cargo/rust-std only, because the docs
+# components are gigabytes of nothing) and the vendored crate sources, so it never touches the network.
+set -u
+P=/persist
+# TWO TOOLCHAIN LAYOUTS, because a machine can be set up either way and the build should not care:
+#   /persist/cargo/bin          rustup (installed with a network)
+#   /persist/rust-install/bin   the standalone distribution (installable with no network at all)
+# The first version of this script knew only the second, and told a machine with a perfectly good rustup
+# toolchain "no toolchain (was /persist wiped?)" - measured 2026-11-04.
+if [ -x "$P/cargo/bin/cargo" ]; then
+    TOOL="$P/cargo/bin"
+    CARGO_HOME="$P/cargo"; RUSTUP_HOME="$P/rust"
+    export CARGO_HOME RUSTUP_HOME
+elif [ -x "$P/rust-install/bin/cargo" ]; then
+    TOOL="$P/rust-install/bin"
+    [ -d "$P/rust-install/lib" ] && LD_LIBRARY_PATH="$P/rust-install/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" && export LD_LIBRARY_PATH
+else
+    echo "morph-build: no Rust toolchain on /persist (neither /persist/cargo/bin nor /persist/rust-install/bin)" >&2
+    echo "morph-build: install one with:  curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --no-modify-path" >&2
+    exit 1
+fi
+# TWO WAYS TO HAVE CRATES, and it should not matter which. Vendored crates (carried to a machine with no network)
+# or a network the machine can reach (a fresh flash wipes /persist, so a build node right after a flash has no
+# vendored crates and may well have internet). Refusing on the first without trying the second made a healthy
+# machine look broken - measured 2026-11-04, right after a flash: "builder: morph-build (no vendored crates)".
+if [ -d "$P/vendor" ]; then
+    CARGO_NET_OFFLINE=true
+    export CARGO_NET_OFFLINE
+else
+    echo "morph-build: no vendored crates at $P/vendor - building online" >&2
+fi
+[ -d "$P/morpheos" ] || { echo "morph-build: no source at $P/morpheos" >&2; exit 1; }
+
+export PATH="$TOOL:$PATH"
+export LD_LIBRARY_PATH="$P/rust-install/lib"
+export CARGO_HOME="$P/cargo-home"
+export CARGO_TARGET_DIR="$P/target"
+cd "$P/morpheos" || exit 1
+if [ "$#" -gt 0 ]; then
+    exec "$TOOL/cargo" build --release -p "$1"
+fi
+exec "$TOOL/cargo" build --release --workspace
