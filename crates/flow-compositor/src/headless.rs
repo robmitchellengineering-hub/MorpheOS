@@ -135,6 +135,9 @@ struct App {
     volume: f32,
     /// Whether the volume slider the Volume button opens is showing, so the bar draws it.
     volume_slider_open: bool,
+    /// The wall-clock time the compositor started, so the bar's clock reads the machine's
+    /// local time even though the render only knows how long it has been running.
+    started_at: std::time::SystemTime,
     next_id: u32,
 }
 
@@ -612,6 +615,20 @@ fn volume_slider(vx: i32, vy: i32) -> (i32, i32, i32, i32) {
 fn volume_at(y: f64, rect: (i32, i32, i32, i32)) -> f32 {
     let (_, ry, _, rh) = rect;
     (((ry + rh) as f64 - y) / f64::from(rh)).clamp(0.0, 1.0) as f32
+}
+
+/// The bar's clock, the machine's local time as "HH:MM" at `started_at + elapsed`.
+fn clock_text(started_at: std::time::SystemTime, elapsed: std::time::Duration) -> String {
+    let secs = started_at
+        .checked_add(elapsed)
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as libc::time_t)
+        .unwrap_or(0);
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    if unsafe { libc::localtime_r(&secs, &mut tm) }.is_null() {
+        return "--:--".to_string();
+    }
+    format!("{:02}:{:02}", tm.tm_hour, tm.tm_min)
 }
 
 /// Everything the event loop needs to keep clients moving.
@@ -1321,6 +1338,7 @@ impl Server {
             pointer: (width as i32 / 2, height as i32 / 2),
             volume: 1.0,
             volume_slider_open: false,
+            started_at: std::time::SystemTime::now(),
             next_id: 0,
         };
         state.output.create_global::<App>(&dh);
@@ -1638,6 +1656,16 @@ fn render(
                     .draw_solid(r, &[Rectangle::from_size(r.size)], c)
                     .map_err(err("drawing the bar"))?;
             }
+            // The clock, on the left of the bar: the machine's local time, drawn the way the
+            // shell's own clients draw text (the bitmap font, no engine).
+            let clock = clock_text(state.started_at, elapsed);
+            frame.text(
+                &clock,
+                12,
+                bary + (32 - flow_shell::GLYPH_H * 2) / 2,
+                2,
+                palette::TEXT,
+            );
             // The volume slider, above the Volume button when it is open: a track with the
             // filled part below the pointer's volume (top = full, bottom = mute).
             if state.volume_slider_open {
