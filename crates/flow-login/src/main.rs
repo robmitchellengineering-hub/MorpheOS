@@ -298,17 +298,14 @@ mod client {
 
     pub fn run() -> Result<(), String> {
         let mut size: (u32, u32) = (1280, 800);
-        if let Some(s) = std::env::args()
+        if let Some((w, h)) = std::env::args()
             .skip(1)
             .find(|a| a.starts_with("--size="))
-            .and_then(|a| a.strip_prefix("--size=").map(str::to_string))
+            .and_then(|a| a.strip_prefix("--size="))
+            .and_then(|s| s.split_once('x'))
+            .and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?)))
         {
-            if let Some((w, h)) = s
-                .split_once('x')
-                .and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?)))
-            {
-                size = (w, h);
-            }
+            size = (w, h);
         }
 
         let account = Account::load();
