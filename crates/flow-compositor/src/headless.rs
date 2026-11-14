@@ -135,6 +135,9 @@ struct App {
     volume: f32,
     /// Whether the volume slider the Volume button opens is showing, so the bar draws it.
     volume_slider_open: bool,
+    /// The newest window, remembered so the server gives it the keyboard before it has
+    /// drawn a frame (a sign-in screen must take typing immediately).
+    pending_keyboard: Option<WlSurface>,
     /// The wall-clock time the compositor started, so the bar's clock reads the machine's
     /// local time even though the render only knows how long it has been running.
     started_at: std::time::SystemTime,
@@ -187,6 +190,10 @@ impl XdgShellHandler for App {
             state.bounds = Some((max_w, max_h).into());
         });
         surface.send_configure();
+        // Remember the newest window so the server hands it the keyboard straight away,
+        // rather than waiting for its first frame and the next refresh: a sign-in screen
+        // must take typing the moment it shows.
+        self.pending_keyboard = Some(surface.wl_surface().clone());
     }
 
     // POPUPS (menus, dropdowns, tooltips). A popup is placed by its positioner relative to its
@@ -702,6 +709,14 @@ impl Server {
             .dispatch_clients(&mut self.state)
             .map_err(|e| format!("dispatching: {e}"))?;
         self.state.refresh();
+        // A window just appeared: give it the keyboard before its first frame, so a sign-in
+        // screen takes typing the moment it shows.
+        if let Some(surface) = self.state.pending_keyboard.take() {
+            let serial = SERIAL_COUNTER.next_serial();
+            self.keyboard
+                .set_focus(&mut self.state, Some(surface), serial);
+            self.keyboard_on = None;
+        }
         // Reap the pickers that have closed, or each stays a zombie.
         self.launched
             .retain_mut(|c| matches!(c.try_wait(), Ok(None)));
@@ -1378,6 +1393,7 @@ impl Server {
             pointer: (width as i32 / 2, height as i32 / 2),
             volume: 1.0,
             volume_slider_open: false,
+            pending_keyboard: None,
             started_at: std::time::SystemTime::now(),
             next_id: 0,
         };
