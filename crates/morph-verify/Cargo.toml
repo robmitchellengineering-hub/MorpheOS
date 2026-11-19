@@ -5,3 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "MorpheOS Verification: the SEXTANT claim registry — every kernel-checked claim, its oracle class, falsifier and verdict"
+
+[[bin]]
+name = "sextant"
+path = "src/main.rs"
